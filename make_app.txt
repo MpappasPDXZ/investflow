@@ -84,20 +84,20 @@ DO:
   * [x] Create new repository on GitHub: https://github.com/MpappasPDXZ/investflow ✓ DONE
   * [x] Add remote: `git remote add origin https://github.com/MpappasPDXZ/investflow.git` ✓ DONE
   * [x] Push initial commit: `git push -u origin main` ✓ DONE
-- Initialize monorepo with backend/ and frontend/ directories
-- Set up UV virtual environment for backend
-- Set up Next.js project with TypeScript
-- Create basic Dockerfiles (non-functional, just structure)
-- Set up README.md with project description
-- Configure ESLint, Prettier, Ruff (Python linter)
-- Set up pre-commit hooks
-- Set up GitHub Actions workflow for CI/CD
-- Configure GitHub Secrets for Azure credentials:
+- [x] Initialize monorepo with backend/ and frontend/ directories ✓ DONE
+- [x] Set up UV virtual environment for backend ✓ DONE (pyproject.toml created, UV installation needed)
+- [x] Set up Next.js project with TypeScript ✓ DONE
+- [x] Create basic Dockerfiles (non-functional, just structure) ✓ DONE
+- [x] Set up README.md with project description ✓ DONE
+- [x] Configure ESLint, Prettier, Ruff (Python linter) ✓ DONE (config files created)
+- [ ] Set up pre-commit hooks
+- [ ] Set up GitHub Actions workflow for CI/CD
+- [ ] Configure GitHub Secrets for Azure credentials:
   * AZURE_CREDENTIALS
   * ACR_NAME (investflowregistry)
   * RESOURCE_GROUP (investflow-rg)
   * STORAGE_CONNECTION_STRING
-- Create environment variable templates (.env.example files)
+- [x] Create environment variable templates (.env.example files) ✓ DONE (env.example files created)
 
 REVIEW:
 - Code review: Verify structure matches specification
