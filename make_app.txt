@@ -24,17 +24,17 @@ PLAN:
 - Create initial Azure Key Vault for secrets management
 
 DO:
-- Install Azure CLI: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli
-- Login to Azure: `az login`
-- Create resource group: `az group create --name investflow-rg --location eastus`
-- Create storage account: `az storage account create --name investflowstorage --resource-group investflow-rg --location eastus --sku Standard_LRS`
-- Create storage container for documents: `az storage container create --name documents --account-name investflowstorage`
-- Create Azure Container Registry: `az acr create --resource-group investflow-rg --name investflowregistry --sku Basic`
-- Create Container Apps Environment: `az containerapp env create --name investflow-env --resource-group investflow-rg --location eastus`
-- Create Azure Key Vault: `az keyvault create --name investflow-kv --resource-group investflow-rg --location eastus`
-- Set up Application Insights: `az monitor app-insights component create --app investflow-insights --location eastus --resource-group investflow-rg`
-- Document all resource names, connection strings, and endpoints
-- Store connection strings securely in Key Vault or environment variables
+- [x] Install Azure CLI: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli ✓ DONE
+- [x] Login to Azure: `az login` ✓ DONE
+- [x] Create resource group: `az group create --name investflow-rg --location eastus` ✓ DONE
+- [x] Create storage account: `az storage account create --name investflowstorage --resource-group investflow-rg --location eastus --sku Standard_LRS` ✓ DONE
+- [x] Create storage container for documents: `az storage container create --name documents --account-name investflowstorage` ✓ DONE
+- [x] Create Azure Container Registry: `az acr create --resource-group investflow-rg --name investflowregistry --sku Basic` ✓ DONE
+- [x] Create Container Apps Environment: `az containerapp env create --name investflow-env --resource-group investflow-rg --location eastus` ✓ DONE
+- [ ] Create Azure Key Vault: `az keyvault create --name investflow-kv --resource-group investflow-rg --location eastus`
+- [ ] Set up Application Insights: `az monitor app-insights component create --app investflow-insights --location eastus --resource-group investflow-rg`
+- [ ] Document all resource names, connection strings, and endpoints
+- [ ] Store connection strings securely in Key Vault or environment variables
 
 REVIEW:
 - Verify all Azure resources are created successfully
@@ -64,9 +64,9 @@ PLAN:
 - Configure basic tooling (linting, formatting, pre-commit hooks)
 
 DO:
-- Initialize Git repository:
-  * Run: `git init`
-  * Create comprehensive .gitignore for monorepo including:
+- [x] Initialize Git repository: ✓ DONE
+  * [x] Run: `git init` ✓ DONE
+  * [x] Create comprehensive .gitignore for monorepo including: ✓ DONE
     - Python: __pycache__/, *.pyc, .venv/, venv/, .pytest_cache/, .mypy_cache/, .uv/
     - Node.js: node_modules/, .next/, out/, build/, dist/, .npm, .yarn/
     - Environment files: .env, .env.local, .env.*.local
@@ -76,12 +76,12 @@ DO:
     - Database files: *.db, *.sqlite
     - Azure: .azure/
     - Temporary: *.tmp, .cache/
-  * Configure Git user (if not set globally): `git config user.name "MPappasPDXZ"` and `git config user.email "your.email@example.com"`
-  * Create initial commit with make_app.txt and .gitignore
-- Set up GitHub repository:
-  * Create new repository on GitHub: https://github.com/MPappasPDXZ/investflow
-  * Add remote: `git remote add origin https://github.com/MPappasPDXZ/investflow.git`
-  * Push initial commit: `git push -u origin main` (or master, depending on default branch)
+  * [ ] Configure Git user (if not set globally): `git config user.name "MPappasPDXZ"` and `git config user.email "your.email@example.com"`
+  * [x] Create initial commit with make_app.txt and .gitignore ✓ DONE
+- [x] Set up GitHub repository: ✓ DONE
+  * [x] Create new repository on GitHub: https://github.com/MpappasPDXZ/investflow ✓ DONE
+  * [x] Add remote: `git remote add origin https://github.com/MpappasPDXZ/investflow.git` ✓ DONE
+  * [x] Push initial commit: `git push -u origin main` ✓ DONE
 - Initialize monorepo with backend/ and frontend/ directories
 - Set up UV virtual environment for backend
 - Set up Next.js project with TypeScript
