@@ -24,8 +24,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
     
     # Database / Iceberg
-    ICEBERG_CATALOG_URI: str = ""
-    DATABASE_URL: str = ""
+    ICEBERG_CATALOG_TYPE: str = "hadoop"  # Options: "hadoop", "jdbc", "rest" (nessie), "hive"
+    ICEBERG_CATALOG_URI: str = ""  # For REST catalog (Nessie)
+    DATABASE_URL: str = ""  # For JDBC catalog or warehouse path for HadoopCatalog
+    # HadoopCatalog warehouse path format: abfss://container@storageaccount.dfs.core.windows.net/path
+    # Or use Azure Blob Storage: wasbs://container@storageaccount.blob.core.windows.net/path
     
     # Azure Storage
     AZURE_STORAGE_CONNECTION_STRING: str = ""
