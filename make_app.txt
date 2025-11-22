@@ -1,0 +1,1346 @@
+APPLICATION NAME: InvestFlow (Investor Property Management & Cash Flow Analysis)
+
+Environment:
+Microsoft Azure: need to setup through azure-cli the resource group, subscriptions...
+azure container app service
+
+Build:
+
+DEVELOPMENT METHODOLOGY - PHASED APPROACH:
+
+Follow a structured PLAN-DO-REVIEW-TEST cycle for each phase to prevent technical debt and ensure quality.
+
+PHASE 0: FOUNDATION & SETUP (Week 1)
+
+STEP 0.1: AZURE INFRASTRUCTURE SETUP (FIRST PRIORITY)
+PLAN:
+- Set up Azure account and subscription
+- Create resource group for the project
+- Set up Azure Container Registry (ACR) for Docker images
+- Create Azure Storage Account for blob storage (documents)
+- Set up Azure Container Apps Environment
+- Configure Azure CLI and authentication
+- Set up Azure Application Insights for monitoring
+- Create initial Azure Key Vault for secrets management
+
+DO:
+- Install Azure CLI: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli
+- Login to Azure: `az login`
+- Create resource group: `az group create --name investflow-rg --location eastus`
+- Create storage account: `az storage account create --name investflowstorage --resource-group investflow-rg --location eastus --sku Standard_LRS`
+- Create storage container for documents: `az storage container create --name documents --account-name investflowstorage`
+- Create Azure Container Registry: `az acr create --resource-group investflow-rg --name investflowregistry --sku Basic`
+- Create Container Apps Environment: `az containerapp env create --name investflow-env --resource-group investflow-rg --location eastus`
+- Create Azure Key Vault: `az keyvault create --name investflow-kv --resource-group investflow-rg --location eastus`
+- Set up Application Insights: `az monitor app-insights component create --app investflow-insights --location eastus --resource-group investflow-rg`
+- Document all resource names, connection strings, and endpoints
+- Store connection strings securely in Key Vault or environment variables
+
+REVIEW:
+- Verify all Azure resources are created successfully
+- Verify resource group contains: Storage Account, ACR, Container Apps Environment, Key Vault, Application Insights
+- Check resource locations are consistent (same region)
+- Verify access permissions and authentication
+- Review cost estimates for resources
+
+TEST:
+- Test Azure CLI connectivity: `az account show`
+- Test storage account access: Upload a test file to blob storage
+- Test ACR login: `az acr login --name investflowregistry`
+- Verify Container Apps Environment is ready
+- Test Key Vault access: Store and retrieve a test secret
+- Verify Application Insights is receiving data (will be empty initially)
+
+DELIVERABLE: Complete Azure infrastructure ready for deployment
+
+---
+
+STEP 0.2: MONOREPO & DEVELOPMENT SETUP
+PLAN:
+- Set up monorepo structure
+- Configure development environment (UV, Node, Docker)
+- Set up Git repository and initial CI/CD pipeline
+- Create project scaffolding (empty FastAPI app, empty Next.js app)
+- Configure basic tooling (linting, formatting, pre-commit hooks)
+
+DO:
+- Initialize Git repository:
+  * Run: `git init`
+  * Create comprehensive .gitignore for monorepo including:
+    - Python: __pycache__/, *.pyc, .venv/, venv/, .pytest_cache/, .mypy_cache/, .uv/
+    - Node.js: node_modules/, .next/, out/, build/, dist/, .npm, .yarn/
+    - Environment files: .env, .env.local, .env.*.local
+    - IDE files: .vscode/, .idea/, *.swp, .DS_Store
+    - Logs: *.log, logs/
+    - Secrets: *.pem, *.key, secrets/
+    - Database files: *.db, *.sqlite
+    - Azure: .azure/
+    - Temporary: *.tmp, .cache/
+  * Configure Git user (if not set globally): `git config user.name "MPappasPDXZ"` and `git config user.email "your.email@example.com"`
+  * Create initial commit with make_app.txt and .gitignore
+- Set up GitHub repository:
+  * Create new repository on GitHub: https://github.com/MPappasPDXZ/investflow
+  * Add remote: `git remote add origin https://github.com/MPappasPDXZ/investflow.git`
+  * Push initial commit: `git push -u origin main` (or master, depending on default branch)
+- Initialize monorepo with backend/ and frontend/ directories
+- Set up UV virtual environment for backend
+- Set up Next.js project with TypeScript
+- Create basic Dockerfiles (non-functional, just structure)
+- Set up README.md with project description
+- Configure ESLint, Prettier, Ruff (Python linter)
+- Set up pre-commit hooks
+- Set up GitHub Actions workflow for CI/CD
+- Configure GitHub Secrets for Azure credentials:
+  * AZURE_CREDENTIALS
+  * ACR_NAME (investflowregistry)
+  * RESOURCE_GROUP (investflow-rg)
+  * STORAGE_CONNECTION_STRING
+- Create environment variable templates (.env.example files)
+
+REVIEW:
+- Code review: Verify structure matches specification
+- Check all tooling is working
+- Verify Git repository is initialized and .gitignore is comprehensive
+- Verify GitHub remote is configured correctly
+- Verify Docker builds (even if empty)
+- Verify GitHub Actions workflow is configured
+- Review Azure secrets are properly configured in GitHub
+
+TEST:
+- Verify Git is working: `git status`, `git log`
+- Test Git remote connection: `git remote -v`
+- Test push to GitHub: `git push` (should work)
+- Run linters and formatters
+- Verify Git hooks work
+- Test Docker builds succeed
+- Test GitHub Actions workflow runs (even if just echo)
+- Verify Azure credentials are accessible from GitHub Actions
+
+DELIVERABLE: Working monorepo with proper tooling and Azure integration, no application code yet
+
+---
+
+PHASE 1: BACKEND FOUNDATION (Week 2-3)
+PLAN:
+- Set up FastAPI application structure
+- Configure environment variables and settings
+- Implement authentication system (JWT)
+- Set up database connection (Nessie/Iceberg)
+- Create base API structure with health check endpoint
+
+DO:
+- Create FastAPI app with proper project structure
+- Set up Pydantic models for configuration
+- Implement JWT authentication (register, login, refresh endpoints)
+- Set up Nessie catalog connection
+- Create health check endpoint (/health)
+- Set up logging infrastructure
+- Create base error handling middleware
+
+REVIEW:
+- Code review: Authentication flow, error handling
+- Security review: JWT implementation, password hashing
+- Architecture review: Project structure, separation of concerns
+
+TEST:
+- Unit tests: Authentication functions, JWT token generation/validation
+- Integration tests: Register, login, refresh endpoints
+- Test health check endpoint
+- Test error handling (invalid tokens, expired tokens)
+- Test Nessie connection (if possible in test environment)
+
+DELIVERABLE: Working backend with authentication, no business logic yet
+
+---
+
+PHASE 2: USER & PROPERTY MANAGEMENT (Week 4-5)
+PLAN:
+- Implement user model and CRUD operations
+- Implement property model and CRUD operations
+- Create API endpoints for users and properties
+- Add authorization (users can only access their own data)
+- Set up basic frontend pages for user profile and properties list
+
+DO:
+- Create Iceberg tables: user, properties
+- Implement Pydantic schemas for user and property
+- Create API routes: GET/POST/PUT/DELETE for properties, GET/PUT for user profile
+- Add user isolation middleware (filter by user_id)
+- Create frontend: User profile page, Properties list page, Add/Edit property form
+- Implement API client hooks for properties
+- Add basic error handling in frontend
+
+REVIEW:
+- Code review: API endpoints, data models, frontend components
+- Security review: User isolation, input validation
+- UX review: Property forms, list display
+
+TEST:
+- Backend: Unit tests for models, integration tests for API endpoints
+- Test user isolation (user A cannot access user B's properties)
+- Frontend: Component tests for property forms
+- E2E: Create property, edit property, delete property
+- Test validation (required fields, data types)
+
+DELIVERABLE: Working user and property management (backend + frontend)
+
+---
+
+PHASE 3: EXPENSE MANAGEMENT (Week 6-7)
+PLAN:
+- Implement expense model and CRUD operations
+- Add file upload functionality (Azure Blob Storage)
+- Create document_storage model
+- Build expense management UI with receipt upload
+- Implement expense filtering and search
+
+DO:
+- Create Iceberg tables: expenses, document_storage
+- Implement expense API endpoints with filtering
+- Set up Azure Blob Storage integration
+- Create file upload endpoint
+- Build frontend: Expenses list page, Add/Edit expense form, receipt upload
+- Implement expense type badges and filtering
+- Add export to CSV functionality
+
+REVIEW:
+- Code review: File upload security, expense validation
+- Security review: File type validation, size limits, blob storage access
+- UX review: Upload flow, expense form usability
+
+TEST:
+- Backend: Test file upload, expense CRUD, filtering
+- Test file validation (type, size)
+- Frontend: Test expense form, file upload, filtering
+- E2E: Create expense with receipt, filter expenses, export CSV
+- Test edge cases: Large files, invalid file types
+
+DELIVERABLE: Working expense management with receipt storage
+
+---
+
+PHASE 4: CLIENTS & RENT COLLECTION (Week 8-9)
+PLAN:
+- Implement client model and CRUD operations
+- Implement rent collection model and CRUD operations
+- Build client and rent management UI
+- Add rent-to-income ratio validation
+- Implement late payment detection
+
+DO:
+- Create Iceberg tables: clients, rents
+- Implement client and rent API endpoints
+- Add business logic: Rent-to-income validation, late payment detection
+- Build frontend: Clients list, Add/Edit client form, Rent collection page
+- Add calendar view for rent due dates
+- Implement payment method selection
+
+REVIEW:
+- Code review: Business logic validation, date handling
+- Business logic review: Rent-to-income calculation, late fee logic
+- UX review: Client forms, rent collection flow
+
+TEST:
+- Backend: Test client CRUD, rent CRUD, validation logic
+- Test rent-to-income ratio validation
+- Test late payment detection
+- Frontend: Test client forms, rent collection forms
+- E2E: Create client, record rent payment, test late payment indicator
+
+DELIVERABLE: Working client and rent collection management
+
+---
+
+PHASE 5: RENT SCENARIOS (Week 10-11)
+PLAN:
+- Implement scenario model and calculation logic
+- Build scenario analysis UI with real-time calculations
+- Implement sensitivity analysis table
+- Add scenario comparison functionality
+
+DO:
+- Create Iceberg table: scenarios
+- Implement scenario API endpoints
+- Add calculation service: annual_rent, cash_on_cash_roi, total_roi, net_cash_flow
+- Build frontend: Scenario form, calculation display, sensitivity analysis table
+- Implement color-coding for ROI results
+- Add scenario saving and comparison
+
+REVIEW:
+- Code review: Calculation accuracy, formula implementation
+- Business logic review: Verify all formulas match specification
+- UX review: Scenario form usability, calculation display clarity
+
+TEST:
+- Backend: Unit tests for all calculation formulas
+- Test calculation accuracy with known inputs/outputs
+- Frontend: Test scenario form, real-time calculations
+- Test sensitivity analysis table generation
+- E2E: Create scenario, verify calculations, compare scenarios
+
+DELIVERABLE: Working rent scenario analysis with calculations
+
+---
+
+PHASE 6: DOCUMENTS & REPORTS (Week 12-13)
+PLAN:
+- Build document management UI
+- Implement document linking to expenses/clients/properties
+- Create report generation endpoints
+- Build reports UI with export functionality
+
+DO:
+- Enhance document_storage API with linking functionality
+- Build frontend: Documents page, document preview, document linking
+- Create report API endpoints (expense reports, rent reports, property performance)
+- Build frontend: Reports page, report generation, export options
+- Implement PDF generation for reports
+
+REVIEW:
+- Code review: Report generation logic, document linking
+- Performance review: Report generation speed, document loading
+- UX review: Document management, report interface
+
+TEST:
+- Backend: Test document linking, report generation
+- Test report accuracy (verify calculations in reports)
+- Frontend: Test document upload, preview, linking
+- Test report generation and export
+- E2E: Generate expense report, export to PDF, link document to expense
+
+DELIVERABLE: Working document management and reporting system
+
+---
+
+PHASE 7: DASHBOARD & POLISH (Week 14-15)
+PLAN:
+- Build dashboard with summary cards and charts
+- Implement data visualization using recharts (REQUIRED)
+- Add node diagrams using reactflow if needed (e.g., property relationships)
+- Add search functionality across all pages
+- Polish UI/UX, add loading states, error handling
+- Performance optimization
+
+DO:
+- Create dashboard API endpoints (summary statistics)
+- Build frontend: Dashboard page with cards, charts, recent activity
+- Implement ALL charts using recharts library (line, bar, pie, area charts)
+- If node diagrams are needed, implement using reactflow (e.g., property-client relationships, expense flows)
+- Add global search functionality
+- Add loading skeletons, improve error messages
+- Optimize API queries, add caching where appropriate
+- Add pagination to all list views
+- Ensure all charts are responsive and match Shadcn theme
+
+REVIEW:
+- Code review: Dashboard queries, chart implementation (verify recharts usage)
+- Verify no other charting libraries are used
+- Performance review: Dashboard load time, query optimization
+- UX review: Overall application flow, consistency, chart readability
+
+TEST:
+- Backend: Test dashboard queries, verify performance
+- Frontend: Test dashboard loading, chart rendering (recharts)
+- Test node diagrams if implemented (reactflow)
+- Test search functionality
+- Performance testing: Load times, query response times
+- E2E: Full user flow from login to creating expense to viewing dashboard
+
+DELIVERABLE: Complete, polished application with recharts for all charts and reactflow for any node diagrams
+
+---
+
+PHASE 8: DEPLOYMENT & PRODUCTION READY (Week 16)
+PLAN:
+- Deploy Nessie catalog to Azure Container Apps (infrastructure already set up in Phase 0)
+- Deploy backend application to Azure Container Apps
+- Deploy frontend application to Azure Container Apps
+- Configure production environment variables
+- Set up production monitoring and logging (Application Insights already created in Phase 0)
+- Configure CORS, rate limiting for production
+- Set up backup strategy for data
+- Final security review
+
+DO:
+- Build production Docker images for backend and frontend
+- Push Docker images to Azure Container Registry (ACR from Phase 0)
+- Deploy Nessie catalog as container app:
+  * Create Container App: `investflow-nessie`
+  * Configure Nessie to use Azure Blob Storage (investflowstorage from Phase 0)
+  * Set up Nessie REST API endpoint
+- Deploy backend as container app:
+  * Create Container App: `investflow-backend`
+  * Configure environment variables from Azure Key Vault (investflow-kv from Phase 0)
+  * Set up ingress (internal, port 8000)
+  * Configure health checks
+- Deploy frontend as container app:
+  * Create Container App: `investflow-frontend`
+  * Configure environment variables (NEXT_PUBLIC_API_URL)
+  * Set up ingress (external, custom domain if available)
+  * Configure health checks
+- Configure production secrets in Azure Key Vault:
+  * Database connection strings
+  * JWT secrets
+  * Storage account connection strings
+  * API keys
+- Configure CORS for production (allow only frontend domain)
+- Set up rate limiting for production APIs
+- Configure Application Insights (already created in Phase 0) for both apps
+- Set up backup strategy: Regular backups of Nessie metadata, blob storage snapshots
+- Configure auto-scaling rules for Container Apps
+- Set up custom domain and SSL certificates (if applicable)
+
+REVIEW:
+- Infrastructure review: Verify all resources are properly configured
+- Security review: Production security settings, secrets management, CORS configuration
+- Performance review: Production performance, monitoring setup, scaling configuration
+- Cost review: Verify resource sizing is appropriate
+
+TEST:
+- Test deployment process (deploy to staging first)
+- Test production endpoints (backend health check, API endpoints)
+- Test frontend loads correctly and connects to backend
+- Test Nessie catalog connection from backend
+- Test file upload to Azure Blob Storage
+- Test monitoring and logging (verify Application Insights is receiving data)
+- Test auto-scaling (if configured)
+- Load testing: Test with realistic load
+- Security testing: Verify CORS, rate limiting, authentication
+- Test backup and restore process
+
+DELIVERABLE: Application deployed and running in production with monitoring, backups, and security configured
+
+---
+
+ONGOING PRACTICES (Throughout All Phases):
+
+PLAN:
+- Before starting each phase, create detailed task breakdown
+- Estimate effort for each task
+- Identify dependencies and blockers
+- Define acceptance criteria for each feature
+
+DO:
+- Write code following established patterns
+- Commit frequently with meaningful messages
+- Follow coding standards and style guides
+- Pair programming for complex features (if applicable)
+
+REVIEW:
+- Code review for every PR (no merging without review)
+- Architecture review for major decisions
+- Security review for authentication, file uploads, user data
+- UX review for all user-facing features
+
+TEST:
+- Write tests alongside code (TDD when possible)
+- Maintain test coverage above 80%
+- Run full test suite before merging
+- Manual testing for user-facing features
+- E2E testing for critical user flows
+
+TECHNICAL DEBT MANAGEMENT:
+- Allocate 20% of each phase to address technical debt
+- Fix bugs immediately, don't accumulate
+- Refactor when patterns emerge
+- Document architectural decisions
+- Keep dependencies updated
+
+DAILY ITERATION CYCLE (Within Each Phase):
+
+MORNING - PLAN (30 min):
+- Review yesterday's progress
+- Plan today's tasks (max 3-5 specific tasks)
+- Identify any blockers
+- Review relevant documentation/specs
+
+WORK SESSION - DO (4-6 hours):
+- Focus on one task at a time
+- Write code, tests, and documentation together
+- Commit frequently with clear messages
+- Take breaks every 90 minutes
+
+END OF DAY - REVIEW & TEST (30-60 min):
+- Review code written today
+- Run tests locally
+- Update task tracking
+- Document any issues or decisions
+- Prepare tomorrow's plan
+
+WEEKLY CYCLE:
+- Monday: Plan week, review previous week's progress
+- Tuesday-Thursday: Development work
+- Friday: Review week, demo progress, plan next week
+- End of week: Merge completed features, update documentation
+
+FEATURE COMPLETION CHECKLIST (Before Moving to Next Feature):
+- [ ] Code written and follows style guide
+- [ ] Unit tests written and passing
+- [ ] Integration tests written and passing
+- [ ] Manual testing completed
+- [ ] Code reviewed and approved
+- [ ] Documentation updated (API docs, README if needed)
+- [ ] No linting errors
+- [ ] No security issues identified
+- [ ] Performance acceptable
+- [ ] UX reviewed and approved
+
+BLOCKER RESOLUTION:
+- If blocked > 2 hours: Document blocker, seek help, or pivot to different task
+- Don't let blockers stop entire development - work on other features
+- Daily standup (even solo): Review blockers and progress
+
+MONOREPO STRUCTURE:
+- Root directory structure:
+  investflow/
+    backend/          # FastAPI application
+      app/
+        api/         # API routes
+        models/      # Database models
+        schemas/     # Pydantic schemas
+        services/    # Business logic
+        core/        # Config, auth, database
+      tests/
+      Dockerfile
+      pyproject.toml # UV package management
+    frontend/         # Next.js application
+      app/           # Next.js app directory
+      components/    # React components
+      lib/           # Utilities, API client
+      public/        # Static assets
+      Dockerfile
+      package.json
+    docker-compose.yml # Local development
+    .github/workflows/ # CI/CD pipelines
+    README.md
+
+PACKAGE MANAGEMENT:
+- Backend: Use UV for Python package management (faster than pip, similar to poetry)
+  * Create pyproject.toml with dependencies
+  * Use UV virtual environment: uv venv
+  * Install dependencies: uv pip install -r requirements.txt or use uv's native dependency management
+- Frontend: Use npm or pnpm (pnpm recommended for monorepo)
+  * package.json with all dependencies
+  * Use workspace protocol if sharing packages between frontend/backend
+
+DOCKER SETUP:
+- Backend Dockerfile: Multi-stage build, Python 3.11 slim base image
+- Frontend Dockerfile: Multi-stage build, Node 20 Alpine base image
+- docker-compose.yml for local development with:
+  * Backend service (port 8000)  # Azure Container Apps default to port 80 for HTTP ingress, but you can customize the exposed port; internally your FastAPI app may run on 8000, but Azure will route external traffic to the container's specified port (default 80 unless overridden in app settings).
+  * Frontend service (port 3000)
+  * Optional: Local database/iceberg catalog for development
+- Production: Separate containers for backend and frontend
+
+CI/CD PIPELINE:
+- Use GitHub Actions (or Azure DevOps)
+- Pipeline stages:
+  1. Lint and format check (ruff for Python, ESLint for TypeScript)
+  2. Run tests (pytest for backend, Jest/Vitest for frontend)
+  3. Build Docker images
+  4. Push to Azure Container Registry
+  5. Deploy to Azure Container Apps (staging)
+  6. Run integration tests
+  7. Deploy to production (manual approval)
+- Environment-specific configurations: development, staging, production
+- Secrets management: Use GitHub Secrets or Azure Key Vault
+
+AZURE DEPLOYMENT:
+- Azure Container Apps setup:
+  * Create resource group
+  * Create Container Apps Environment
+  * Create Container App for backend (FastAPI)
+  * Create Container App for frontend (Next.js)
+  * Configure ingress: Backend (internal), Frontend (external with custom domain)
+  * Set environment variables for each container app
+  * Configure scaling: Min 1, Max 10 instances
+  * Configure health checks: /health endpoint for backend, / for frontend
+- Azure Blob Storage: Create storage account and container for documents
+- Azure Application Insights: Enable for monitoring and logging
+- Networking: Configure VNET if needed for private endpoints
+
+ICEBERG TABLE SETUP:
+
+REST CATALOG RECOMMENDATION: Project Nessie
+After research, **Project Nessie** is recommended over Dremio Arctic for the following reasons:
+
+**Why Nessie:**
+1. **Fully Open-Source**: Apache 2.0 license, completely open-source (Arctic is a managed/proprietary service built on Nessie)
+2. **Self-Hosted**: Full control over deployment, perfect for Azure Container Apps
+3. **DBeaver Compatible**: REST API can be accessed via DBeaver's JDBC connector or REST catalog support
+4. **Multi-Engine Support**: Works with Spark, Flink, Trino, and other Iceberg-compatible engines
+5. **Git-like Versioning**: Built-in version control, branching, and tagging for data (bonus feature)
+6. **Azure Compatible**: Can be deployed as container in Azure Container Apps, uses Azure Blob Storage for metadata
+7. **Performance**: Lightweight REST service, fast for catalog operations
+8. **No Vendor Lock-in**: Open-source means no dependency on commercial vendor
+
+**Why Not Arctic:**
+- Arctic is a managed service (not self-hosted), requires Dremio subscription
+- Proprietary features, vendor lock-in to Dremio ecosystem
+- Additional cost for managed service
+- Less flexibility for custom Azure deployment
+
+**Nessie Setup:**
+- Deploy Nessie server as container in Azure Container Apps
+- Use Nessie's REST API endpoint as catalog URI
+- Configure Nessie to use Azure Blob Storage for metadata storage
+- Nessie supports multiple storage backends (S3, Azure Blob, local filesystem)
+- REST API endpoint format: http://nessie-container-app.azurecontainerapps.io/api/v2
+
+**Alternative Consideration:**
+If you need a simpler setup without version control features, consider using Iceberg's built-in REST catalog implementation, but Nessie is more mature and feature-rich.
+
+**DBeaver Connection:**
+- DBeaver supports Iceberg REST catalogs via JDBC or direct REST API connection
+- Connection string format: jdbc:iceberg:rest://nessie-endpoint/api/v2
+- Or use DBeaver's generic REST API connector to browse Nessie API endpoints
+- Nessie provides REST API documentation at /api/v2 endpoint
+
+**Implementation Steps:**
+1. Deploy Nessie server container to Azure Container Apps
+2. Configure Nessie to use Azure Blob Storage for persistence
+3. Set ICEBERG_CATALOG_URI environment variable: http://your-nessie-endpoint/api/v2
+4. Use PyIceberg with Nessie catalog implementation
+5. Create tables using PyIceberg or SQLAlchemy with Iceberg support
+6. Run migrations to create initial table structure
+7. Configure DBeaver connection to Nessie REST endpoint
+8. Set up table partitioning strategy (e.g., by year for expenses, rents) 
+Back End: FastAPI
+
+BACKEND SETUP AND ARCHITECTURE:
+- Use FastAPI with Python 3.11+
+- Project structure: Follow FastAPI best practices with routers, models, schemas, services pattern
+- Use Pydantic v2 for data validation and serialization
+- Use SQLAlchemy 2.0+ or PyIceberg for Iceberg table operations
+- Iceberg Table Catalog: Use Project Nessie as REST catalog (RECOMMENDED - see detailed recommendation below)
+- Database: Use Apache Iceberg tables stored in object storage (Azure Blob Storage or ADLS Gen2)
+- File Storage: Use Azure Blob Storage for document_storage.blob_location
+- Environment variables needed:
+  * DATABASE_URL or ICEBERG_CATALOG_URI
+  * AZURE_STORAGE_CONNECTION_STRING
+  * AZURE_STORAGE_CONTAINER_NAME
+  * SECRET_KEY (for JWT tokens)
+  * ALGORITHM (JWT algorithm, default: HS256)
+  * ACCESS_TOKEN_EXPIRE_MINUTES (default: 30)
+  * CORS_ORIGINS (comma-separated list of allowed origins)
+  * ENVIRONMENT (development, staging, production)
+
+AUTHENTICATION AND AUTHORIZATION:
+- Implement JWT-based authentication
+- Endpoints: POST /api/auth/register, POST /api/auth/login, POST /api/auth/refresh, POST /api/auth/logout
+- All API endpoints (except auth) require Bearer token in Authorization header
+- User isolation: All queries must filter by user_id to ensure users can only access their own data
+- Role-based access control (if needed in future): Add roles field to user table
+- Password hashing: Use bcrypt or argon2
+- Token refresh mechanism: Implement refresh tokens stored securely
+
+API ENDPOINT STRUCTURE:
+- Base path: /api/v1
+- RESTful conventions: GET (list/retrieve), POST (create), PUT/PATCH (update), DELETE (delete)
+- Standard response format:
+  {
+    "success": boolean,
+    "data": object | array,
+    "message": string (optional),
+    "errors": array (optional)
+  }
+- Error response format:
+  {
+    "success": false,
+    "error": {
+      "code": string (e.g., "VALIDATION_ERROR", "NOT_FOUND", "UNAUTHORIZED"),
+      "message": string,
+      "details": object (optional)
+    }
+  }
+- HTTP status codes: 200 (success), 201 (created), 400 (bad request), 401 (unauthorized), 403 (forbidden), 404 (not found), 422 (validation error), 500 (server error)
+- Pagination: Use query params ?page=1&limit=20&offset=0 for list endpoints
+- Sorting: Use query param ?sort=field_name&order=asc|desc
+- Filtering: Use query params for filters (e.g., ?property_id=123&expense_type=capex&date_from=2024-01-01)
+
+API ENDPOINTS SPECIFICATION:
+- Users: GET /api/v1/users/me, PUT /api/v1/users/me
+- Properties: GET /api/v1/properties, GET /api/v1/properties/{id}, POST /api/v1/properties, PUT /api/v1/properties/{id}, DELETE /api/v1/properties/{id}
+- Expenses: GET /api/v1/expenses (with filters), GET /api/v1/expenses/{id}, POST /api/v1/expenses, PUT /api/v1/expenses/{id}, DELETE /api/v1/expenses/{id}, POST /api/v1/expenses/bulk-import
+- Scenarios: GET /api/v1/scenarios (with property_id filter), GET /api/v1/scenarios/{id}, POST /api/v1/scenarios, PUT /api/v1/scenarios/{id}, DELETE /api/v1/scenarios/{id}, POST /api/v1/scenarios/{id}/calculate (recalculate fields)
+- Clients: GET /api/v1/clients (with property_id filter), GET /api/v1/clients/{id}, POST /api/v1/clients, PUT /api/v1/clients/{id}, DELETE /api/v1/clients/{id}
+- Rents: GET /api/v1/rents (with property_id, client_id filters), GET /api/v1/rents/{id}, POST /api/v1/rents, PUT /api/v1/rents/{id}, DELETE /api/v1/rents/{id}
+- Documents: GET /api/v1/documents (with filters), GET /api/v1/documents/{id}, POST /api/v1/documents/upload, GET /api/v1/documents/{id}/download, DELETE /api/v1/documents/{id}
+- Reports: POST /api/v1/reports/expenses, POST /api/v1/reports/rent-collection, POST /api/v1/reports/property-performance
+
+DATA VALIDATION AND BUSINESS LOGIC:
+- Validate all inputs using Pydantic models
+- Business rules:
+  * Rent-to-income ratio: Validate that client annual_income / (monthly_rent_amount * 12) >= monthly_rent_to_income_ratio (default 2.75)
+  * Property ownership: Ensure user_id matches authenticated user for all property operations
+  * Date validation: rent_period_end must be after rent_period_start
+  * Amount validation: All monetary amounts must be >= 0
+  * Vacancy rate: Must be between 0 and 100
+  * Down payment: Must be <= purchase_price
+- Calculated fields in scenarios table should be computed server-side before saving
+- Cascade deletes: Define behavior for related records (e.g., deleting property should handle expenses, clients, etc.)
+
+FILE UPLOAD HANDLING (Backend):
+- Accept multipart/form-data for file uploads
+- Validate file types: images (jpeg, jpg, png, gif, webp), documents (pdf, doc, docx)
+- Validate file size: Max 10MB per file (configurable)
+- Generate unique file names to prevent collisions
+- Store files in Azure Blob Storage with organized folder structure: {user_id}/{document_type}/{year}/{month}/{filename}
+- Return blob_location URL and document_storage record
+- Support direct file download via signed URLs (expiring after 1 hour)
+
+DATABASE MIGRATIONS:
+- Use Alembic or similar migration tool for schema changes
+- Version control all schema changes
+- Include rollback scripts
+
+LOGGING AND MONITORING:
+- Use Python logging module with structured logging (JSON format)
+- Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
+- Log all API requests/responses (sanitize sensitive data)
+- Log errors with stack traces
+- Integrate with Azure Application Insights for monitoring
+
+TESTING:
+- Unit tests for business logic and calculations
+- Integration tests for API endpoints
+- Test authentication and authorization
+- Test file upload/download
+- Use pytest for testing framework
+- Target: 80%+ code coverage
+
+CORS CONFIGURATION:
+- Configure CORS middleware in FastAPI
+- Allow credentials: true
+- Allow specific origins from environment variable
+- Allow methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+- Allow headers: Content-Type, Authorization
+
+RATE LIMITING:
+- Implement rate limiting (e.g., 100 requests per minute per user)
+- Use slowapi or similar library
+- Return 429 status code when limit exceeded
+
+my table structure is:
+
+user:
+  - id (primary key, UUID or bigint, auto-increment)
+  - first_name (string, required, varchar(100))
+  - last_name (string, required, varchar(100))
+  - email (string, unique, varchar(255), indexed)
+  - tax_rate (decimal(5,2), required, default: null) - Tax rate used for breakeven pro forma analysis (e.g., 0.22 for 22%)
+  - created_at (timestamp, default: current_timestamp)
+  - updated_at (timestamp, default: current_timestamp, on update: current_timestamp)
+  - is_active (boolean, default: true)
+
+properties:
+  - id (primary key, UUID or bigint, auto-increment)
+  - user_id (foreign key to user.id, required, indexed)
+  - display_name (string, varchar(255)) - Property display name
+  - purchase_price (decimal(12,2), required, min: 0) - Property purchase price
+  - monthly_rent_to_income_ratio (decimal(4,2), default: 2.75) - Default ratio: annual income / (rent x 12) must be >= 2.75
+  - address_line1 (string, varchar(255))
+  - address_line2 (string, varchar(255), nullable)
+  - city (string, varchar(100))
+  - state (string, varchar(50))
+  - zip_code (string, varchar(20))
+  - property_type (string, varchar(50), nullable) - e.g., 'single_family', 'multi_family', 'condo', 'townhouse'
+  - bedrooms (integer, nullable)
+  - bathrooms (decimal(3,1), nullable)
+  - square_feet (integer, nullable)
+  - year_built (integer, nullable)
+  - current_monthly_rent (decimal(10,2), nullable)
+  - notes (text, nullable)
+  - created_at (timestamp, default: current_timestamp)
+  - updated_at (timestamp, default: current_timestamp, on update: current_timestamp)
+  - is_active (boolean, default: true)
+
+property_plan:
+  - id (primary key, UUID or bigint, auto-increment)
+  - property_id (foreign key to properties.id, required, indexed)
+  - annual_tax (decimal(10,2), required, min: 0) - Annual income tax amount
+  - annual_property_taxes (decimal(10,2), required, min: 0) - Annual property tax amount
+  - plan_year (integer, nullable) - Year this plan applies to
+  - notes (text, nullable)
+  - created_at (timestamp, default: current_timestamp)
+  - updated_at (timestamp, default: current_timestamp, on update: current_timestamp)
+
+expenses:
+  - id (primary key, UUID or bigint, auto-increment)
+  - property_id (foreign key to properties.id, required, indexed)
+  - description (string, required, varchar(500)) - Description of the expense
+  - date (date, required, indexed) - Date the expense occurred or is planned
+  - amount (decimal(10,2), required, min: 0) - Expense amount
+  - vendor (string, varchar(255), nullable) - Vendor or service provider name
+  - expense_type (enum, required) - Expense category: 'capex' (capital expenditure), 'pandi' (principal and interest), 'utilities', 'maintenance', 'insurance', 'property_management', 'other'
+  - document_storage_id (foreign key to document_storage.id, nullable) - Link to receipt document
+  - is_planned (boolean, default: false) - True if this is a planned/future expense, false if actual/receipted
+  - notes (text, nullable)
+  - created_at (timestamp, default: current_timestamp)
+  - updated_at (timestamp, default: current_timestamp, on update: current_timestamp)
+  - created_by_user_id (foreign key to user.id, nullable)
+
+document_storage:
+  - id (primary key, UUID or bigint, auto-increment)
+  - blob_location (string, required, varchar(500)) - URL or path to blob storage location
+  - file_name (string, required, varchar(255)) - Original file name
+  - file_type (string, varchar(50)) - MIME type or file extension (e.g., 'application/pdf', 'image/jpeg')
+  - file_size (bigint, nullable) - File size in bytes
+  - document_type (enum, nullable) - Type of document: 'receipt', 'lease', 'background_check', 'contract', 'invoice', 'other'
+  - metadata (jsonb or text, nullable) - Additional metadata that front end might need (e.g., OCR text, tags, custom fields)
+  - uploaded_by_user_id (foreign key to user.id, nullable)
+  - created_at (timestamp, default: current_timestamp)
+  - updated_at (timestamp, default: current_timestamp, on update: current_timestamp)
+  - expires_at (timestamp, nullable) - Optional expiration date for documents
+
+rents:
+  - id (primary key, UUID or bigint, auto-increment)
+  - client_id (foreign key to clients.id, required, indexed) - Link to the rent payer
+  - property_id (foreign key to properties.id, required, indexed)
+  - amount (decimal(10,2), required, min: 0) - Rent amount collected
+  - rent_period_start (date, required) - Start date of the rent period
+  - rent_period_end (date, required) - End date of the rent period
+  - payment_date (date, required, indexed) - Date the rent was collected/paid
+  - payment_method (enum, nullable) - 'check', 'cash', 'electronic', 'money_order', 'other'
+  - transaction_reference (string, varchar(255), nullable) - Check number, transaction ID, etc.
+  - is_late (boolean, default: false) - Whether payment was late
+  - late_fee (decimal(10,2), nullable, default: 0) - Late fee amount if applicable
+  - notes (text, nullable)
+  - created_at (timestamp, default: current_timestamp)
+  - updated_at (timestamp, default: current_timestamp, on update: current_timestamp)
+  - created_by_user_id (foreign key to user.id, nullable)
+
+clients:
+  - id (primary key, UUID or bigint, auto-increment)
+  - property_id (foreign key to properties.id, required, indexed) - Property the client is associated with
+  - first_name (string, required, varchar(100))
+  - last_name (string, required, varchar(100))
+  - email (string, varchar(255), nullable, indexed)
+  - phone (string, varchar(20), nullable)
+  - phone_secondary (string, varchar(20), nullable)
+  - address_line1 (string, varchar(255), nullable) - Client's address if different from property
+  - address_line2 (string, varchar(255), nullable)
+  - city (string, varchar(100), nullable)
+  - state (string, varchar(50), nullable)
+  - zip_code (string, varchar(20), nullable)
+  - emergency_contact_name (string, varchar(200), nullable)
+  - emergency_contact_phone (string, varchar(20), nullable)
+  - annual_income (decimal(12,2), nullable) - Annual income for rent-to-income ratio calculation
+  - lease_start_date (date, nullable)
+  - lease_end_date (date, nullable)
+  - monthly_rent_amount (decimal(10,2), nullable) - Agreed monthly rent amount
+  - security_deposit (decimal(10,2), nullable)
+  - notes (text, nullable)
+  - created_at (timestamp, default: current_timestamp)
+  - updated_at (timestamp, default: current_timestamp, on update: current_timestamp)
+  - is_active (boolean, default: true)
+
+scenarios:
+  - id (primary key, UUID or bigint, auto-increment)
+  - property_id (foreign key to properties.id, required, indexed)
+  - user_id (foreign key to user.id, required, indexed)
+  - scenario_name (string, varchar(100), nullable) - Optional name like "Conservative", "Optimistic", etc.
+  - monthly_rent (decimal(10,2), required, min: 0) - Monthly rental amount being analyzed (typically 1,750 to 2,700+)
+  - vacancy_rate (decimal(5,2), required, min: 0, max: 100, default: 7.00) - Vacancy rate as percentage (e.g., 7.00 for 7%)
+  - annual_expenses (decimal(10,2), required, min: 0, default: 44558.00) - Total annual expenses
+  - tax_savings (decimal(10,2), required, min: 0, default: 7029.00) - Annual tax savings from depreciation/deductions
+  - annual_appreciation (decimal(10,2), required, min: 0, default: 17520.00) - Expected annual property appreciation
+  - purchase_price (decimal(12,2), required, min: 0) - Property purchase price
+  - down_payment (decimal(12,2), required, min: 0) - Down payment amount (cash invested)
+  - annual_rent (decimal(10,2), nullable) - Calculated: (monthly_rent * 12) * (1 - vacancy_rate / 100), stored for historical reference
+  - cash_on_cash_roi (decimal(5,2), nullable) - Calculated: ((annual_rent - annual_expenses) / down_payment) * 100, stored as percentage
+  - total_roi (decimal(5,2), nullable) - Calculated: ((annual_rent - annual_expenses + tax_savings + annual_appreciation) / purchase_price) * 100, stored as percentage
+  - net_cash_flow (decimal(10,2), nullable) - Calculated: annual_rent - annual_expenses, stored for historical reference
+  - created_at (timestamp, default: current_timestamp)
+  - updated_at (timestamp, default: current_timestamp, on update: current_timestamp)
+
+DATA RELATIONSHIPS AND CONSTRAINTS:
+- Foreign key relationships:
+  * properties.user_id -> user.id (CASCADE on user delete: SET NULL or prevent deletion if properties exist)
+  * property_plan.property_id -> properties.id (CASCADE: delete plan if property deleted)
+  * expenses.property_id -> properties.id (CASCADE: delete expenses if property deleted)
+  * expenses.document_storage_id -> document_storage.id (SET NULL: keep expense if document deleted)
+  * expenses.created_by_user_id -> user.id (SET NULL: keep expense if user deleted)
+  * rents.client_id -> clients.id (CASCADE: delete rents if client deleted)
+  * rents.property_id -> properties.id (CASCADE: delete rents if property deleted)
+  * rents.created_by_user_id -> user.id (SET NULL: keep rent record if user deleted)
+  * clients.property_id -> properties.id (CASCADE: delete clients if property deleted)
+  * scenarios.property_id -> properties.id (CASCADE: delete scenarios if property deleted)
+  * scenarios.user_id -> user.id (CASCADE: delete scenarios if user deleted)
+  * document_storage.uploaded_by_user_id -> user.id (SET NULL: keep document if user deleted)
+- Unique constraints:
+  * user.email must be unique
+  * Consider: property_id + plan_year unique for property_plan (one plan per property per year)
+- Indexes: Add indexes on frequently queried fields:
+  * expenses.date, expenses.expense_type, expenses.property_id
+  * rents.payment_date, rents.property_id, rents.client_id
+  * clients.property_id, clients.email
+  * scenarios.property_id, scenarios.user_id
+- Data integrity: Enforce referential integrity at database level
+
+BUSINESS LOGIC VALIDATION:
+- Rent-to-income ratio validation: When creating/updating client, validate annual_income >= (monthly_rent_amount * 12 * monthly_rent_to_income_ratio)
+- Scenario calculations: Always recalculate annual_rent, cash_on_cash_roi, total_roi, net_cash_flow when saving scenario
+- Late payment detection: Automatically set is_late=true if payment_date > rent_period_end
+- Date validations:
+  * rent_period_end must be >= rent_period_start
+  * lease_end_date must be >= lease_start_date
+  * payment_date should not be in the future (allow override with flag)
+- Amount validations:
+  * All monetary fields must be >= 0
+  * down_payment <= purchase_price
+  * late_fee >= 0
+
+Frontend Application Instructions:
+
+SETUP AND DEPENDENCIES:
+- Use Next.js 14+ with App Router (app directory structure)
+- Install and configure Shadcn/ui: npx shadcn-ui@latest init
+- Required Shadcn components: Button, Card, Dialog, Form, Input, Label, Select, Table, Tabs, Sidebar, Sheet, Avatar, Badge, Calendar, DataTable, DropdownMenu, Separator, ScrollArea
+- Install additional dependencies: react-hook-form, zod (for form validation), @tanstack/react-query (for data fetching), date-fns (for date formatting), react-dropzone (for file uploads), recharts (REQUIRED - for all charts and graphs), reactflow (REQUIRED - for any node diagrams or flow visualizations)
+- Use TypeScript for type safety
+- Set up environment variables for API base URL (NEXT_PUBLIC_API_URL)
+
+CHARTING AND DIAGRAM REQUIREMENTS (MANDATORY):
+- ALL charts must use recharts library - no exceptions
+  * Line charts, bar charts, pie charts, area charts, combo charts
+  * Do NOT use Chart.js, D3 directly, Victory, or any other charting library
+  * Recharts provides React components that work seamlessly with Shadcn styling
+- ALL node diagrams must use reactflow library - no exceptions
+  * Property relationship diagrams, workflow diagrams, flow charts
+  * Do NOT use other diagramming libraries (react-diagrams, etc.)
+  * Reactflow provides excellent React integration and customization
+- These requirements ensure consistency, maintainability, and proper integration with the design system
+- ICONS: Use icons from svgl.app - download SVG icons and create a components/icons directory. Import icons as React components. Use lucide-react as fallback if needed, but prefer svgl.app icons throughout the application.
+  * Setup: Create components/icons/index.ts to export all icons
+  * Naming: Use kebab-case for icon file names matching svgl.app naming (e.g., "dollar-sign.svg", "file-text.svg")
+  * Component pattern: Convert SVG to React component with proper TypeScript types
+  * Example structure:
+    components/
+      icons/
+        dollar-sign.tsx
+        building.tsx
+        receipt.tsx
+        index.ts (exports all icons)
+  * Usage: Import from components/icons and use as <IconName className="..." /> with size and color props
+
+LAYOUT STRUCTURE:
+- Create a root layout with collapsible left sidebar navigation using Shadcn Sidebar component
+- Sidebar should be persistent across all pages and remember collapsed/expanded state (use localStorage or context)
+- Sidebar toggle button with "menu" or "sidebar" icon (hamburger menu icon)
+- Main content area should adjust width based on sidebar state
+- Top header bar with:
+  * App logo/branding (optional icon)
+  * Breadcrumb navigation with "chevron-right" icons between items
+  * User profile dropdown with "user" or "user-circle" icon
+  * Notifications bell with "bell" icon and badge for unread count
+  * Settings button with "settings" or "cog" icon
+- Responsive design: sidebar collapses to icon-only on mobile, full menu on desktop
+- User profile dropdown menu items with icons:
+  * Profile: "user" icon
+  * Settings: "settings" icon
+  * Help: "help-circle" or "question-mark" icon
+  * Logout: "log-out" icon
+
+NAVIGATION MENU STRUCTURE (Left Sidebar):
+Use svgl.app icons for all navigation items. Suggested icons:
+1. Dashboard - Use "home" or "dashboard" icon from svgl.app - Overview page with key metrics
+2. Properties - Use "building" or "home-2" icon from svgl.app - List and manage properties
+3. Expenses - Use "receipt" or "file-invoice" icon from svgl.app - Expense management and bookkeeping
+4. Rent Scenarios - Use "calculator" or "chart-line" icon from svgl.app - Run and compare rent scenarios
+5. Clients - Use "users" or "user-group" icon from svgl.app - Manage tenants/clients
+6. Rent Collection - Use "dollar-sign" or "money" icon from svgl.app - Track rent payments
+7. Documents - Use "file-text" or "folder" icon from svgl.app - Document storage and retrieval
+8. Reports - Use "bar-chart" or "chart-bar" icon from svgl.app - Financial reports and exports
+
+Icon styling: Icons should be 20x20px in the sidebar, use currentColor to inherit text color, and have hover states that match the active state styling.
+
+PAGE COMPONENTS:
+
+1. DASHBOARD PAGE (/dashboard):
+   - Summary cards with svgl.app icons:
+     * Total Properties card: "building" or "home-2" icon
+     * Monthly Expenses card: "receipt" or "file-invoice" icon
+     * Total Rent Collected card: "dollar-sign" or "money" icon
+     * Active Clients card: "users" or "user-group" icon
+   - Recent expenses table (last 10) with "arrow-right" or "chevron-right" icon for row actions
+   - Upcoming rent payments calendar widget with "calendar" icon
+   - Quick actions buttons with icons:
+     * Add Expense: "plus" or "add-circle" icon
+     * Record Rent Payment: "dollar-sign" icon
+     * Create Scenario: "calculator" icon
+   - Charts: Monthly expense trends, rent collection over time (use "trending-up" or "chart-line" icons in chart headers)
+
+2. PROPERTIES PAGE (/properties):
+   - List view with search and filter capabilities
+   - Search input with "search" icon from svgl.app
+   - Filter button with "filter" or "sliders" icon
+   - Property cards showing: display_name, address, current_monthly_rent, purchase_price
+   - Each property card should have:
+     * "building" or "home-2" icon as card header icon
+     * "edit" or "pencil" icon for edit action
+     * "trash" or "delete" icon for delete action
+     * "eye" or "view" icon to view details
+   - Add Property button with "plus" icon and "building" icon
+   - Add/Edit property form dialog using Shadcn Form components
+   - Form fields matching properties table structure (lines 26-46)
+   - Property detail page (/properties/[id]) showing:
+     * Property information form (editable) with "edit" icon in header
+     * Associated expenses list with "receipt" icon
+     * Associated clients list with "users" icon
+     * Rent scenarios for this property with "calculator" icon
+     * Document gallery with "file-text" or "image" icons for document types
+
+3. EXPENSES PAGE (/expenses) - CPA-Ready Bookkeeping:
+   - Page header with "receipt" or "file-invoice" icon
+   - Data table with columns: Date, Description, Amount, Vendor, Type, Property, Receipt, Actions
+   - Table action icons:
+     * "download" icon for export button
+     * "upload" icon for bulk import button
+     * "plus" icon for add expense button
+     * "filter" icon for filter toggle
+   - Filters: by property, expense type, date range, is_planned vs actual
+   - Add/Edit expense form with fields matching expenses table (lines 58-71):
+     * Property selector (required) with "building" icon
+     * Description (required, textarea) with "file-text" icon
+     * Date picker (required) with "calendar" icon
+     * Amount input (required, currency format) with "dollar-sign" icon
+     * Vendor (optional) with "store" or "shop" icon
+     * Expense type dropdown (required) with type-specific icons:
+       - capex: "wrench" or "tool" icon
+       - pandi: "credit-card" or "bank" icon
+       - utilities: "zap" or "lightbulb" icon
+       - maintenance: "hammer" or "tool" icon
+       - insurance: "shield" icon
+       - property_management: "briefcase" icon
+       - other: "more-horizontal" icon
+     * Receipt upload (drag-and-drop or file picker) with "upload" or "paperclip" icon
+     * Planned checkbox (is_planned) with "calendar-check" icon
+     * Notes (optional textarea) with "note" icon
+   - Receipt image preview with "eye" icon for view, "download" icon for download, "x" icon for remove
+   - Export to CSV/Excel for CPA with "download" icon (include all fields, formatted for accounting software)
+   - Bulk import capability with "upload" icon for expense data
+   - Expense type badges with color coding and matching icons
+   - Total expenses summary by type and property with "trending-up" or "chart-bar" icons
+
+4. RENT SCENARIOS PAGE (/scenarios):
+   - Page header with "calculator" or "chart-line" icon
+   - Property selector at top with "building" icon
+   - Scenario comparison table view (similar to spreadsheet in image)
+   - Add scenario button with "plus" icon
+   - Add scenario form with fields matching scenarios table (lines 128-145):
+     * Property selector (required) with "building" icon
+     * Scenario name (optional) with "tag" icon
+     * Monthly rent (required, number input with step 50) with "dollar-sign" icon
+     * Vacancy rate (required, default 7, slider or number input) with "percent" or "trending-down" icon
+     * Annual expenses (required, default 44558) with "receipt" icon
+     * Tax savings (required, default 7029) with "shield" or "percent" icon
+     * Annual appreciation (required, default 17520) with "trending-up" icon
+     * Purchase price (required, pull from property or manual entry) with "dollar-sign" icon
+     * Down payment (required) with "dollar-sign" icon
+   - Real-time calculated fields displayed below inputs (read-only) with "calculator" icon:
+     * Annual rent: (monthly_rent * 12) * (1 - vacancy_rate / 100) with "calendar" icon
+     * Cash on Cash ROI: ((annual_rent - annual_expenses) / down_payment) * 100 with "percent" icon
+     * Total ROI: ((annual_rent - annual_expenses + tax_savings + annual_appreciation) / purchase_price) * 100 with "trending-up" icon
+     * Net cash flow: annual_rent - annual_expenses with "dollar-sign" icon
+   - Sensitivity analysis table: Generate table showing results for monthly_rent values from min to max in increments of 50
+   - Table header icons: "dollar-sign" for rent columns, "percent" for ROI columns, "trending-up" for appreciation
+   - Color-code Total ROI results with status icons:
+     * Breakeven (~12%): Yellow background with "minus" or "equal" icon
+     * Bad Return (~15%): Yellow background with "alert-triangle" icon
+     * Mediocre Return (~16%): Light green background with "check" icon
+     * Good Return (~17%): Light green background with "check-circle" icon
+     * Excellent Return (20%+): Light green background, bold text with "star" or "award" icon
+   - Save scenarios button with "save" icon for comparison
+   - Export scenarios to CSV/PDF with "download" icon
+
+5. CLIENTS PAGE (/clients):
+   - Page header with "users" or "user-group" icon
+   - List view with search input (with "search" icon)
+   - Add client button with "plus" and "user-plus" icons
+   - Client cards showing: name, property, monthly rent, lease dates, contact info
+   - Client card icons:
+     * "user" icon for client avatar/header
+     * "phone" icon for phone numbers
+     * "mail" icon for email
+     * "calendar" icon for lease dates
+     * "dollar-sign" icon for rent amount
+     * "building" icon for property link
+   - Add/Edit client form with fields matching clients table (lines 103-126):
+     * Name fields with "user" icon
+     * Contact fields with "phone" and "mail" icons
+     * Address fields with "map-pin" icon
+     * Income field with "dollar-sign" icon
+     * Lease dates with "calendar" icon
+     * Emergency contact with "phone" icon
+   - Client detail page showing:
+     * Client information header with "user" icon
+     * Rent payment history with "dollar-sign" icon
+     * Associated documents (lease, background check) with "file-text" icon
+     * Notes section with "note" icon
+
+6. RENT COLLECTION PAGE (/rents):
+   - Page header with "dollar-sign" or "money" icon
+   - List of rent payments with filters (filter icon)
+   - Add rent payment button with "plus" icon
+   - Add rent payment form with fields matching rents table (lines 86-101):
+     * Client selector with "user" icon
+     * Property selector with "building" icon
+     * Amount with "dollar-sign" icon
+     * Payment date with "calendar" icon
+     * Payment period dates with "calendar-range" icon
+     * Payment method dropdown with method-specific icons:
+       - check: "check" icon
+       - cash: "dollar-sign" icon
+       - electronic: "credit-card" icon
+       - money_order: "file-text" icon
+       - other: "more-horizontal" icon
+     * Transaction reference with "hash" icon
+     * Late fee with "alert-circle" icon
+   - Calendar view of rent due dates with "calendar" icon
+   - Late payment indicators with "alert-triangle" or "clock" icon (red/orange)
+   - Payment method icons/badges matching the dropdown icons above
+   - Status badges: "check-circle" for paid, "clock" for pending, "x-circle" for overdue
+
+7. DOCUMENTS PAGE (/documents):
+   - Page header with "file-text" or "folder" icon
+   - Grid view of uploaded documents with thumbnails for images
+   - Document type icons for grid items:
+     * receipt: "receipt" icon
+     * lease: "file-contract" or "file-text" icon
+     * background_check: "shield-check" icon
+     * contract: "file-signature" icon
+     * invoice: "file-invoice" icon
+     * other: "file" icon
+   - Filter by document type with "filter" icon: receipt, lease, background_check, contract, invoice, other
+   - Filter by property with "building" icon
+   - Upload area with drag-and-drop (react-dropzone) with "upload" or "cloud-upload" icon
+   - Upload button with "plus" and "upload" icons
+   - Document preview modal with:
+     * "eye" icon for view action
+     * "download" icon for download
+     * "x" icon for close
+     * "edit" icon for edit metadata
+   - Download functionality with "download" icon on each document card
+   - Metadata display (file name, type, size, upload date) with:
+     * "file-text" icon for file name
+     * "info" icon for file type/size
+     * "calendar" icon for upload date
+   - Link documents to expenses, clients, or properties with "link" icon
+   - Document actions: "trash" for delete, "edit" for edit, "share" for share
+
+8. REPORTS PAGE (/reports):
+   - Page header with "bar-chart" or "chart-bar" icon
+   - Report type cards with icons:
+     * Expense reports: "receipt" icon
+     * Income vs Expense: "trending-up" or "chart-line" icon
+     * Tax-ready export: "file-invoice" or "shield" icon
+     * Rent collection: "dollar-sign" icon
+     * Property performance: "building" with "trending-up" icon
+   - Expense reports by property, date range, expense type with "filter" icon
+   - Income vs Expense reports with "chart-bar" or "pie-chart" icons
+   - Tax-ready export (formatted for CPA) with "download" and "file-invoice" icons
+   - Rent collection reports with "dollar-sign" and "calendar" icons
+   - Property performance summaries with "building" and "trending-up" icons
+   - Export options: PDF, CSV, Excel with format-specific icons:
+     * PDF: "file-pdf" icon
+     * CSV: "file-spreadsheet" icon
+     * Excel: "file-excel" or "file-spreadsheet" icon
+   - Generate report button with "play" or "arrow-right" icon
+
+API INTEGRATION:
+- Create API client utility using fetch or axios with interceptors
+- Base URL from NEXT_PUBLIC_API_URL environment variable
+- Authentication: Store JWT token in httpOnly cookie or secure localStorage, include in Authorization header as "Bearer {token}"
+- Token refresh: Implement automatic token refresh before expiration
+- Request interceptors: Add Authorization header, handle token refresh
+- Response interceptors: Handle 401 (redirect to login), 403 (show error), 429 (rate limit error)
+- Create hooks using @tanstack/react-query for:
+  * useProperties() - fetch all properties with pagination support
+  * useProperty(id) - fetch single property
+  * useExpenses(propertyId?, filters?) - fetch expenses with filters, pagination, sorting
+  * useExpense(id) - fetch single expense
+  * useScenarios(propertyId?) - fetch scenarios with sorting
+  * useScenario(id) - fetch single scenario
+  * useClients(propertyId?) - fetch clients with search
+  * useRents(propertyId?, clientId?) - fetch rent payments with date range filters
+  * useDocuments(filters?) - fetch documents with pagination
+  * useUser() - fetch current user profile
+- Mutations for create, update, delete operations with proper error handling
+- Error handling: Display user-friendly error messages, log errors to console in development
+- Loading states: Show loading spinners/skeletons during API calls
+- Optimistic updates where appropriate (e.g., toggle is_planned, mark rent as paid)
+- Retry logic: Retry failed requests up to 3 times for network errors
+- Request cancellation: Cancel in-flight requests when component unmounts
+
+FORM VALIDATION:
+- Use react-hook-form with zod schemas
+- Create validation schemas matching database constraints:
+  * Required fields
+  * Min/max values
+  * Email format
+  * Date ranges
+  * Decimal precision
+- Display validation errors inline
+- Disable submit button during submission
+
+FILE UPLOAD HANDLING:
+- Use react-dropzone for drag-and-drop file uploads
+- Support image formats: jpeg, jpg, png, gif, webp
+- Support document formats: pdf, doc, docx
+- Show upload progress
+- Preview images before upload
+- Upload to backend endpoint that returns document_storage record
+- Link uploaded document to expense/client/property via document_storage_id
+- Display image thumbnails in expense forms and document gallery
+
+ICON USAGE THROUGHOUT APPLICATION:
+- All icons should be sourced from svgl.app and stored in components/icons directory
+- Create an Icon component wrapper that accepts icon name and props (size, color, className)
+- Common icon patterns:
+  * Buttons: Use appropriate action icons ("plus" for add, "edit" for edit, "trash" for delete, "save" for save, "x" for cancel)
+  * Status indicators: "check-circle" (success/green), "x-circle" (error/red), "alert-triangle" (warning/yellow), "info" (info/blue)
+  * Navigation: Use icons consistently in sidebar, breadcrumbs, and tabs
+  * Form fields: Use icons as prefixes in input fields for visual clarity
+  * Empty states: Use relevant icons ("inbox" for empty lists, "file-x" for no documents)
+  * Loading states: Use "loader" or "spinner" icon
+  * Search/Filter: "search" and "filter" icons consistently
+  * Actions: "eye" (view), "edit" (edit), "trash" (delete), "download" (export), "upload" (import), "share" (share)
+  * Financial: "dollar-sign", "trending-up", "trending-down", "percent" for financial data
+  * Date/Time: "calendar", "clock" for date and time related fields
+  * Communication: "mail", "phone", "message" for contact information
+- Icon sizing: 16px for inline text, 20px for buttons and navigation, 24px for page headers, 32px+ for empty states
+- Icon colors: Use currentColor to inherit text color, or use theme colors for status indicators
+- Accessibility: All icons should have aria-label or be wrapped in elements with accessible names
+
+STYLING:
+- Use Shadcn theme system for consistent styling
+- Dark mode support (optional but recommended)
+- Responsive breakpoints: mobile (< 768px), tablet (768-1024px), desktop (> 1024px)
+- Consistent spacing and typography
+- Loading skeletons for async data
+- Toast notifications for success/error messages (use Shadcn Toast)
+- Icons should match the overall design system and be consistent in style (all from svgl.app for uniformity)
+
+STATE MANAGEMENT:
+- Use React Context for:
+  * Sidebar collapsed/expanded state
+  * Current user context
+  * Selected property context (if needed)
+- Use @tanstack/react-query for server state
+- Use local state (useState) for form state and UI state
+
+DATA VISUALIZATION:
+- CHARTS: Use recharts (REQUIRED) for all chart visualizations:
+  * Line charts for expense trends over time
+  * Bar charts for expense breakdown by type
+  * Pie charts for expense distribution
+  * Area charts for cash flow
+  * Combo charts for income vs expense comparisons
+  * Do NOT use other charting libraries (Chart.js, D3 directly, etc.) - recharts only
+- NODE DIAGRAMS: Use reactflow (REQUIRED) for any node diagrams or flow visualizations:
+  * Property relationship diagrams
+  * Expense flow diagrams
+  * Client-property relationship maps
+  * Any workflow or process visualization
+  * Do NOT use other diagramming libraries for node-based diagrams
+- Display financial data with proper currency formatting ($X,XXX.XX)
+- Display percentages with % symbol
+- Format dates consistently (MM/DD/YYYY or user preference)
+- Chart styling: Use consistent colors matching Shadcn theme
+- Responsive charts: Ensure charts are responsive and work on mobile devices
+
+CPA-READY BOOKKEEPING FEATURES:
+- Export expenses with all required fields for accounting software
+- Categorize expenses by type (matching expense_type enum)
+- Separate actual vs planned expenses
+- Receipt attachment and storage
+- Date-based filtering and reporting
+- Vendor tracking
+- Property-level expense tracking
+- Export formats: CSV (comma-separated), Excel (.xlsx), PDF reports
+
+PERFORMANCE OPTIMIZATIONS:
+- Implement pagination for large data sets
+- Use React.memo for expensive components
+- Lazy load images
+- Code splitting for routes
+- Optimize bundle size
+- Cache API responses appropriately
+
+ACCESSIBILITY:
+- Proper ARIA labels
+- Keyboard navigation support
+- Screen reader friendly
+- Focus management
+- Color contrast compliance
+
+ERROR HANDLING:
+- Global error boundary with fallback UI
+- API error handling with user-friendly messages
+- Form validation errors displayed inline
+- Network error handling with retry options
+- 404 pages for invalid routes
+- 401 handling: Redirect to login page
+- 403 handling: Show "Access Denied" message
+- 500 handling: Show generic error message, log details
+
+SEARCH AND FILTERING:
+- Implement client-side search for small datasets (< 100 items)
+- Implement server-side search for large datasets using API query parameters
+- Search fields:
+  * Properties: display_name, address, city, state
+  * Expenses: description, vendor
+  * Clients: first_name, last_name, email, phone
+  * Documents: file_name
+- Filter persistence: Save filter state in URL query params for shareable links
+- Advanced filters: Date ranges, amount ranges, multi-select for enums
+
+DATE AND TIMEZONE HANDLING:
+- Store all dates in UTC in database
+- Display dates in user's local timezone
+- Use date-fns or dayjs for date manipulation
+- Date picker components: Use Shadcn Calendar component
+- Format dates consistently: MM/DD/YYYY for US format, or user preference
+- Handle timezone conversion for date comparisons and filtering
+
+BULK OPERATIONS:
+- Bulk expense import: Accept CSV file, validate format, show preview before import
+- Bulk delete: Allow selecting multiple items for deletion with confirmation dialog
+- Bulk update: Allow updating multiple expenses (e.g., change expense_type for selected items)
+- Progress indicators for bulk operations
+- Error reporting: Show which rows failed and why
+
+PERFORMANCE CONSIDERATIONS:
+- Implement virtual scrolling for large lists (react-window or react-virtuoso)
+- Debounce search inputs (300ms delay)
+- Throttle scroll events
+- Lazy load images with intersection observer
+- Implement infinite scroll or "Load More" for paginated data
+- Cache frequently accessed data (property list, expense types, etc.)
+- Prefetch data for likely next page navigation
+
+SECURITY:
+- Sanitize all user inputs
+- Validate file uploads: Check MIME type, file extension, file size
+- Prevent XSS: Use React's built-in escaping, sanitize HTML if needed
+- CSRF protection: Use SameSite cookies, CSRF tokens for state-changing operations
+- Secure file downloads: Use signed URLs with expiration
+- Environment variables: Never expose secrets in frontend code
+- Content Security Policy: Configure CSP headers
+
+DEPLOYMENT:
+- Build optimization: Use Next.js production build
+- Environment variables: Set NEXT_PUBLIC_API_URL for production
+- Docker: Create Dockerfile for frontend container
+- Azure Container Apps: Configure health checks, scaling rules
+- CDN: Serve static assets via CDN
+- Monitoring: Integrate error tracking (e.g., Sentry)
+
+TESTING (Frontend):
+- Unit tests: Test utility functions, form validation
+- Component tests: Test critical components (forms, data tables)
+- Integration tests: Test user flows (create expense, run scenario)
+- E2E tests: Use Playwright or Cypress for critical paths
+- Test authentication flow
+- Test file upload functionality

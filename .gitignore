@@ -1,0 +1,122 @@
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# UV
+.uv/
+uv.lock
+
+# Node.js / Frontend
+node_modules/
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+.npm
+.eslintcache
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+.jest/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Azure
+.azure/
+
+# Secrets and keys
+*.pem
+*.key
+secrets/
+.secrets/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentation builds
+docs/_build/
+site/
+
+# Monorepo specific
+.turbo/
+
