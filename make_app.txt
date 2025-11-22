@@ -135,6 +135,7 @@ DO:
 - [x] Set up Pydantic models for configuration ✓ DONE (app/core/config.py)
 - [x] Implement JWT authentication (register, login, refresh endpoints) ✓ DONE (app/api/auth.py)
 - [x] Set up Nessie catalog connection ✓ DONE (app/core/database.py - structure ready)
+- [x] Deploy Nessie to Azure Container Apps ✓ DONE (investflow-nessie deployed)
 - [x] Create health check endpoint (/health) ✓ DONE
 - [x] Set up logging infrastructure ✓ DONE (app/core/logging.py)
 - [x] Create base error handling middleware ✓ DONE (app/core/middleware.py)
@@ -366,10 +367,10 @@ PLAN:
 DO:
 - Build production Docker images for backend and frontend
 - Push Docker images to Azure Container Registry (ACR from Phase 0)
-- Deploy Nessie catalog as container app:
-  * Create Container App: `investflow-nessie`
-  * Configure Nessie to use Azure Blob Storage (investflowstorage from Phase 0)
-  * Set up Nessie REST API endpoint
+- [x] Deploy Nessie catalog as container app: ✓ DONE
+  * [x] Create Container App: `investflow-nessie` ✓ DONE
+  * [ ] Configure Nessie to use Azure Blob Storage (investflowstorage from Phase 0) - TODO: Configure storage backend
+  * [x] Set up Nessie REST API endpoint ✓ DONE (https://investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io/api/v2)
 - Deploy backend as container app:
   * Create Container App: `investflow-backend`
   * Configure environment variables from Azure Key Vault (investflow-kv from Phase 0)

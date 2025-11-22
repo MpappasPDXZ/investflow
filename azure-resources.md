@@ -36,6 +36,16 @@
 - **Purpose:** Application monitoring and logging
 - **Connection String:** (Stored in Key Vault - do not commit to repo)
 
+### 6. Nessie REST Catalog (Container App)
+- **Name:** investflow-nessie
+- **Image:** ghcr.io/projectnessie/nessie:latest
+- **Internal FQDN:** investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io
+- **REST API Endpoint:** https://investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io/api/v2
+- **Port:** 19120
+- **Ingress:** Internal (accessible within Container Apps Environment)
+- **Purpose:** Apache Iceberg REST Catalog for table metadata
+- **Status:** Running
+
 ## Connection Strings & Secrets
 
 **⚠️ IMPORTANT: Connection strings and secrets are stored in Azure Key Vault, NOT in this repository.**
@@ -49,9 +59,22 @@ az storage account show-connection-string --name investflowstorage --resource-gr
 az monitor app-insights component show --app investflow-insights --resource-group investflow-rg --query connectionString
 ```
 
+## Nessie Configuration
+
+The Nessie catalog is deployed as an internal container app. To access it from the backend:
+
+1. Backend must be deployed in the same Container Apps Environment (investflow-env)
+2. Use the internal FQDN: `investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io`
+3. REST API endpoint: `https://investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io/api/v2`
+
+For local development, you may need to:
+- Use port forwarding: `az containerapp show --name investflow-nessie --resource-group investflow-rg`
+- Or deploy a local Nessie instance for development
+
 ## Next Steps
 
-1. Store connection strings in Key Vault
+1. ✅ Store connection strings in Key Vault - DONE
 2. Configure GitHub Secrets for CI/CD
-3. Set up Container Apps for deployment
+3. Deploy backend Container App (will connect to Nessie)
+4. Deploy frontend Container App
 
