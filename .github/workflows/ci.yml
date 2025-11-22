@@ -1,0 +1,141 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  backend-lint:
+    name: Backend Linting
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install UV
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      
+      - name: Install dependencies
+        run: |
+          source $HOME/.cargo/env
+          uv pip install ruff black mypy
+      
+      - name: Run Ruff
+        run: |
+          source $HOME/.cargo/env
+          uv run ruff check app/
+      
+      - name: Run Black check
+        run: |
+          source $HOME/.cargo/env
+          uv run black --check app/
+
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install UV
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      
+      - name: Install dependencies
+        run: |
+          source $HOME/.cargo/env
+          uv pip install -e .
+      
+      - name: Run tests
+        run: |
+          source $HOME/.cargo/env
+          uv run pytest tests/ -v
+
+  frontend-lint:
+    name: Frontend Linting
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run ESLint
+        run: npm run lint
+      
+      - name: Run Prettier check
+        run: npx prettier --check .
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL || 'http://localhost:8000' }}
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Log in to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: investflowregistry.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      
+      - name: Build and push backend image
+        run: |
+          docker build -t investflowregistry.azurecr.io/investflow-backend:latest ./backend
+          docker push investflowregistry.azurecr.io/investflow-backend:latest
+      
+      - name: Build and push frontend image
+        run: |
+          docker build -t investflowregistry.azurecr.io/investflow-frontend:latest ./frontend
+          docker push investflowregistry.azurecr.io/investflow-frontend:latest
+

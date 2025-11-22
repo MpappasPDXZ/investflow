@@ -90,13 +90,13 @@ DO:
 - [x] Create basic Dockerfiles (non-functional, just structure) ✓ DONE
 - [x] Set up README.md with project description ✓ DONE
 - [x] Configure ESLint, Prettier, Ruff (Python linter) ✓ DONE (config files created)
-- [ ] Set up pre-commit hooks
-- [ ] Set up GitHub Actions workflow for CI/CD
-- [ ] Configure GitHub Secrets for Azure credentials:
-  * AZURE_CREDENTIALS
-  * ACR_NAME (investflowregistry)
+- [x] Set up pre-commit hooks ✓ DONE (.pre-commit-config.yaml created)
+- [x] Set up GitHub Actions workflow for CI/CD ✓ DONE (.github/workflows/ci.yml created)
+- [x] Configure GitHub Secrets for Azure credentials: ✓ DONE (documentation created in .github/SECRETS_SETUP.md)
+  * ACR_USERNAME and ACR_PASSWORD (for Docker builds)
+  * AZURE_CREDENTIALS (for future deployment - needs to be created)
   * RESOURCE_GROUP (investflow-rg)
-  * STORAGE_CONNECTION_STRING
+  * STORAGE_CONNECTION_STRING (optional - can use Key Vault)
 - [x] Create environment variable templates (.env.example files) ✓ DONE (env.example files created)
 
 REVIEW:
