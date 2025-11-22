@@ -131,13 +131,13 @@ PLAN:
 - Create base API structure with health check endpoint
 
 DO:
-- Create FastAPI app with proper project structure
-- Set up Pydantic models for configuration
-- Implement JWT authentication (register, login, refresh endpoints)
-- Set up Nessie catalog connection
-- Create health check endpoint (/health)
-- Set up logging infrastructure
-- Create base error handling middleware
+- [x] Create FastAPI app with proper project structure ✓ DONE
+- [x] Set up Pydantic models for configuration ✓ DONE (app/core/config.py)
+- [x] Implement JWT authentication (register, login, refresh endpoints) ✓ DONE (app/api/auth.py)
+- [x] Set up Nessie catalog connection ✓ DONE (app/core/database.py - structure ready)
+- [x] Create health check endpoint (/health) ✓ DONE
+- [x] Set up logging infrastructure ✓ DONE (app/core/logging.py)
+- [x] Create base error handling middleware ✓ DONE (app/core/middleware.py)
 
 REVIEW:
 - Code review: Authentication flow, error handling
