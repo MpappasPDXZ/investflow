@@ -31,10 +31,12 @@ DO:
 - [x] Create storage container for documents: `az storage container create --name documents --account-name investflowstorage` ✓ DONE
 - [x] Create Azure Container Registry: `az acr create --resource-group investflow-rg --name investflowregistry --sku Basic` ✓ DONE
 - [x] Create Container Apps Environment: `az containerapp env create --name investflow-env --resource-group investflow-rg --location eastus` ✓ DONE
-- [ ] Create Azure Key Vault: `az keyvault create --name investflow-kv --resource-group investflow-rg --location eastus`
-- [ ] Set up Application Insights: `az monitor app-insights component create --app investflow-insights --location eastus --resource-group investflow-rg`
-- [ ] Document all resource names, connection strings, and endpoints
-- [ ] Store connection strings securely in Key Vault or environment variables
+- [x] Create Azure Key Vault: `az keyvault create --name investflow-kv --resource-group investflow-rg --location eastus` ✓ DONE (already exists)
+- [x] Set up Application Insights: `az monitor app-insights component create --app investflow-insights --location eastus --resource-group investflow-rg` ✓ DONE
+- [x] Document all resource names, connection strings, and endpoints ✓ DONE (see azure-resources.md)
+- [x] Store connection strings securely in Key Vault or environment variables ✓ DONE
+  * StorageConnectionString stored in Key Vault
+  * ApplicationInsightsConnectionString stored in Key Vault
 
 REVIEW:
 - Verify all Azure resources are created successfully
