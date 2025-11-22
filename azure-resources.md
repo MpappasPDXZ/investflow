@@ -67,8 +67,31 @@ The Nessie catalog is deployed as an internal container app. To access it from t
 2. Use the internal FQDN: `investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io`
 3. REST API endpoint: `https://investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io/api/v2`
 
+### Current Status
+- ✅ **Deployed and Running**: Nessie is running on port 19120
+- ⚠️ **Storage**: Currently using IN_MEMORY version store (data will be lost on restart)
+- ⚠️ **Security**: Authentication and authorization are disabled (for development)
+- 📝 **Next Steps**: Configure persistent storage (PostgreSQL or similar) and enable authentication
+
+### Testing Nessie
+
+**From Backend Health Endpoint:**
+```bash
+# Once backend is running, test Nessie connection:
+curl http://localhost:8000/api/v1/health/nessie
+```
+
+**Direct Nessie API Test (from within Azure):**
+```bash
+# List namespaces
+curl https://investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io/api/v2/namespaces
+
+# Get default branch
+curl https://investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io/api/v2/branches/main
+```
+
 For local development, you may need to:
-- Use port forwarding: `az containerapp show --name investflow-nessie --resource-group investflow-rg`
+- Use port forwarding: `az containerapp proxy --name investflow-nessie --resource-group investflow-rg`
 - Or deploy a local Nessie instance for development
 
 ## Next Steps

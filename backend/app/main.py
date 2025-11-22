@@ -12,7 +12,7 @@ from app.core.middleware import (
     validation_exception_handler
 )
 from app.core.exceptions import InvestFlowException
-from app.api import auth
+from app.api import auth, health
 
 # Set up logging
 setup_logging()
@@ -64,4 +64,5 @@ async def root():
 
 # Include routers
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
+app.include_router(health.router, prefix=settings.API_V1_PREFIX)
 
