@@ -107,6 +107,8 @@ Thumbs.db
 *.key
 secrets/
 .secrets/
+warehouse.json
+**/warehouse.json
 
 # Database
 *.db
