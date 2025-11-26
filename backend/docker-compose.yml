@@ -1,0 +1,123 @@
+services:
+  # Lakekeeper - Data Lake Management Tool
+  # Official image available on quay.io
+  # Documentation: https://docs.lakekeeper.io
+  lakekeeper:
+    image: quay.io/lakekeeper/catalog:latest
+    container_name: lakekeeper-local
+    command: ["serve"]
+    ports:
+      - "8181:8181"
+    environment:
+      # PostgreSQL Connection (Persistence Backend & Secret Store)
+      # Uses the SAME PostgreSQL database as the backend
+      # Construct connection strings from POSTGRES_* variables
+      - LAKEKEEPER__PG_DATABASE_URL_READ=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      - LAKEKEEPER__PG_DATABASE_URL_WRITE=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      
+      # Encryption key for sensitive data (min 32 characters)
+      - LAKEKEEPER__PG_ENCRYPTION_KEY=${LAKEKEEPER__PG_ENCRYPTION_KEY}
+      
+      # Azure Configuration
+      # Set to true to use Azure Managed Identity for authentication
+      - LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS=${LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS:-false}
+      
+      # OAuth2/OIDC Configuration (Azure AD)
+      # See lakekeeper/OAUTH2_SETUP.md for setup instructions
+      - LAKEKEEPER__OPENID_PROVIDER_URI=${LAKEKEEPER__OPENID_PROVIDER_URI:-}
+      - LAKEKEEPER__OPENID_AUDIENCE=${LAKEKEEPER__OPENID_AUDIENCE:-}
+      - LAKEKEEPER__OPENID_ADDITIONAL_ISSUERS=${LAKEKEEPER__OPENID_ADDITIONAL_ISSUERS:-}
+      - LAKEKEEPER__UI__OPENID_CLIENT_ID=${LAKEKEEPER__UI__OPENID_CLIENT_ID:-}
+      - LAKEKEEPER__UI__OPENID_SCOPE=${LAKEKEEPER__UI__OPENID_SCOPE:-openid profile email}
+      
+      # Base URI for Lakekeeper (optional - only set if provided)
+      # - LAKEKEEPER__BASE_URI=${LAKEKEEPER__BASE_URI}
+    volumes:
+      # Optional: Mount config files if needed
+      - ../lakekeeper/config:/etc/lakekeeper:ro
+    healthcheck:
+      # Adjust healthcheck based on actual Lakekeeper health endpoint
+      test: ["CMD-SHELL", "curl -f http://localhost:8181/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - investflow-network
+    restart: unless-stopped
+
+  # Backend - FastAPI with DuckDB
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend-local
+    ports:
+      - "8000:8000"
+    environment:
+      # Load from .env file
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=${ALGORITHM}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - AZURE_STORAGE_ACCOUNT_NAME=${AZURE_STORAGE_ACCOUNT_NAME}
+      - AZURE_STORAGE_ACCOUNT_KEY=${AZURE_STORAGE_ACCOUNT_KEY}
+      - AZURE_STORAGE_CONTAINER_NAME=${AZURE_STORAGE_CONTAINER_NAME}
+      - AZURE_KEY_VAULT_NAME=${AZURE_KEY_VAULT_NAME:-}
+      - APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+      # Lakekeeper Configuration (use service name for internal Docker network)
+      - LAKEKEEPER__BASE_URI=http://lakekeeper:8181
+      - LAKEKEEPER__WAREHOUSE_NAME=lakekeeper
+      # OAuth2 Configuration for Backend Service Account (Azure AD)
+      # See lakekeeper/OAUTH2_SETUP.md for setup instructions
+      - LAKEKEEPER__OAUTH2__CLIENT_ID=${LAKEKEEPER__OAUTH2__CLIENT_ID:-}
+      - LAKEKEEPER__OAUTH2__CLIENT_SECRET=${LAKEKEEPER__OAUTH2__CLIENT_SECRET:-}
+      - LAKEKEEPER__OAUTH2__TENANT_ID=${LAKEKEEPER__OAUTH2__TENANT_ID:-}
+      - LAKEKEEPER__OAUTH2__SCOPE=${LAKEKEEPER__OAUTH2__SCOPE:-api://lakekeeper/.default}
+      - LAKEKEEPER__OAUTH2__AUTHORITY=${LAKEKEEPER__OAUTH2__AUTHORITY:-}
+    volumes:
+      # Mount code for development (optional - remove in production)
+      - ./app:/app/app:ro
+    networks:
+      - investflow-network
+    depends_on:
+      - lakekeeper
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend - Next.js React (commented out for now)
+  # frontend:
+  #   build:
+  #     context: ../frontend
+  #     dockerfile: Dockerfile
+  #   container_name: frontend-local
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NODE_ENV=production
+  #     - NEXT_PUBLIC_API_URL=http://localhost:8000
+  #   networks:
+  #     - investflow-network
+  #   depends_on:
+  #     - backend
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+
+networks:
+  investflow-network:
+    driver: bridge

@@ -6,6 +6,11 @@ WORKDIR /app
 # Install UV
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# Configure SSL certificates for DuckDB Azure connections
+# The python:slim image already has ca-certificates installed
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_DIR=/etc/ssl/certs
+
 # Copy dependency files
 COPY pyproject.toml ./
 

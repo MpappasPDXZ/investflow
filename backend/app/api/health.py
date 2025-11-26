@@ -1,29 +1,27 @@
 """Health check and system status endpoints"""
 from fastapi import APIRouter, HTTPException
-from app.core.database import get_catalog
 from app.core.logging import get_logger
+import httpx
 
 router = APIRouter(prefix="/health", tags=["health"])
 logger = get_logger(__name__)
 
 
-@router.get("/nessie")
-async def check_nessie():
-    """Check Nessie catalog connection"""
+@router.get("/catalog")
+async def check_catalog():
+    """Check catalog/database connection status"""
     try:
-        catalog = get_catalog()
-        # Try to list namespaces as a basic connectivity test
-        namespaces = catalog.list_namespaces()
+        from app.core.config import settings
+        
+        # TODO: Add your catalog/database health checks here
         return {
-            "status": "connected",
-            "catalog_type": type(catalog).__name__,
-            "namespaces_count": len(list(namespaces)),
-            "message": "Nessie catalog is accessible"
+            "status": "ok",
+            "message": "Catalog health check endpoint"
         }
     except Exception as e:
-        logger.error(f"Nessie connection error: {e}", exc_info=True)
+        logger.error(f"Catalog connection error: {e}", exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail=f"Nessie catalog is not accessible: {str(e)}"
+            detail=f"Catalog services are not accessible: {str(e)}"
         )
 

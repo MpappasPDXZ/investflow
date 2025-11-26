@@ -2,76 +2,75 @@
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
-    verify_password,
-    get_password_hash,
     decode_access_token
 )
+from app.core.database import get_db
 from app.core.dependencies import security
 from app.core.exceptions import UnauthorizedError, ConflictError
 from app.schemas.auth import UserRegister, UserLogin, Token
+from app.services.user_service import create_user, authenticate_user
+from app.core.logging import get_logger
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+logger = get_logger(__name__)
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserRegister):
-    """
-    Register a new user.
-    TODO: Implement actual user creation in database
-    """
-    # TODO: Check if user already exists in database
-    # TODO: Create user in database
-    # For now, return a mock response
-    
-    # Mock: Check if user exists (will be replaced with database query)
-    # if await user_exists(user_data.email):
-    #     raise ConflictError("User with this email already exists")
-    
-    # Mock: Create user (will be replaced with database insert)
-    # user_id = await create_user(user_data)
-    
-    # For now, generate a token with mock user_id
-    # This will be replaced with actual user creation
-    user_id = "mock-user-id"  # TODO: Replace with actual user ID from database
-    
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user_id, "email": user_data.email},
-        expires_delta=access_token_expires
-    )
-    
-    return Token(access_token=access_token)
+async def register(
+    user_data: UserRegister,
+    db: Session = Depends(get_db)
+):
+    """Register a new user"""
+    try:
+        # Create user in database
+        db_user = create_user(db, user_data)
+        
+        # Generate access token
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": str(db_user.id), "email": db_user.email},
+            expires_delta=access_token_expires
+        )
+        
+        logger.info(f"User registered: {db_user.email}")
+        return Token(access_token=access_token)
+        
+    except ValueError as e:
+        # User already exists
+        raise ConflictError(str(e))
+    except Exception as e:
+        logger.error(f"Error registering user: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to register user"
+        )
 
 
 @router.post("/login", response_model=Token)
-async def login(credentials: UserLogin):
-    """
-    Login and get access token.
-    TODO: Implement actual user authentication against database
-    """
-    # TODO: Get user from database by email
-    # user = await get_user_by_email(credentials.email)
-    # if not user:
-    #     raise UnauthorizedError("Incorrect email or password")
+async def login(
+    credentials: UserLogin,
+    db: Session = Depends(get_db)
+):
+    """Login and get access token"""
+    # Authenticate user
+    user = authenticate_user(db, credentials.email, credentials.password)
     
-    # TODO: Verify password
-    # if not verify_password(credentials.password, user.hashed_password):
-    #     raise UnauthorizedError("Incorrect email or password")
+    if not user:
+        raise UnauthorizedError("Incorrect email or password")
     
-    # For now, return a mock response
-    # This will be replaced with actual authentication
-    user_id = "mock-user-id"  # TODO: Replace with actual user ID from database
-    
+    # Generate access token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user_id, "email": credentials.email},
+        data={"sub": str(user.id), "email": user.email},
         expires_delta=access_token_expires
     )
     
+    logger.info(f"User logged in: {user.email}")
     return Token(access_token=access_token)
 
 

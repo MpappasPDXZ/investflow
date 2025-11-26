@@ -1,0 +1,18 @@
+{
+  "warehouse-name": "azure_dev",
+  "delete-profile": {
+    "type": "hard"
+  },
+  "storage-credential": {
+    "client-id": "18736a7b-2076-4261-9ae2-6d79f40f3357",
+    "client-secret": "-S_8Q~NZfv3_xh7n2eqaKbvns_HKpEecnO2ZOauA",
+    "credential-type": "client-credentials",
+    "tenant-id": "479bc30b-030f-4a2e-8ea2-67f549b32f5e",
+    "type": "az"
+  },
+  "storage-profile": {
+    "account-name": "investflowadls",
+    "filesystem": "warehouse-dev",
+    "type": "adls"
+  }
+}

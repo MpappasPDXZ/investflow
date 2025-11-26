@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
 from app.core.middleware import (
@@ -12,7 +13,8 @@ from app.core.middleware import (
     validation_exception_handler
 )
 from app.core.exceptions import InvestFlowException
-from app.api import auth, health
+from app.api import auth, health, properties, users, lakekeeper_test, expenses, documents
+from app.models.base import Base
 
 # Set up logging
 setup_logging()
@@ -24,12 +26,15 @@ app = FastAPI(
     description="Rental Property Management API",
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
+    swagger_ui_parameters={
+        "persistAuthorization": True,  # Keep auth token after page refresh
+    }
 )
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +45,24 @@ app.add_exception_handler(InvestFlowException, exception_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, exception_handler)
+
+# Mount static files for Swagger UI customization
+try:
+    import os
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    if os.path.exists(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+except Exception:
+    pass  # Ignore if static directory doesn't exist
+
+# Mount static files for Swagger UI customization
+try:
+    import os
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    if os.path.exists(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+except Exception:
+    pass  # Ignore if static directory doesn't exist
 
 
 @app.get("/health")
@@ -62,7 +85,35 @@ async def root():
     }
 
 
+# Create database tables on startup (in production, use migrations instead)
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database and DuckDB on startup"""
+    try:
+        from app.core.database import get_engine
+        engine = get_engine()
+        # In production, use Alembic migrations instead of create_all
+        if settings.ENVIRONMENT == "development":
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created/verified")
+    except Exception as e:
+        logger.warning(f"Could not initialize database: {e}")
+
+    try:
+        from app.services.pyiceberg_service import get_pyiceberg_service
+        pyiceberg = get_pyiceberg_service()
+        pyiceberg.get_catalog()  # Initialize catalog
+        logger.info("PyIceberg service initialized")
+    except Exception as e:
+        logger.warning(f"Could not initialize PyIceberg service: {e}")
+
+
 # Include routers
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(health.router, prefix=settings.API_V1_PREFIX)
+app.include_router(properties.router, prefix=settings.API_V1_PREFIX)
+app.include_router(users.router, prefix=settings.API_V1_PREFIX)
+app.include_router(expenses.router, prefix=settings.API_V1_PREFIX)
+app.include_router(documents.router, prefix=settings.API_V1_PREFIX)
+app.include_router(lakekeeper_test.router, prefix=settings.API_V1_PREFIX)
 

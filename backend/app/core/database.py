@@ -1,101 +1,174 @@
-"""Database connection and Iceberg catalog setup"""
-from typing import Optional, Union
-from pyiceberg.catalog import load_catalog
-from pyiceberg.catalog.rest import RestCatalog
-from pyiceberg.catalog.hadoop import HadoopCatalog
-from pyiceberg.catalog.jdbc import JdbcCatalog
+"""Database connection and SQLAlchemy setup"""
+from typing import Optional
+from urllib.parse import quote_plus
+from sqlalchemy import create_engine, Engine, text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import sessionmaker, Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Global catalog instance (can be different types)
-catalog: Optional[Union[RestCatalog, HadoopCatalog, JdbcCatalog]] = None
+# Global engine instances
+engine: Optional[Engine] = None
+async_engine: Optional[AsyncEngine] = None
+SessionLocal: Optional[sessionmaker] = None
+AsyncSessionLocal: Optional[async_sessionmaker] = None
 
 
-def get_catalog() -> Union[RestCatalog, HadoopCatalog, JdbcCatalog]:
+def build_database_url() -> str:
     """
-    Get or create the Iceberg catalog connection.
-    Supports multiple catalog types: hadoop, jdbc, rest (nessie), hive
+    Build PostgreSQL connection URL from settings.
+    URL-encodes password to handle special characters.
     """
-    global catalog
+    if not all([settings.POSTGRES_HOST, settings.POSTGRES_DB, settings.POSTGRES_USER, settings.POSTGRES_PASSWORD]):
+        raise ValueError(
+            "PostgreSQL configuration incomplete. Please set POSTGRES_HOST, POSTGRES_DB, "
+            "POSTGRES_USER, and POSTGRES_PASSWORD environment variables."
+        )
     
-    if catalog is None:
-        catalog_type = settings.ICEBERG_CATALOG_TYPE.lower()
-        
+    # URL-encode password to handle special characters
+    encoded_password = quote_plus(settings.POSTGRES_PASSWORD)
+    encoded_user = quote_plus(settings.POSTGRES_USER)
+    
+    database_url = (
+        f"postgresql://{encoded_user}:{encoded_password}@"
+        f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+    )
+    
+    return database_url
+
+
+def build_async_database_url() -> str:
+    """
+    Build async PostgreSQL connection URL from settings.
+    Uses asyncpg driver for async operations.
+    """
+    if not all([settings.POSTGRES_HOST, settings.POSTGRES_DB, settings.POSTGRES_USER, settings.POSTGRES_PASSWORD]):
+        raise ValueError(
+            "PostgreSQL configuration incomplete. Please set POSTGRES_HOST, POSTGRES_DB, "
+            "POSTGRES_USER, and POSTGRES_PASSWORD environment variables."
+        )
+    
+    # URL-encode password to handle special characters
+    encoded_password = quote_plus(settings.POSTGRES_PASSWORD)
+    encoded_user = quote_plus(settings.POSTGRES_USER)
+    
+    database_url = (
+        f"postgresql+asyncpg://{encoded_user}:{encoded_password}@"
+        f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+    )
+    
+    return database_url
+
+
+def get_engine() -> Engine:
+    """
+    Get or create the SQLAlchemy synchronous engine.
+    Uses PostgreSQL connection configured via environment variables.
+    """
+    global engine
+    
+    if engine is None:
+        database_url = build_database_url()
+        engine = create_engine(
+            database_url,
+            echo=settings.DEBUG,
+            pool_pre_ping=True,  # Verify connections before using
+            pool_size=5,
+            max_overflow=10
+        )
+        logger.info(f"PostgreSQL database engine created for {settings.POSTGRES_HOST}")
+    
+    return engine
+
+
+def get_async_engine() -> AsyncEngine:
+    """
+    Get or create the SQLAlchemy async engine.
+    Uses PostgreSQL with asyncpg driver configured via environment variables.
+    """
+    global async_engine
+    
+    if async_engine is None:
+        database_url = build_async_database_url()
+        async_engine = create_async_engine(
+            database_url,
+            echo=settings.DEBUG,
+            pool_pre_ping=True,  # Verify connections before using
+            pool_size=5,
+            max_overflow=10
+        )
+        logger.info(f"PostgreSQL async database engine created for {settings.POSTGRES_HOST}")
+    
+    return async_engine
+
+
+def get_session() -> sessionmaker:
+    """Get database session factory"""
+    global SessionLocal
+    
+    if SessionLocal is None:
+        engine = get_engine()
+        SessionLocal = sessionmaker(
+            autocommit=False,
+            autoflush=False,
+            bind=engine
+        )
+    
+    return SessionLocal
+
+
+def get_async_session() -> async_sessionmaker:
+    """Get async database session factory"""
+    global AsyncSessionLocal
+    
+    if AsyncSessionLocal is None:
+        async_engine = get_async_engine()
+        AsyncSessionLocal = async_sessionmaker(
+            async_engine,
+            class_=AsyncSession,
+            expire_on_commit=False
+        )
+    
+    return AsyncSessionLocal
+
+
+def get_db() -> Session:
+    """
+    Dependency for FastAPI to get database session.
+    Use in route handlers: db: Session = Depends(get_db)
+    """
+    SessionLocal = get_session()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+async def get_async_db() -> AsyncSession:
+    """
+    Dependency for FastAPI to get async database session.
+    Use in async route handlers: db: AsyncSession = Depends(get_async_db)
+    """
+    AsyncSessionLocal = get_async_session()
+    async with AsyncSessionLocal() as session:
         try:
-            if catalog_type == "hadoop":
-                # HadoopCatalog - file-based, uses Azure Blob Storage directly
-                if not settings.DATABASE_URL:
-                    raise ValueError("DATABASE_URL (warehouse path) required for HadoopCatalog")
-                
-                catalog = load_catalog(
-                    "hadoop",
-                    **{
-                        "warehouse": settings.DATABASE_URL,
-                        "type": "hadoop"
-                    }
-                )
-                logger.info(f"Connected to HadoopCatalog with warehouse: {settings.DATABASE_URL}")
-                
-            elif catalog_type == "jdbc":
-                # JdbcCatalog - direct JDBC connection
-                if not settings.DATABASE_URL:
-                    raise ValueError("DATABASE_URL (JDBC connection string) required for JdbcCatalog")
-                
-                catalog = load_catalog(
-                    "jdbc",
-                    **{
-                        "uri": settings.DATABASE_URL,
-                        "warehouse": settings.DATABASE_URL,
-                    }
-                )
-                logger.info(f"Connected to JdbcCatalog: {settings.DATABASE_URL}")
-                
-            elif catalog_type in ["rest", "nessie"]:
-                # REST Catalog (Nessie)
-                if not settings.ICEBERG_CATALOG_URI:
-                    raise ValueError("ICEBERG_CATALOG_URI required for REST catalog")
-                
-                catalog = load_catalog(
-                    "nessie",
-                    uri=settings.ICEBERG_CATALOG_URI,
-                    **{
-                        "warehouse": settings.DATABASE_URL or "",
-                    }
-                )
-                logger.info(f"Connected to Nessie REST catalog: {settings.ICEBERG_CATALOG_URI}")
-                
-            elif catalog_type == "hive":
-                # HiveCatalog - uses Hive Metastore
-                if not settings.DATABASE_URL:
-                    raise ValueError("DATABASE_URL (Hive Metastore URI) required for HiveCatalog")
-                
-                catalog = load_catalog(
-                    "hive",
-                    **{
-                        "uri": settings.DATABASE_URL,
-                        "warehouse": settings.DATABASE_URL,
-                    }
-                )
-                logger.info(f"Connected to HiveCatalog: {settings.DATABASE_URL}")
-                
-            else:
-                raise ValueError(f"Unsupported catalog type: {catalog_type}")
-                
-        except Exception as e:
-            logger.error(f"Failed to connect to Iceberg catalog ({catalog_type}): {e}")
-            raise
+            yield session
+        finally:
+            await session.close()
+
+
+def close_connections() -> None:
+    """Close all database connections"""
+    global engine, async_engine
     
-    return catalog
-
-
-def close_catalog() -> None:
-    """Close the catalog connection"""
-    global catalog
-    if catalog:
-        # Nessie REST catalog doesn't require explicit closing
-        catalog = None
-        logger.info("Catalog connection closed")
-
+    if async_engine:
+        # Note: async engine cleanup should be done properly
+        logger.info("Closing async database connections")
+    
+    if engine:
+        engine.dispose()
+        logger.info("Closed database connections")

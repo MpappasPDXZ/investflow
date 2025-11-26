@@ -1,5 +1,5 @@
 """Authentication schemas"""
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserRegister(BaseModel):
@@ -12,8 +12,25 @@ class UserRegister(BaseModel):
 
 class UserLogin(BaseModel):
     """User login schema"""
-    email: EmailStr
-    password: str
+    email: EmailStr = Field(
+        example="john.doe@example.com",
+        description="User email address"
+    )
+    password: str = Field(
+        example="password123",
+        description="User password"
+    )
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "email": "john.doe@example.com",
+                    "password": "password123"
+                }
+            ]
+        }
+    }
 
 
 class Token(BaseModel):

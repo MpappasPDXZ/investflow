@@ -1,37 +1,54 @@
 # InvestFlow Backend
 
-FastAPI backend application for InvestFlow rental property management system.
+FastAPI backend for InvestFlow property management system.
 
-## Setup
+## Quick Start
 
-1. Install UV (if not already installed):
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
+### 1. Install Dependencies
 
-2. Create virtual environment and install dependencies:
-   ```bash
-   uv venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   uv pip install -e .
-   ```
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -e .
+```
 
-3. Set up environment variables (create `.env` file):
-   ```
-   DATABASE_URL=...
-   AZURE_STORAGE_CONNECTION_STRING=...
-   SECRET_KEY=...
-   ```
+### 2. Configure Environment
 
-4. Run the application:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+```bash
+cp env.example .env
+# Edit .env and set required variables
+```
 
-## Development
+### 3. Start Gravitino
 
-- Run tests: `pytest`
-- Format code: `ruff format .`
-- Lint code: `ruff check .`
-- Type check: `mypy app`
+```bash
+docker-compose up -d gravitino
+```
 
+### 4. Initialize Catalog (if needed)
+
+```bash
+uv run app/scripts/init_fileset_catalog.py
+```
+
+### 5. Start FastAPI Server
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+API docs: http://localhost:8000/docs
+
+## Project Structure
+
+```
+backend/
+├── app/
+│   ├── api/          # API endpoints
+│   ├── core/         # Core configuration
+│   ├── models/       # Data models
+│   ├── schemas/      # Pydantic schemas
+│   ├── services/     # Business logic
+│   └── scripts/      # Utility scripts
+└── docker-compose.yml
+```
