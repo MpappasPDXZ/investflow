@@ -5,6 +5,8 @@ services:
   lakekeeper:
     image: quay.io/lakekeeper/catalog:latest
     container_name: lakekeeper-local
+    env_file:
+      - .env
     command: ["serve"]
     ports:
       - "8181:8181"
@@ -12,9 +14,9 @@ services:
       # PostgreSQL Connection (Persistence Backend & Secret Store)
       # Uses the SAME PostgreSQL database as the backend
       # Construct connection strings from POSTGRES_* variables
-      - LAKEKEEPER__PG_DATABASE_URL_READ=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      - LAKEKEEPER__PG_DATABASE_URL_WRITE=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      
+      - LAKEKEEPER__PG_DATABASE_URL_READ=${LAKEKEEPER__PG_DATABASE_URL_READ:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=require}
+      - LAKEKEEPER__PG_DATABASE_URL_WRITE=${LAKEKEEPER__PG_DATABASE_URL_WRITE:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=require}
+ 
       # Encryption key for sensitive data (min 32 characters)
       - LAKEKEEPER__PG_ENCRYPTION_KEY=${LAKEKEEPER__PG_ENCRYPTION_KEY}
       
@@ -97,28 +99,28 @@ services:
       retries: 3
       start_period: 40s
 
-  # Frontend - Next.js React (commented out for now)
-  # frontend:
-  #   build:
-  #     context: ../frontend
-  #     dockerfile: Dockerfile
-  #   container_name: frontend-local
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NODE_ENV=production
-  #     - NEXT_PUBLIC_API_URL=http://localhost:8000
-  #   networks:
-  #     - investflow-network
-  #   depends_on:
-  #     - backend
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 40s
+  # Frontend - Next.js React
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: frontend-local
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    networks:
+      - investflow-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 networks:
   investflow-network:

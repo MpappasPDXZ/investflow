@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useExpenses, useProperties } from '@/lib/hooks/use-expenses';
+import { useExpenses } from '@/lib/hooks/use-expenses';
 import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
 import { Button } from '@/components/ui/button';

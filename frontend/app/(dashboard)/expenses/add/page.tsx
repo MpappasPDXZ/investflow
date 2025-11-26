@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCreateExpenseWithReceipt, useProperties } from '@/lib/hooks/use-expenses';
+import { useCreateExpenseWithReceipt } from '@/lib/hooks/use-expenses';
 import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

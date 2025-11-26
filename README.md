@@ -10,7 +10,7 @@ InvestFlow is a comprehensive application for managing rental properties, tracki
 
 - **Backend**: FastAPI (Python 3.11+)
 - **Frontend**: Next.js 14 with React and TypeScript
-- **Database**: Apache Iceberg with Nessie REST Catalog
+- **Database**: Apache Iceberg with HadoopCatalog (file-based, no server required)
 - **Storage**: Azure Blob Storage
 - **Deployment**: Azure Container Apps
 - **Monorepo**: Single repository for backend and frontend
@@ -83,7 +83,7 @@ See individual README files in `backend/` and `frontend/` directories for detail
 All Azure resources are documented in `azure-resources.md`. The infrastructure includes:
 
 - Resource Group: `investflow-rg`
-- Storage Account: `investflowstorage`
+- Storage Account: `investflowadls` (ADLS Gen2)
 - Container Registry: `investflowregistry`
 - Container Apps Environment: `investflow-env`
 - Key Vault: `investflow-kv`

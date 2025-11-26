@@ -127,15 +127,14 @@ PLAN:
 - Set up FastAPI application structure
 - Configure environment variables and settings
 - Implement authentication system (JWT)
-- Set up database connection (Nessie/Iceberg)
+- Set up database connection (PostgreSQL)
 - Create base API structure with health check endpoint
 
 DO:
 - [x] Create FastAPI app with proper project structure ✓ DONE
 - [x] Set up Pydantic models for configuration ✓ DONE (app/core/config.py)
 - [x] Implement JWT authentication (register, login, refresh endpoints) ✓ DONE (app/api/auth.py)
-- [x] Set up Nessie catalog connection ✓ DONE (app/core/database.py - structure ready)
-- [x] Deploy Nessie to Azure Container Apps ✓ DONE (investflow-nessie deployed)
+- [ ] Set up PostgreSQL database connection (SQLAlchemy)
 - [x] Create health check endpoint (/health) ✓ DONE
 - [x] Set up logging infrastructure ✓ DONE (app/core/logging.py)
 - [x] Create base error handling middleware ✓ DONE (app/core/middleware.py)
@@ -150,7 +149,7 @@ TEST:
 - Integration tests: Register, login, refresh endpoints
 - Test health check endpoint
 - Test error handling (invalid tokens, expired tokens)
-- Test Nessie connection (if possible in test environment)
+- Test PostgreSQL connection
 
 DELIVERABLE: Working backend with authentication, no business logic yet
 
@@ -165,7 +164,7 @@ PLAN:
 - Set up basic frontend pages for user profile and properties list
 
 DO:
-- Create Iceberg tables: user, properties
+- Create PostgreSQL tables: user, properties (using SQLAlchemy models and Alembic migrations)
 - Implement Pydantic schemas for user and property
 - Create API routes: GET/POST/PUT/DELETE for properties, GET/PUT for user profile
 - Add user isolation middleware (filter by user_id)
@@ -355,7 +354,6 @@ DELIVERABLE: Complete, polished application with recharts for all charts and rea
 
 PHASE 8: DEPLOYMENT & PRODUCTION READY (Week 16)
 PLAN:
-- Deploy Nessie catalog to Azure Container Apps (infrastructure already set up in Phase 0)
 - Deploy backend application to Azure Container Apps
 - Deploy frontend application to Azure Container Apps
 - Configure production environment variables
@@ -367,10 +365,6 @@ PLAN:
 DO:
 - Build production Docker images for backend and frontend
 - Push Docker images to Azure Container Registry (ACR from Phase 0)
-- [x] Deploy Nessie catalog as container app: ✓ DONE
-  * [x] Create Container App: `investflow-nessie` ✓ DONE
-  * [ ] Configure Nessie to use Azure Blob Storage (investflowstorage from Phase 0) - TODO: Configure storage backend
-  * [x] Set up Nessie REST API endpoint ✓ DONE (https://investflow-nessie.internal.yellowsky-ca466dfe.eastus.azurecontainerapps.io/api/v2)
 - Deploy backend as container app:
   * Create Container App: `investflow-backend`
   * Configure environment variables from Azure Key Vault (investflow-kv from Phase 0)
@@ -389,7 +383,7 @@ DO:
 - Configure CORS for production (allow only frontend domain)
 - Set up rate limiting for production APIs
 - Configure Application Insights (already created in Phase 0) for both apps
-- Set up backup strategy: Regular backups of Nessie metadata, blob storage snapshots
+- Set up backup strategy: Regular backups of Iceberg metadata files, blob storage snapshots
 - Configure auto-scaling rules for Container Apps
 - Set up custom domain and SSL certificates (if applicable)
 
@@ -403,7 +397,7 @@ TEST:
 - Test deployment process (deploy to staging first)
 - Test production endpoints (backend health check, API endpoints)
 - Test frontend loads correctly and connects to backend
-- Test Nessie catalog connection from backend
+- Test HadoopCatalog connection from backend
 - Test file upload to Azure Blob Storage
 - Test monitoring and logging (verify Application Insights is receiving data)
 - Test auto-scaling (if configured)
@@ -562,64 +556,49 @@ AZURE DEPLOYMENT:
 - Azure Application Insights: Enable for monitoring and logging
 - Networking: Configure VNET if needed for private endpoints
 
-ICEBERG TABLE SETUP:
+DATABASE SETUP:
 
-REST CATALOG RECOMMENDATION: Project Nessie
-After research, **Project Nessie** is recommended over Dremio Arctic for the following reasons:
+DATABASE: PostgreSQL (Azure Database for PostgreSQL)
+After research, **PostgreSQL** is selected for the following reasons:
 
-**Why Nessie:**
-1. **Fully Open-Source**: Apache 2.0 license, completely open-source (Arctic is a managed/proprietary service built on Nessie)
-2. **Self-Hosted**: Full control over deployment, perfect for Azure Container Apps
-3. **DBeaver Compatible**: REST API can be accessed via DBeaver's JDBC connector or REST catalog support
-4. **Multi-Engine Support**: Works with Spark, Flink, Trino, and other Iceberg-compatible engines
-5. **Git-like Versioning**: Built-in version control, branching, and tagging for data (bonus feature)
-6. **Azure Compatible**: Can be deployed as container in Azure Container Apps, uses Azure Blob Storage for metadata
-7. **Performance**: Lightweight REST service, fast for catalog operations
-8. **No Vendor Lock-in**: Open-source means no dependency on commercial vendor
+**Why PostgreSQL:**
+1. **Relational Data Model**: Perfect for property management with foreign keys and relationships
+2. **ACID Transactions**: Full multi-table transaction support
+3. **Data Integrity**: Foreign key constraints, unique constraints, check constraints
+4. **Query Performance**: Indexes, query optimization, fast joins
+5. **Mature Ecosystem**: SQLAlchemy, Alembic, excellent tooling
+6. **Cost Effective**: ~$25-50/month for managed Azure Database
+7. **Simple Architecture**: One database service, no catalog needed
+8. **Standard SQL**: Familiar, well-documented, widely supported
+9. **DBeaver Compatible**: Direct PostgreSQL connection
+10. **Production Ready**: Battle-tested, reliable, scalable
 
-**Why Not Arctic:**
-- Arctic is a managed service (not self-hosted), requires Dremio subscription
-- Proprietary features, vendor lock-in to Dremio ecosystem
-- Additional cost for managed service
-- Less flexibility for custom Azure deployment
-
-**Nessie Setup:**
-- Deploy Nessie server as container in Azure Container Apps
-- Use Nessie's REST API endpoint as catalog URI
-- Configure Nessie to use Azure Blob Storage for metadata storage
-- Nessie supports multiple storage backends (S3, Azure Blob, local filesystem)
-- REST API endpoint format: http://nessie-container-app.azurecontainerapps.io/api/v2
-
-**Alternative Consideration:**
-If you need a simpler setup without version control features, consider using Iceberg's built-in REST catalog implementation, but Nessie is more mature and feature-rich.
-
-**DBeaver Connection:**
-- DBeaver supports Iceberg REST catalogs via JDBC or direct REST API connection
-- Connection string format: jdbc:iceberg:rest://nessie-endpoint/api/v2
-- Or use DBeaver's generic REST API connector to browse Nessie API endpoints
-- Nessie provides REST API documentation at /api/v2 endpoint
+**PostgreSQL Setup:**
+- Use Azure Database for PostgreSQL (Flexible Server)
+- Connection string format: `postgresql://user:password@host:5432/dbname`
+- Use SQLAlchemy 2.0+ as ORM
+- Use Alembic for database migrations
+- Store connection string in Azure Key Vault
 
 **Implementation Steps:**
-1. Deploy Nessie server container to Azure Container Apps
-2. Configure Nessie to use Azure Blob Storage for persistence
-3. Set ICEBERG_CATALOG_URI environment variable: http://your-nessie-endpoint/api/v2
-4. Use PyIceberg with Nessie catalog implementation
-5. Create tables using PyIceberg or SQLAlchemy with Iceberg support
-6. Run migrations to create initial table structure
-7. Configure DBeaver connection to Nessie REST endpoint
-8. Set up table partitioning strategy (e.g., by year for expenses, rents) 
+1. Create Azure Database for PostgreSQL
+2. Configure DATABASE_URL environment variable with connection string
+3. Set up SQLAlchemy models for all tables
+4. Create Alembic migrations for initial schema
+5. Run migrations to create tables
+6. Configure DBeaver connection to PostgreSQL (if needed)
+7. Set up indexes on frequently queried fields 
 Back End: FastAPI
 
 BACKEND SETUP AND ARCHITECTURE:
 - Use FastAPI with Python 3.11+
 - Project structure: Follow FastAPI best practices with routers, models, schemas, services pattern
 - Use Pydantic v2 for data validation and serialization
-- Use SQLAlchemy 2.0+ or PyIceberg for Iceberg table operations
-- Iceberg Table Catalog: Use Project Nessie as REST catalog (RECOMMENDED - see detailed recommendation below)
-- Database: Use Apache Iceberg tables stored in object storage (Azure Blob Storage or ADLS Gen2)
+- Use SQLAlchemy 2.0+ for database operations
+- Database: PostgreSQL (Azure Database for PostgreSQL Flexible Server)
 - File Storage: Use Azure Blob Storage for document_storage.blob_location
 - Environment variables needed:
-  * DATABASE_URL or ICEBERG_CATALOG_URI
+  * DATABASE_URL (PostgreSQL connection string: postgresql://user:pass@host:5432/dbname)
   * AZURE_STORAGE_CONNECTION_STRING
   * AZURE_STORAGE_CONTAINER_NAME
   * SECRET_KEY (for JWT tokens)

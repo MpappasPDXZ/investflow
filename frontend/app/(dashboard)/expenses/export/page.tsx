@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useExpenses, useProperties } from '@/lib/hooks/use-expenses';
+import { useExpenses } from '@/lib/hooks/use-expenses';
 import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

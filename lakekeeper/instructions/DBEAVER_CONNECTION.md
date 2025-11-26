@@ -78,15 +78,12 @@ Once connected, you can query:
 
 ```sql
 -- See all namespaces
-SELECT 
-    n.namespace_id,
-    n.namespace_name,
-    w.warehouse_name,
-    n.created_at,
-    n.updated_at
-FROM public.namespace n
-JOIN public.warehouse w 
-ON n.warehouse_id = w.warehouse_id
-ORDER BY w.warehouse_name, n.namespace_name;
+SELECT namespace_name FROM namespace;
+
+-- See all tables
+SELECT t.name, n.namespace_name 
+FROM tabular t
+JOIN namespace n ON t.namespace_id = n.namespace_id
+WHERE t.typ = 'table';
 ```
 
