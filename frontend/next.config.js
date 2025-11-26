@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['investflowstorage.blob.core.windows.net'],
+    domains: ['investflowadls.blob.core.windows.net', 'investflowadls.dfs.core.windows.net'],
   },
 }
 

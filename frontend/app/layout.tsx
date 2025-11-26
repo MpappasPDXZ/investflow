@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { Providers } from './providers'
 
 export const metadata: Metadata = {
   title: 'InvestFlow - Rental Property Management',
@@ -12,8 +13,10 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className="light">
+      <body className="font-['Roboto',sans-serif] antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   )
 }
