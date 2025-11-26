@@ -1,0 +1,155 @@
+Getting Started¶
+There are multiple ways to deploy Lakekeeper. Our self-contained examples are the easiest way to get started and deploy everything you need (including S3, Query Engines, Jupyter, ...). By default, compute outside of the docker network cannot access the example Warehouses due to docker networking.
+
+If you have your own Storage (e.g. S3) available, you can deploy Lakekeeper using docker compose, deploy on Kubernetes, deploy the pre-build Binary directly or compile Lakekeeper yourself.
+
+Lakekeeper is currently only compatible with Postgres >= 15.
+
+Deployment¶
+Option 1: 🐳 Examples¶
+Note
+
+Our docker compose examples are not designed to be used with compute outside of the docker network (e.g. external Spark).
+
+All docker compose examples come with batteries included (Identity Provider, Storage (S3), Query Engines, Jupyter) but are not accessible (by default) for compute outside of the docker network. To use Lakekeeper with external tools outside of the docker network, please check Option 2: Docker Compose
+
+
+
+🐳 With Authentication & Authorization - Simple
+
+The simple access control example contains multiple query engines, each used by a single user.
+
+#############
+1 - container install
+#############
+# Clone the Lakekeeper repository for reference/examples (optional)
+git clone https://github.com/lakekeeper/lakekeeper property/lakekeeper/repo
+
+# Start Lakekeeper using your Azure-configured docker-compose
+cd property/backend
+docker-compose up -d lakekeeper
+
+# Verify Lakekeeper is running
+docker-compose ps lakekeeper
+curl http://localhost:8181/health
+
+# Access Lakekeeper UI
+# Open your browser and head to http://localhost:8181/ui/
+# The REST catalog API is available at http://localhost:8181/catalog
+First Steps¶
+
+
+🐳 Authentication & Authorization
+Please follow the Authentication Guide to prepare your Identity Provider. Additional environment variables might be required.
+git clone https://github.com/lakekeeper/lakekeeper
+cd docker-compose
+export LAKEKEEPER__OPENID_PROVIDER_URI=... (required)
+export LAKEKEEPER__OPENID_AUDIENCE=... (recommended)
+export LAKEKEEPER__UI__OPENID_CLIENT_ID=... (required if UI is used)
+export LAKEKEEPER__UI__OPENID_SCOPE=... (typically required if UI is used)
+docker compose -f docker-compose.yaml -f openfga-overlay.yaml up
+#############
+2 - Bootstrapping¶
+#############
+
+Our self-contained docker compose examples are already bootstrapped and require no further actions.
+
+After the initial deployment, Lakekeeper needs to be bootstrapped. This can be done via the UI or the bootstrap endpoint. Among others, bootstrapping sets the initial administrator of Lakekeeper and creates the first project. Please find more information on bootstrapping in the Bootstrap Docs.
+#############
+3 - DuckDB + Azure ADLS Gen2 Example
+#############
+# Converted from PySpark to DuckDB with Azure ADLS Gen2 storage
+# Uses Azure PostgreSQL for metastore via Lakekeeper REST catalog
+
+import sys
+import os
+import pandas as pd
+import requests
+
+# Add backend app to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend'))
+from app.core.duckdb_client import duckdb_client
+
+# Configuration
+LAKEKEEPER_CATALOG_URI = os.getenv("LAKEKEEPER_CATALOG_URI", "http://lakekeeper:8181/catalog")
+WAREHOUSE_NAME = os.getenv("LAKEKEEPER_WAREHOUSE", "lakekeeper")
+
+# Get warehouse ID from Lakekeeper
+def get_warehouse_id():
+    try:
+        mgmt_url = LAKEKEEPER_CATALOG_URI.replace("/catalog", "/management/v1/warehouse")
+        response = requests.get(mgmt_url)
+        if response.status_code == 200:
+            warehouses = response.json().get("warehouses", [])
+            if warehouses:
+                for wh in warehouses:
+                    if wh.get("name") == WAREHOUSE_NAME:
+                        return wh.get("id")
+                return warehouses[0].get("id")
+    except Exception as e:
+        print(f"Could not get warehouse ID: {e}")
+    return WAREHOUSE_NAME
+
+# Initialize DuckDB (equivalent to Spark session)
+conn = duckdb_client.get_connection()
+warehouse_id = get_warehouse_id()
+
+# Create namespace (equivalent to: CREATE NAMESPACE IF NOT EXISTS)
+namespace = "my_namespace"
+ns_url = f"{LAKEKEEPER_CATALOG_URI}/v1/{warehouse_id}/namespaces"
+response = requests.post(ns_url, json={"namespace": [namespace]})
+if response.status_code in [200, 409]:  # 409 = already exists
+    print(f"Namespace '{namespace}' ready")
+
+# List namespaces (equivalent to: SHOW NAMESPACES)
+response = requests.get(ns_url)
+if response.status_code == 200:
+    namespaces = response.json().get("namespaces", [])
+    print(f"\nCurrently the following namespaces exist:")
+    for ns in namespaces:
+        print(f"  - {'.'.join(ns)}")
+
+# Create sample DataFrame (same as original)
+df = pd.DataFrame(
+    [[1, 1.2, "foo"], [2, 2.2, "bar"]],
+    columns=["my_ints", "my_floats", "strings"]
+)
+
+# Drop table if exists (equivalent to: DROP TABLE IF EXISTS)
+table_name = "my_table"
+table_url = f"{LAKEKEEPER_CATALOG_URI}/v1/{warehouse_id}/namespaces/{namespace}/tables"
+requests.delete(f"{table_url}/{table_name}")
+
+# Create table (equivalent to: CREATE TABLE ... USING iceberg)
+table_payload = {
+    "name": table_name,
+    "schema": {
+        "type": "struct",
+        "fields": [
+            {"id": 1, "name": "my_ints", "type": "int", "required": True},
+            {"id": 2, "name": "my_floats", "type": "double", "required": False},
+            {"id": 3, "name": "strings", "type": "string", "required": False}
+        ]
+    }
+}
+response = requests.post(table_url, json=table_payload)
+if response.status_code == 200:
+    table_info = response.json()
+    metadata_location = table_info.get("metadata-location")
+    print(f"\nTable '{namespace}.{table_name}' created")
+    print(f"Metadata location: {metadata_location}")
+
+# Read table (equivalent to: spark.table("...").show())
+# Note: Writing data requires PyIceberg or Lakekeeper API
+# DuckDB can read via iceberg_scan() function
+get_table_url = f"{table_url}/{table_name}"
+table_response = requests.get(get_table_url)
+if table_response.status_code == 200:
+    table_metadata = table_response.json()
+    metadata_location = table_metadata.get("metadata-location")
+    
+    # Query using DuckDB's iceberg_scan function
+    query = f"SELECT * FROM iceberg_scan('{metadata_location}', allow_moved_paths=true)"
+    result_df = conn.execute(query).df()
+    print(f"\nTable data:")
+    print(result_df)
