@@ -108,8 +108,13 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:                  # Add this section!
+      - ../frontend:/app
+      - /app/node_modules     # Prevent local node_modules from overwriting container's
+      - /app/.next            # Prevent local build artifacts from conflicting
+    command: npm run dev      # Override CMD for development mode with hot-reload
     networks:
       - investflow-network
     depends_on:
