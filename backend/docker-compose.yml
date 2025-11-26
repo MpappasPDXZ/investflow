@@ -35,13 +35,15 @@ services:
     volumes:
       # Optional: Mount config files if needed
       - ../lakekeeper/config:/etc/lakekeeper:ro
-    healthcheck:
-      # Adjust healthcheck based on actual Lakekeeper health endpoint
-      test: ["CMD-SHELL", "curl -f http://localhost:8181/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    # Healthcheck disabled - Lakekeeper container is minimal (no curl/wget)
+    # Health endpoint is accessible and working: http://localhost:8181/health
+    # Service is functional, healthcheck was causing false negatives
+    # healthcheck:
+    #   test: ["CMD-SHELL", "exit 0"]  # Placeholder - health endpoint works externally
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
     networks:
       - investflow-network
     restart: unless-stopped
