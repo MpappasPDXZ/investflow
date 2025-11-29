@@ -22,10 +22,9 @@ import pyarrow as pa
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from app.services.lakekeeper_service import get_lakekeeper_service
-from app.services.pyiceberg_service import get_pyiceberg_service
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
+from app.core.iceberg import get_catalog
 
 setup_logging()
 logger = get_logger(__name__)
@@ -42,6 +41,7 @@ def create_user_schema() -> pa.Schema:
         pa.field("first_name", pa.string(), nullable=False),
         pa.field("last_name", pa.string(), nullable=False),
         pa.field("email", pa.string(), nullable=False),
+        pa.field("password_hash", pa.string(), nullable=False),  # Password hash for authentication
         pa.field("tax_rate", pa.decimal128(5, 2), nullable=True),
         pa.field("created_at", pa.timestamp("us"), nullable=True),
         pa.field("updated_at", pa.timestamp("us"), nullable=True),
@@ -63,10 +63,29 @@ def create_properties_schema() -> pa.Schema:
         pa.field("state", pa.string(), nullable=True),
         pa.field("zip_code", pa.string(), nullable=True),
         pa.field("property_type", pa.string(), nullable=True),
+        pa.field("has_units", pa.bool_(), nullable=True),  # NEW: indicates multi-unit property
+        pa.field("unit_count", pa.int32(), nullable=True),  # NEW: number of units
         pa.field("bedrooms", pa.int32(), nullable=True),
         pa.field("bathrooms", pa.decimal128(3, 1), nullable=True),
         pa.field("square_feet", pa.int32(), nullable=True),
         pa.field("year_built", pa.int32(), nullable=True),
+        pa.field("current_monthly_rent", pa.decimal128(10, 2), nullable=True),
+        pa.field("notes", pa.string(), nullable=True),
+        pa.field("created_at", pa.timestamp("us"), nullable=True),
+        pa.field("updated_at", pa.timestamp("us"), nullable=True),
+        pa.field("is_active", pa.bool_(), nullable=True),
+    ])
+
+
+def create_units_schema() -> pa.Schema:
+    """Create PyArrow schema for units table (for multi-family/duplex properties)"""
+    return pa.schema([
+        pa.field("id", pa.string(), nullable=False),  # UUID as string
+        pa.field("property_id", pa.string(), nullable=False),  # UUID as string - foreign key to properties
+        pa.field("unit_number", pa.string(), nullable=False),  # e.g., "Unit 1", "1A", "Apt 201"
+        pa.field("bedrooms", pa.int32(), nullable=True),
+        pa.field("bathrooms", pa.decimal128(3, 1), nullable=True),
+        pa.field("square_feet", pa.int32(), nullable=True),
         pa.field("current_monthly_rent", pa.decimal128(10, 2), nullable=True),
         pa.field("notes", pa.string(), nullable=True),
         pa.field("created_at", pa.timestamp("us"), nullable=True),

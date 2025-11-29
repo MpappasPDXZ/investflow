@@ -43,7 +43,7 @@ class User(Base, TimestampMixin):
     """User model"""
     __tablename__ = "users"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     email = Column(String(255), unique=True, nullable=False, index=True)
@@ -60,8 +60,8 @@ class Property(Base, TimestampMixin):
     """Property model"""
     __tablename__ = "properties"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     display_name = Column(String(255), nullable=True)
     purchase_price = Column(Numeric(12, 2), nullable=False)
     monthly_rent_to_income_ratio = Column(Numeric(4, 2), default=2.75, nullable=False)
@@ -121,7 +121,7 @@ class Expense(Base, TimestampMixin):
     document_storage_id = Column(UUID(as_uuid=True), ForeignKey("document_storage.id", ondelete="SET NULL"), nullable=True)
     is_planned = Column(Boolean, default=False, nullable=False)
     notes = Column(Text, nullable=True)
-    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
     # Relationships
     property = relationship("Property", back_populates="expenses")
@@ -145,7 +145,7 @@ class DocumentStorage(Base, TimestampMixin):
     file_size = Column(Integer, nullable=True)  # Size in bytes
     document_type = Column(SQLEnum(DocumentType), nullable=True)
     document_metadata = Column(JSONB, nullable=True)  # Additional metadata (OCR text, tags, etc.)
-    uploaded_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    uploaded_by_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     expires_at = Column(Date, nullable=True)
 
 
@@ -201,7 +201,7 @@ class Rent(Base, TimestampMixin):
     is_late = Column(Boolean, default=False, nullable=False)
     late_fee = Column(Numeric(10, 2), default=0, nullable=True)
     notes = Column(Text, nullable=True)
-    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
     # Relationships
     client = relationship("Client", back_populates="rents")
@@ -219,7 +219,7 @@ class Scenario(Base, TimestampMixin):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     scenario_name = Column(String(100), nullable=True)  # "Conservative", "Optimistic", etc.
     monthly_rent = Column(Numeric(10, 2), nullable=False)
     vacancy_rate = Column(Numeric(5, 2), default=7.00, nullable=False)  # Percentage (e.g., 7.00 for 7%)

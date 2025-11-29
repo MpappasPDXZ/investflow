@@ -9,9 +9,20 @@ from app.core.config import settings
 
 def setup_logging() -> None:
     """Configure application logging"""
+    # Suppress PyIceberg Avro decoder warning first
+    import warnings
+    warnings.filterwarnings("ignore", message="Falling back to pure Python Avro decoder")
+    
     # Create root logger
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
+    
+    # Suppress verbose Azure SDK logging
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    logging.getLogger("azure.storage").setLevel(logging.WARNING)
+    logging.getLogger("azure").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)

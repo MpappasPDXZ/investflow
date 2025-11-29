@@ -8,6 +8,7 @@ class UserRegister(BaseModel):
     password: str
     first_name: str
     last_name: str
+    tax_rate: float | None = Field(None, ge=0, le=1, description="Tax rate as decimal (e.g., 0.22 for 22%)")
 
 
 class UserLogin(BaseModel):

@@ -1,4 +1,8 @@
 """FastAPI application entry point"""
+import warnings
+# Suppress PyIceberg Avro decoder warning before any imports
+warnings.filterwarnings("ignore", message="Falling back to pure Python Avro decoder")
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -13,7 +17,9 @@ from app.core.middleware import (
     validation_exception_handler
 )
 from app.core.exceptions import InvestFlowException
-from app.api import auth, health, properties, users, lakekeeper_test, expenses, documents
+from app.api import auth, health, properties, users, units, scheduled
+# Temporarily disabled - these depend on removed services
+# from app.api import expenses, documents, lakekeeper_test
 from app.models.base import Base
 
 # Set up logging
@@ -100,12 +106,11 @@ async def startup_event():
         logger.warning(f"Could not initialize database: {e}")
 
     try:
-        from app.services.pyiceberg_service import get_pyiceberg_service
-        pyiceberg = get_pyiceberg_service()
-        pyiceberg.get_catalog()  # Initialize catalog
-        logger.info("PyIceberg service initialized")
+        from app.core.iceberg import get_catalog
+        get_catalog()  # Initialize catalog
+        logger.info("PyIceberg catalog initialized")
     except Exception as e:
-        logger.warning(f"Could not initialize PyIceberg service: {e}")
+        logger.warning(f"Could not initialize PyIceberg catalog: {e}")
 
 
 # Include routers
@@ -113,7 +118,10 @@ app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(health.router, prefix=settings.API_V1_PREFIX)
 app.include_router(properties.router, prefix=settings.API_V1_PREFIX)
 app.include_router(users.router, prefix=settings.API_V1_PREFIX)
-app.include_router(expenses.router, prefix=settings.API_V1_PREFIX)
-app.include_router(documents.router, prefix=settings.API_V1_PREFIX)
-app.include_router(lakekeeper_test.router, prefix=settings.API_V1_PREFIX)
+app.include_router(units.router, prefix=settings.API_V1_PREFIX)
+app.include_router(scheduled.router, prefix=settings.API_V1_PREFIX)
+# Temporarily disabled - these depend on removed services
+# app.include_router(expenses.router, prefix=settings.API_V1_PREFIX)
+# app.include_router(documents.router, prefix=settings.API_V1_PREFIX)
+# app.include_router(lakekeeper_test.router, prefix=settings.API_V1_PREFIX)
 

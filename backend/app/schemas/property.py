@@ -10,6 +10,8 @@ class PropertyBase(BaseModel):
     """Base property schema with common fields"""
     display_name: Optional[str] = Field(None, max_length=255, description="Property display name")
     purchase_price: Decimal = Field(..., ge=0, description="Property purchase price")
+    down_payment: Optional[Decimal] = Field(None, ge=0, description="Down payment amount")
+    current_market_value: Optional[Decimal] = Field(None, ge=0, description="Current estimated market value")
     monthly_rent_to_income_ratio: Decimal = Field(
         default=Decimal("2.75"), 
         ge=0, 
@@ -25,6 +27,8 @@ class PropertyBase(BaseModel):
         max_length=50,
         description="Property type: 'single_family', 'multi_family', 'condo', 'townhouse'"
     )
+    has_units: Optional[bool] = Field(False, description="True for multi-family/duplex properties")
+    unit_count: Optional[int] = Field(None, ge=0, description="Number of units")
     bedrooms: Optional[int] = Field(None, ge=0)
     bathrooms: Optional[Decimal] = Field(None, ge=0)
     square_feet: Optional[int] = Field(None, ge=0)
@@ -42,6 +46,8 @@ class PropertyUpdate(BaseModel):
     """Schema for updating a property"""
     display_name: Optional[str] = Field(None, max_length=255)
     purchase_price: Optional[Decimal] = Field(None, ge=0)
+    down_payment: Optional[Decimal] = Field(None, ge=0)
+    current_market_value: Optional[Decimal] = Field(None, ge=0)
     monthly_rent_to_income_ratio: Optional[Decimal] = Field(None, ge=0)
     address_line1: Optional[str] = Field(None, max_length=255)
     address_line2: Optional[str] = Field(None, max_length=255)
@@ -49,6 +55,8 @@ class PropertyUpdate(BaseModel):
     state: Optional[str] = Field(None, max_length=50)
     zip_code: Optional[str] = Field(None, max_length=20)
     property_type: Optional[str] = Field(None, max_length=50)
+    has_units: Optional[bool] = None
+    unit_count: Optional[int] = Field(None, ge=0)
     bedrooms: Optional[int] = Field(None, ge=0)
     bathrooms: Optional[Decimal] = Field(None, ge=0)
     square_feet: Optional[int] = Field(None, ge=0)

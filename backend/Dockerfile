@@ -3,6 +3,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install build dependencies for compiling Cython extensions
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install UV
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
@@ -14,8 +20,11 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 # Copy dependency files
 COPY pyproject.toml ./
 
-# Install dependencies
-RUN uv pip install --system -e .
+# Install Cython first so PyIceberg can build with optimized Avro decoder
+RUN uv pip install --system cython
+
+# Install all dependencies (force source build for pyiceberg to get Cython extensions)
+RUN uv pip install --system --no-binary pyiceberg -e .
 
 # Copy application code
 COPY app/ ./app/

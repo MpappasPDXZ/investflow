@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = "dev-secret-key-change-in-production-min-32-chars-long"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours for development
     
     # CORS - stored as string, parsed to list via property
     CORS_ORIGINS: str = "http://localhost:3000"

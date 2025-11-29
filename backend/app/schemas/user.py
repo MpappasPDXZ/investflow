@@ -2,7 +2,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
-from uuid import UUID
 
 
 class UserBase(BaseModel):
@@ -23,11 +22,12 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     tax_rate: Optional[float] = Field(None, ge=0, le=1)
+    is_active: Optional[bool] = None
 
 
 class UserResponse(UserBase):
     """Schema for user response (excludes password)"""
-    id: UUID
+    id: str
     is_active: bool
     created_at: datetime
     updated_at: datetime
