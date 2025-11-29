@@ -1,7 +1,7 @@
 """Pydantic schemas for property-related API requests and responses"""
 from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime
+from typing import Optional, Literal
+from datetime import datetime, date
 from uuid import UUID
 from decimal import Decimal
 
@@ -10,8 +10,22 @@ class PropertyBase(BaseModel):
     """Base property schema with common fields"""
     display_name: Optional[str] = Field(None, max_length=255, description="Property display name")
     purchase_price: Decimal = Field(..., ge=0, description="Property purchase price")
+    purchase_date: Optional[datetime] = Field(
+        default=datetime(2024, 10, 23),
+        description="Date property was purchased"
+    )
     down_payment: Optional[Decimal] = Field(None, ge=0, description="Down payment amount")
     current_market_value: Optional[Decimal] = Field(None, ge=0, description="Current estimated market value")
+    property_status: Optional[Literal["own", "evaluating", "rehabbing", "listed_for_rent", "listed_for_sale", "sold", "hide"]] = Field(
+        default="evaluating",
+        description="Property status"
+    )
+    vacancy_rate: Decimal = Field(
+        default=Decimal("0.07"),
+        ge=0,
+        le=1,
+        description="Expected vacancy rate as decimal (e.g., 0.07 for 7%)"
+    )
     monthly_rent_to_income_ratio: Decimal = Field(
         default=Decimal("2.75"), 
         ge=0, 
@@ -46,8 +60,11 @@ class PropertyUpdate(BaseModel):
     """Schema for updating a property"""
     display_name: Optional[str] = Field(None, max_length=255)
     purchase_price: Optional[Decimal] = Field(None, ge=0)
+    purchase_date: Optional[datetime] = None
     down_payment: Optional[Decimal] = Field(None, ge=0)
     current_market_value: Optional[Decimal] = Field(None, ge=0)
+    property_status: Optional[Literal["own", "evaluating", "rehabbing", "listed_for_rent", "listed_for_sale", "sold", "hide"]] = None
+    vacancy_rate: Optional[Decimal] = Field(None, ge=0, le=1)
     monthly_rent_to_income_ratio: Optional[Decimal] = Field(None, ge=0)
     address_line1: Optional[str] = Field(None, max_length=255)
     address_line2: Optional[str] = Field(None, max_length=255)

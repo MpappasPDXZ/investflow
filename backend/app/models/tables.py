@@ -39,6 +39,16 @@ class PaymentMethod(str, enum.Enum):
     OTHER = "other"
 
 
+class PropertyStatus(str, enum.Enum):
+    OWN = "own"
+    EVALUATING = "evaluating"
+    REHABBING = "rehabbing"
+    LISTED_FOR_RENT = "listed_for_rent"
+    LISTED_FOR_SALE = "listed_for_sale"
+    SOLD = "sold"
+    HIDE = "hide"
+
+
 class User(Base, TimestampMixin):
     """User model"""
     __tablename__ = "users"
@@ -64,6 +74,10 @@ class Property(Base, TimestampMixin):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     display_name = Column(String(255), nullable=True)
     purchase_price = Column(Numeric(12, 2), nullable=False)
+    down_payment = Column(Numeric(12, 2), nullable=True)
+    current_market_value = Column(Numeric(12, 2), nullable=True)
+    property_status = Column(SQLEnum(PropertyStatus), default=PropertyStatus.EVALUATING, nullable=False)
+    vacancy_rate = Column(Numeric(5, 4), default=0.07, nullable=False)  # Default 7% vacancy rate
     monthly_rent_to_income_ratio = Column(Numeric(4, 2), default=2.75, nullable=False)
     address_line1 = Column(String(255), nullable=True)
     address_line2 = Column(String(255), nullable=True)

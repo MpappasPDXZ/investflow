@@ -12,7 +12,7 @@ from datetime import datetime
 class ScheduledExpenseBase(BaseModel):
     """Base schema for scheduled expenses"""
     property_id: str
-    expense_type: str  # 'capex', 'pti', 'pi'
+    expense_type: str  # 'capex', 'pti', 'pi', 'maintenance', 'vacancy'
     item_name: str
     
     # CapEx fields
@@ -20,7 +20,7 @@ class ScheduledExpenseBase(BaseModel):
     depreciation_rate: Optional[Decimal] = None
     count: Optional[int] = None
     
-    # PTI fields
+    # PTI fields (also used by Maintenance)
     annual_cost: Optional[Decimal] = None
     
     # P&I fields
@@ -70,7 +70,7 @@ class ScheduledExpenseListResponse(BaseModel):
 class ScheduledRevenueBase(BaseModel):
     """Base schema for scheduled revenue"""
     property_id: str
-    revenue_type: str  # 'principal_paydown', 'appreciation', 'value_added'
+    revenue_type: str  # 'principal_paydown', 'appreciation', 'value_added', 'tax_savings'
     item_name: str
     
     # Principal Paydown fields

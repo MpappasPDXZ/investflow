@@ -5,6 +5,7 @@ from uuid import UUID
 import uuid
 import pandas as pd
 from decimal import Decimal
+from datetime import date
 
 from app.core.dependencies import get_current_user
 from app.schemas.property import (
@@ -12,6 +13,8 @@ from app.schemas.property import (
 )
 from app.core.iceberg import read_table, append_data, table_exists, load_table
 from app.core.logging import get_logger
+from app.api.vacancy_utils import create_or_update_vacancy_expenses
+from app.api.tax_savings_utils import create_or_update_tax_savings
 
 NAMESPACE = ("investflow",)
 TABLE_NAME = "properties"
@@ -37,8 +40,11 @@ async def create_property_endpoint(
             "user_id": user_id,
             "display_name": property_data.display_name,
             "purchase_price": Decimal(str(property_data.purchase_price)),
+            "purchase_date": property_data.purchase_date if property_data.purchase_date else date(2025, 10, 23),
             "down_payment": Decimal(str(property_data.down_payment)) if property_data.down_payment else None,
             "current_market_value": Decimal(str(property_data.current_market_value)) if property_data.current_market_value else None,
+            "property_status": property_data.property_status if property_data.property_status else "evaluating",
+            "vacancy_rate": Decimal(str(property_data.vacancy_rate)) if property_data.vacancy_rate else Decimal("0.07"),
             "monthly_rent_to_income_ratio": Decimal(str(property_data.monthly_rent_to_income_ratio)) if property_data.monthly_rent_to_income_ratio else None,
             "address_line1": property_data.address_line1,
             "address_line2": property_data.address_line2,
@@ -62,6 +68,22 @@ async def create_property_endpoint(
         # Append to Iceberg table
         df = pd.DataFrame([property_dict])
         append_data(NAMESPACE, TABLE_NAME, df)
+        
+        # Create vacancy expenses if square footage is available
+        if property_data.square_feet and property_data.square_feet > 0:
+            vacancy_rate = property_dict["vacancy_rate"]
+            await create_or_update_vacancy_expenses(
+                property_id=property_id,
+                square_feet=property_data.square_feet,
+                vacancy_rate=vacancy_rate
+            )
+        
+        # Create tax savings (depreciation) revenue
+        await create_or_update_tax_savings(
+            property_id=property_id,
+            purchase_price=property_data.purchase_price,
+            purchase_date=property_dict["purchase_date"]
+        )
         
         # Convert to response (UUID conversion)
         response_dict = property_dict.copy()
@@ -114,6 +136,8 @@ async def list_properties_endpoint(
                 "purchase_price": Decimal(str(row["purchase_price"])),
                 "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
                 "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
+                "property_status": row.get("property_status", "evaluating"),
+                "vacancy_rate": Decimal(str(row["vacancy_rate"])) if pd.notna(row.get("vacancy_rate")) else Decimal("0.07"),
                 "monthly_rent_to_income_ratio": Decimal(str(row["monthly_rent_to_income_ratio"])) if pd.notna(row.get("monthly_rent_to_income_ratio")) else None,
                 "address_line1": row.get("address_line1"),
                 "address_line2": row.get("address_line2"),
@@ -171,6 +195,10 @@ async def get_property_endpoint(
             "user_id": UUID(str(row["user_id"])),
             "display_name": row.get("display_name"),
             "purchase_price": Decimal(str(row["purchase_price"])),
+            "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
+            "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
+            "property_status": row.get("property_status", "evaluating"),
+            "vacancy_rate": Decimal(str(row["vacancy_rate"])) if pd.notna(row.get("vacancy_rate")) else Decimal("0.07"),
             "monthly_rent_to_income_ratio": Decimal(str(row["monthly_rent_to_income_ratio"])) if pd.notna(row.get("monthly_rent_to_income_ratio")) else None,
             "address_line1": row.get("address_line1"),
             "address_line2": row.get("address_line2"),
@@ -219,16 +247,61 @@ async def update_property_endpoint(
         
         # Update fields
         update_dict = property_data.model_dump(exclude_none=True)
+        logger.info(f"Update dict received: {update_dict}")
+        
         for key, value in update_dict.items():
+            logger.info(f"Processing key: {key}, in columns: {key in df.columns}")
             if key in df.columns:
+                logger.info(f"Updating {key} with value {value} (type: {type(value)})")
                 # Convert Decimal fields
-                if key in ["purchase_price", "monthly_rent_to_income_ratio", "bathrooms", "current_monthly_rent"]:
+                if key in ["purchase_price", "down_payment", "current_market_value", "vacancy_rate", "monthly_rent_to_income_ratio", "bathrooms", "current_monthly_rent"]:
                     df.loc[mask, key] = Decimal(str(value)) if value is not None else None
+                # Handle date fields
+                elif key == "purchase_date":
+                    df.loc[mask, key] = pd.to_datetime(value) if value is not None else None
+                # Handle enum fields - convert to string
+                elif key == "property_status":
+                    status_value = str(value) if value is not None else "evaluating"
+                    logger.info(f"Setting property_status to: {status_value}")
+                    df.loc[mask, key] = status_value
                 else:
                     df.loc[mask, key] = value
+            else:
+                logger.warning(f"Key {key} not found in dataframe columns")
         
         # Update timestamp
         df.loc[mask, "updated_at"] = pd.Timestamp.now()
+        
+        # Check if vacancy rate or square feet changed - update vacancy expenses
+        if "vacancy_rate" in update_dict or "square_feet" in update_dict:
+            updated_row = df[mask].iloc[0]
+            square_feet = int(updated_row["square_feet"]) if pd.notna(updated_row.get("square_feet")) else None
+            vacancy_rate = Decimal(str(updated_row["vacancy_rate"])) if pd.notna(updated_row.get("vacancy_rate")) else Decimal("0.07")
+            
+            if square_feet and square_feet > 0:
+                logger.info(f"Updating vacancy expenses: SF={square_feet}, vacancy_rate={vacancy_rate}")
+                await create_or_update_vacancy_expenses(
+                    property_id=property_id,
+                    square_feet=square_feet,
+                    vacancy_rate=vacancy_rate
+                )
+        
+        # Check if purchase price or purchase date changed - update tax savings
+        if "purchase_price" in update_dict or "purchase_date" in update_dict:
+            updated_row = df[mask].iloc[0]
+            purchase_price = Decimal(str(updated_row["purchase_price"]))
+            purchase_date = updated_row.get("purchase_date")
+            if pd.notna(purchase_date):
+                purchase_date = purchase_date.date() if hasattr(purchase_date, 'date') else purchase_date
+            else:
+                purchase_date = date(2025, 10, 23)
+            
+            logger.info(f"Updating tax savings: purchase_price=${purchase_price}, purchase_date={purchase_date}")
+            await create_or_update_tax_savings(
+                property_id=property_id,
+                purchase_price=purchase_price,
+                purchase_date=purchase_date
+            )
         
         # Convert timestamps to microseconds
         for col in df.columns:
@@ -253,6 +326,7 @@ async def update_property_endpoint(
         
         # Get updated property
         updated_row = df[mask].iloc[0]
+        logger.info(f"Updated row property_status: {updated_row.get('property_status')}")
         
         # Convert to response
         prop_dict = {
@@ -260,6 +334,10 @@ async def update_property_endpoint(
             "user_id": UUID(str(updated_row["user_id"])),
             "display_name": updated_row.get("display_name"),
             "purchase_price": Decimal(str(updated_row["purchase_price"])),
+            "down_payment": Decimal(str(updated_row["down_payment"])) if pd.notna(updated_row.get("down_payment")) else None,
+            "current_market_value": Decimal(str(updated_row["current_market_value"])) if pd.notna(updated_row.get("current_market_value")) else None,
+            "property_status": updated_row.get("property_status", "evaluating"),
+            "vacancy_rate": Decimal(str(updated_row["vacancy_rate"])) if pd.notna(updated_row.get("vacancy_rate")) else Decimal("0.07"),
             "monthly_rent_to_income_ratio": Decimal(str(updated_row["monthly_rent_to_income_ratio"])) if pd.notna(updated_row.get("monthly_rent_to_income_ratio")) else None,
             "address_line1": updated_row.get("address_line1"),
             "address_line2": updated_row.get("address_line2"),

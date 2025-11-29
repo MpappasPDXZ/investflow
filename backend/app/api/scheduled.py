@@ -572,6 +572,10 @@ def calculate_expense_annual_cost(expense: dict) -> Decimal | None:
         # PTI: direct annual_cost
         return expense.get('annual_cost')
     
+    elif expense_type == 'maintenance' or expense_type == 'vacancy':
+        # Maintenance and Vacancy: direct annual_cost (same as PTI)
+        return expense.get('annual_cost')
+    
     elif expense_type == 'pi':
         # P&I: principal * interest_rate
         principal = expense.get('principal')
