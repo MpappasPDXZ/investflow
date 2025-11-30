@@ -90,7 +90,11 @@ def read_table_filtered(
     """
     try:
         table = load_table(namespace, table_name)
-        scan = table.scan(row_filter=row_filter, selected_fields=selected_columns)
+        # Only pass selected_fields if columns are specified (must be tuple)
+        if selected_columns:
+            scan = table.scan(row_filter=row_filter, selected_fields=tuple(selected_columns))
+        else:
+            scan = table.scan(row_filter=row_filter)
         arrow_table = scan.to_arrow()
         return arrow_table.to_pandas()
     except Exception as e:

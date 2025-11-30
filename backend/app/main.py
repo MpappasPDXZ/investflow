@@ -17,9 +17,9 @@ from app.core.middleware import (
     validation_exception_handler
 )
 from app.core.exceptions import InvestFlowException
-from app.api import auth, health, properties, users, units, scheduled, shares, rent, expenses
+from app.api import auth, health, properties, users, units, scheduled, shares, rent, expenses, documents
 # Temporarily disabled
-# from app.api import documents, lakekeeper_test
+# from app.api import lakekeeper_test
 from app.models.base import Base
 
 # Set up logging
@@ -123,7 +123,7 @@ app.include_router(scheduled.router, prefix=settings.API_V1_PREFIX)
 app.include_router(shares.router, prefix=settings.API_V1_PREFIX)
 app.include_router(rent.router, prefix=settings.API_V1_PREFIX)
 app.include_router(expenses.router, prefix=settings.API_V1_PREFIX)
+app.include_router(documents.router, prefix=settings.API_V1_PREFIX)
 # Temporarily disabled
-# app.include_router(documents.router, prefix=settings.API_V1_PREFIX)
 # app.include_router(lakekeeper_test.router, prefix=settings.API_V1_PREFIX)
 

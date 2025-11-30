@@ -72,11 +72,11 @@ class ADLSService:
             file_ext = filename.split('.')[-1] if '.' in filename else ''
             blob_id = str(uuid.uuid4())
             
-            # Organize into folders: expenses for receipts, documents for others
+            # Organize into folders: expenses for receipts, user_documents for others
             if document_type == "receipt":
                 folder = "expenses"
             else:
-                folder = "documents"
+                folder = "user_documents"
             
             # Structure: folder/user_id/blob_id.ext
             blob_name = f"{folder}/{user_id}/{blob_id}.{file_ext}"
