@@ -209,10 +209,9 @@ class DocumentService:
             # Query
             scan = table.scan(row_filter=row_filter)
             
-            # Collect all results
-            all_docs = []
-            for batch in scan.to_arrow():
-                all_docs.extend(batch.to_pylist())
+            # Collect all results - scan.to_arrow() returns a Table
+            arrow_table = scan.to_arrow()
+            all_docs = arrow_table.to_pylist()
             
             # Sort by uploaded_at descending
             all_docs.sort(key=lambda x: x["uploaded_at"], reverse=True)

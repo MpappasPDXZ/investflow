@@ -50,7 +50,7 @@ class ExpenseService:
                 "unit_id": str(expense_data.unit_id) if expense_data.unit_id else None,
                 "description": expense_data.description,
                 "date": expense_data.date,
-                "amount": float(expense_data.amount),
+                "amount": Decimal(str(expense_data.amount)),  # Convert to Decimal
                 "vendor": expense_data.vendor,
                 "expense_type": expense_data.expense_type.value,
                 "document_storage_id": str(expense_data.document_storage_id) if expense_data.document_storage_id else None,
@@ -64,8 +64,8 @@ class ExpenseService:
             # Write to Iceberg
             import pyarrow as pa
             schema = table.schema().as_arrow()
-            record_batch = pa.RecordBatch.from_pylist([record], schema=schema)
-            table.append(record_batch)
+            arrow_table = pa.Table.from_pylist([record], schema=schema)
+            table.append(arrow_table)
             
             logger.info(f"Created expense: {expense_id}")
             
@@ -101,10 +101,10 @@ class ExpenseService:
                 )
             )
             
-            # Get first result
-            for batch in scan.to_arrow():
-                if len(batch) > 0:
-                    return batch.to_pylist()[0]
+            # Get first result - scan.to_arrow() returns a Table
+            arrow_table = scan.to_arrow()
+            if len(arrow_table) > 0:
+                return arrow_table.to_pylist()[0]
             
             return None
             
@@ -168,10 +168,9 @@ class ExpenseService:
             # Query
             scan = table.scan(row_filter=row_filter)
             
-            # Collect all results
-            all_expenses = []
-            for batch in scan.to_arrow():
-                all_expenses.extend(batch.to_pylist())
+            # Collect all results - scan.to_arrow() returns a Table
+            arrow_table = scan.to_arrow()
+            all_expenses = arrow_table.to_pylist()
             
             # Sort by date descending
             all_expenses.sort(key=lambda x: x["date"], reverse=True)
@@ -219,10 +218,9 @@ class ExpenseService:
             # Query
             scan = table.scan(row_filter=row_filter)
             
-            # Collect all results
-            all_expenses = []
-            for batch in scan.to_arrow():
-                all_expenses.extend(batch.to_pylist())
+            # Collect all results - scan.to_arrow() returns a Table
+            arrow_table = scan.to_arrow()
+            all_expenses = arrow_table.to_pylist()
             
             # Calculate summaries
             yearly_totals = {}
@@ -329,8 +327,8 @@ class ExpenseService:
             
             import pyarrow as pa
             schema = table.schema().as_arrow()
-            record_batch = pa.RecordBatch.from_pylist([existing], schema=schema)
-            table.append(record_batch)
+            arrow_table = pa.Table.from_pylist([existing], schema=schema)
+            table.append(arrow_table)
             
             logger.info(f"Updated expense: {expense_id}")
             
