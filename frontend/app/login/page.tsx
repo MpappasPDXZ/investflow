@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,7 +19,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      router.push('/');
+      router.push('/profile');
     }
   }, [isAuthenticated, router]);
 
@@ -34,7 +35,7 @@ export default function LoginPage() {
     
     if (result.success) {
       console.log('✅ [LOGIN] Login successful, redirecting...');
-      router.push('/');
+      router.push('/profile');
     } else {
       console.error('❌ [LOGIN] Login failed:', result.error);
       setError(result.error || 'Login failed');
@@ -47,7 +48,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-2xl font-bold">InvestFlow</CardTitle>
+          <CardTitle className="text-2xl font-bold">Investment Cash Flow (ICF)</CardTitle>
           <CardDescription>Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>
@@ -86,6 +87,12 @@ export default function LoginPage() {
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
+            <div className="text-center text-sm text-gray-600">
+              Don't have an account?{' '}
+              <Link href="/register" className="text-black hover:underline font-medium">
+                Create one
+              </Link>
+            </div>
           </form>
         </CardContent>
       </Card>

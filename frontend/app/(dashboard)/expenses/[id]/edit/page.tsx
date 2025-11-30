@@ -1,15 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useCreateExpenseWithReceipt } from '@/lib/hooks/use-expenses';
+import { useRouter, useParams } from 'next/navigation';
+import { useExpense, useUpdateExpense } from '@/lib/hooks/use-expenses';
 import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
+import { ReceiptViewer } from '@/components/ReceiptViewer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { format } from 'date-fns';
+import { FileText, Upload, Check } from 'lucide-react';
 
 interface Unit {
   id: string;
@@ -19,15 +21,22 @@ interface Unit {
   is_active: boolean;
 }
 
-export default function AddExpensePage() {
+export default function EditExpensePage() {
   const router = useRouter();
+  const params = useParams();
+  const expenseId = params.id as string;
+  
+  const { data: expense, isLoading: loadingExpense, refetch } = useExpense(expenseId);
   const { data: properties } = usePropertiesHook();
-  const createExpense = useCreateExpenseWithReceipt();
+  const updateExpense = useUpdateExpense();
   
   const [loading, setLoading] = useState(false);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [error, setError] = useState('');
   const [units, setUnits] = useState<Unit[]>([]);
   const [loadingUnits, setLoadingUnits] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [formData, setFormData] = useState({
     property_id: '',
     unit_id: '',
@@ -38,17 +47,26 @@ export default function AddExpensePage() {
     expense_type: 'maintenance',
     notes: '',
   });
-  const [file, setFile] = useState<File | null>(null);
 
-  // Fetch units when property changes
+  // Load expense data when it arrives
   useEffect(() => {
-    if (formData.property_id) {
-      fetchUnits(formData.property_id);
-    } else {
-      setUnits([]);
-      setFormData(prev => ({ ...prev, unit_id: '' }));
+    if (expense) {
+      setFormData({
+        property_id: expense.property_id || '',
+        unit_id: expense.unit_id || '',
+        description: expense.description || '',
+        date: expense.date || format(new Date(), 'yyyy-MM-dd'),
+        amount: String(expense.amount) || '',
+        vendor: expense.vendor || '',
+        expense_type: expense.expense_type || 'maintenance',
+        notes: expense.notes || '',
+      });
+      // Fetch units for this property
+      if (expense.property_id) {
+        fetchUnits(expense.property_id);
+      }
     }
-  }, [formData.property_id]);
+  }, [expense]);
 
   const fetchUnits = async (propertyId: string) => {
     try {
@@ -65,6 +83,48 @@ export default function AddExpensePage() {
 
   const handlePropertyChange = (propertyId: string) => {
     setFormData({ ...formData, property_id: propertyId, unit_id: '' });
+    if (propertyId) {
+      fetchUnits(propertyId);
+    } else {
+      setUnits([]);
+    }
+  };
+
+  const handleUploadReceipt = async () => {
+    if (!file || !expense) return;
+    
+    setUploadingReceipt(true);
+    setError('');
+    
+    try {
+      // Upload document first
+      const formDataToSend = new FormData();
+      formDataToSend.append('file', file);
+      formDataToSend.append('document_type', 'receipt');
+      formDataToSend.append('property_id', expense.property_id);
+      if (expense.unit_id) {
+        formDataToSend.append('unit_id', expense.unit_id);
+      }
+      
+      const docResponse = await apiClient.upload<{ document: { id: string } }>('/documents/upload', formDataToSend);
+      
+      // Update expense with document_storage_id
+      await updateExpense.mutateAsync({
+        id: expenseId,
+        data: {
+          document_storage_id: docResponse.document.id,
+        },
+      });
+      
+      setReceiptUploaded(true);
+      setFile(null);
+      refetch(); // Refresh expense data
+    } catch (err) {
+      console.error('Error uploading receipt:', err);
+      setError('Failed to upload receipt: ' + (err as Error).message);
+    } finally {
+      setUploadingReceipt(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -72,46 +132,53 @@ export default function AddExpensePage() {
     setError('');
     setLoading(true);
 
-    console.log('📝 [EXPENSE] Creating expense:', formData);
-    console.log('📤 [EXPENSE] POST /api/v1/expenses/with-receipt - Request');
-
     try {
-      const formDataToSend = new FormData();
-      formDataToSend.append('property_id', formData.property_id);
-      formDataToSend.append('description', formData.description);
-      formDataToSend.append('date', formData.date);
-      formDataToSend.append('amount', formData.amount);
-      formDataToSend.append('expense_type', formData.expense_type);
-      if (formData.unit_id) formDataToSend.append('unit_id', formData.unit_id);
-      if (formData.vendor) formDataToSend.append('vendor', formData.vendor);
-      if (formData.notes) formDataToSend.append('notes', formData.notes);
-      if (file) {
-        formDataToSend.append('file', file);
-        formDataToSend.append('document_type', 'receipt');
-      }
-
-      const response = await createExpense.mutateAsync(formDataToSend);
-      
-      console.log('✅ [EXPENSE] POST /api/v1/expenses/with-receipt - Response:', response);
-      console.log('📝 [EXPENSE] Backend to PostgreSQL/Lakekeeper: Expense created');
+      await updateExpense.mutateAsync({
+        id: expenseId,
+        data: {
+          description: formData.description,
+          date: formData.date,
+          amount: parseFloat(formData.amount),
+          vendor: formData.vendor || undefined,
+          expense_type: formData.expense_type as any,
+          unit_id: formData.unit_id || undefined,
+          notes: formData.notes || undefined,
+        },
+      });
       
       router.push('/expenses');
     } catch (err) {
-      console.error('❌ [EXPENSE] Error creating expense:', err);
+      console.error('❌ [EXPENSE] Error updating expense:', err);
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
   };
 
-  const selectedProperty = properties?.items.find(p => p.id === formData.property_id);
   const hasUnits = units.length > 0;
+  const hasReceipt = expense?.document_storage_id;
+
+  if (loadingExpense) {
+    return (
+      <div className="p-4">
+        <div className="text-sm text-gray-500">Loading expense...</div>
+      </div>
+    );
+  }
+
+  if (!expense) {
+    return (
+      <div className="p-4">
+        <div className="text-sm text-red-500">Expense not found</div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4">
       <div className="mb-4">
-        <h1 className="text-lg font-bold text-gray-900">Add Expense</h1>
-        <p className="text-xs text-gray-600 mt-0.5">Record a new property expense</p>
+        <h1 className="text-lg font-bold text-gray-900">Edit Expense</h1>
+        <p className="text-xs text-gray-600 mt-0.5">Update expense details</p>
       </div>
 
       <Card className="max-w-2xl">
@@ -235,16 +302,56 @@ export default function AddExpensePage() {
                   placeholder="e.g., Home Depot, Plumber LLC"
                 />
               </div>
+              
+              {/* Receipt Section */}
               <div className="col-span-2">
-                <Label htmlFor="file" className="text-xs">Receipt/Invoice</Label>
-                <Input
-                  id="file"
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  className="text-sm mt-1"
-                />
+                <Label className="text-xs">Receipt/Invoice</Label>
+                <div className="mt-1 p-3 bg-gray-50 rounded-md border">
+                  {hasReceipt ? (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm text-green-700">
+                        <Check className="h-4 w-4" />
+                        <span>Receipt attached</span>
+                      </div>
+                      <ReceiptViewer expenseId={expenseId} />
+                    </div>
+                  ) : receiptUploaded ? (
+                    <div className="flex items-center gap-2 text-sm text-green-700">
+                      <Check className="h-4 w-4" />
+                      <span>Receipt uploaded successfully!</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <FileText className="h-4 w-4" />
+                        <span>No receipt attached</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="file"
+                          type="file"
+                          accept="image/*,.pdf"
+                          onChange={(e) => setFile(e.target.files?.[0] || null)}
+                          className="text-xs flex-1"
+                        />
+                        {file && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleUploadReceipt}
+                            disabled={uploadingReceipt}
+                            className="h-8 text-xs"
+                          >
+                            <Upload className="h-3 w-3 mr-1" />
+                            {uploadingReceipt ? 'Uploading...' : 'Upload'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+              
               <div className="col-span-2">
                 <Label htmlFor="notes" className="text-xs">Notes</Label>
                 <textarea
@@ -271,7 +378,7 @@ export default function AddExpensePage() {
                 className="bg-black text-white hover:bg-gray-800"
                 disabled={loading}
               >
-                {loading ? 'Creating...' : 'Create Expense'}
+                {loading ? 'Saving...' : 'Save Changes'}
               </Button>
               <Button
                 type="button"

@@ -1,12 +1,12 @@
 'use client';
 
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { Sidebar } from '@/components/Sidebar';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, memo } from 'react';
 
-export default function DashboardLayout({
+function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -18,7 +18,7 @@ export default function DashboardLayout({
     if (!loading && !isAuthenticated) {
       router.push('/login');
     }
-  }, [isAuthenticated, loading, router]);
+  }, [isAuthenticated, loading]); // Remove router from dependencies
 
   if (loading) {
     return (
@@ -37,10 +37,18 @@ export default function DashboardLayout({
       <Sidebar />
       <SidebarInset className="flex-1">
         <div className="min-h-screen bg-gray-50">
-          {children}
+          {/* Sidebar Toggle Header */}
+          <header className="sticky top-0 z-10 flex h-10 items-center gap-2 border-b bg-white px-3">
+            <SidebarTrigger className="h-7 w-7" />
+          </header>
+          <main>
+            {children}
+          </main>
         </div>
       </SidebarInset>
     </SidebarProvider>
   );
 }
+
+export default memo(DashboardLayout);
 

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useProperties } from '@/lib/hooks/use-properties';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,12 +13,15 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Building2 } from 'lucide-react';
+import { Plus, Building2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { apiClient } from '@/lib/api-client';
 
 export default function PropertiesPage() {
-  const { data, isLoading, error } = useProperties();
+  const router = useRouter();
+  const { data, isLoading, error, refetch } = useProperties();
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('📊 [PROPERTIES] Page loaded');
@@ -29,6 +33,25 @@ export default function PropertiesPage() {
       console.error('❌ [PROPERTIES] Error:', error);
     }
   }, [data, error]);
+
+  const handleDelete = async (propertyId: string, propertyName: string) => {
+    if (!confirm(`Are you sure you want to delete "${propertyName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setDeleting(propertyId);
+    try {
+      await apiClient.delete(`/properties/${propertyId}`);
+      console.log('✅ [PROPERTY] Deleted:', propertyId);
+      // Refetch the properties list
+      refetch();
+    } catch (err) {
+      console.error('❌ [PROPERTY] Error deleting:', err);
+      alert(`Failed to delete property: ${(err as Error).message}`);
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -69,14 +92,20 @@ export default function PropertiesPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Address</TableHead>
                   <TableHead>Purchase Price</TableHead>
-                  <TableHead>Monthly Rent</TableHead>
+                  <TableHead>Down Payment</TableHead>
+                  <TableHead>Market Value</TableHead>
+                  <TableHead>Vacancy Rate</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data?.items.map((property) => (
-                  <TableRow key={property.id}>
+                  <TableRow 
+                    key={property.id}
+                    className="cursor-pointer hover:bg-gray-50"
+                    onClick={() => router.push(`/properties/${property.id}`)}
+                  >
                     <TableCell className="font-medium">
                       {property.display_name || 'Unnamed Property'}
                     </TableCell>
@@ -89,20 +118,44 @@ export default function PropertiesPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      ${property.purchase_price?.toLocaleString() || 'N/A'}
+                      ${Math.round(property.purchase_price / 1000).toLocaleString()}k
                     </TableCell>
                     <TableCell>
-                      ${property.current_monthly_rent?.toLocaleString() || 'N/A'}
+                      {property.down_payment 
+                        ? `$${Math.round(property.down_payment / 1000).toLocaleString()}k`
+                        : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {property.current_market_value 
+                        ? `$${Math.round(property.current_market_value / 1000).toLocaleString()}k`
+                        : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {property.vacancy_rate !== undefined && property.vacancy_rate !== null
+                        ? `${(property.vacancy_rate * 100).toFixed(1)}%`
+                        : '7.0%'}
                     </TableCell>
                     <TableCell className="text-sm text-gray-600">
                       {property.property_type || '-'}
                     </TableCell>
-                    <TableCell>
-                      <Link href={`/properties/${property.id}`}>
-                        <Button variant="ghost" size="sm" className="text-black hover:bg-gray-100">
-                          View
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:bg-red-50"
+                          onClick={() => handleDelete(property.id, property.display_name || 'this property')}
+                          disabled={deleting === property.id}
+                        >
+                          {deleting === property.id ? (
+                            'Deleting...'
+                          ) : (
+                            <>
+                              <Trash2 className="h-4 w-4" />
+                            </>
+                          )}
                         </Button>
-                      </Link>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

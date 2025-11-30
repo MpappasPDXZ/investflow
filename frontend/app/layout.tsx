@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Providers } from './providers'
+import { VersionIndicator } from '@/components/VersionIndicator'
 
 export const metadata: Metadata = {
   title: 'InvestFlow - Rental Property Management',
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="en" className="light">
       <body className="font-['Roboto',sans-serif] antialiased">
         <Providers>{children}</Providers>
+        <VersionIndicator />
       </body>
     </html>
   )
