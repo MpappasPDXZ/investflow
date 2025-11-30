@@ -2,7 +2,7 @@
 API endpoints for scheduled expenses and revenue
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from app.core.dependencies import get_current_user_id
+from app.core.dependencies import get_current_user
 from app.schemas.scheduled import (
     ScheduledExpenseCreate, ScheduledExpenseUpdate, ScheduledExpenseResponse, ScheduledExpenseListResponse,
     ScheduledRevenueCreate, ScheduledRevenueUpdate, ScheduledRevenueResponse, ScheduledRevenueListResponse
@@ -28,24 +28,30 @@ REVENUE_TABLE = "scheduled_revenue"
 @router.post("/scheduled-expenses", response_model=ScheduledExpenseResponse)
 async def create_scheduled_expense(
     expense_data: ScheduledExpenseCreate,
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """Create a new scheduled expense"""
     try:
+        user_id = current_user["sub"]
+        user_email = current_user["email"]
         logger.info(f"Creating scheduled expense for property {expense_data.property_id}")
         
-        # Verify property belongs to user
+        # Verify property exists and user has access
         properties_df = read_table(NAMESPACE, "properties")
         if properties_df is None or properties_df.empty:
             raise HTTPException(status_code=404, detail="Properties table is empty")
         
-        property_match = properties_df[
-            (properties_df['id'] == expense_data.property_id) & 
-            (properties_df['user_id'] == user_id)
-        ]
+        property_match = properties_df[properties_df['id'] == expense_data.property_id]
         
         if property_match.empty:
             raise HTTPException(status_code=404, detail="Property not found")
+        
+        property_user_id = str(property_match.iloc[0]['user_id'])
+        
+        # Check access: owner OR bidirectional share
+        from app.api.sharing_utils import user_has_property_access
+        if not user_has_property_access(property_user_id, user_id, user_email):
+            raise HTTPException(status_code=404, detail="Property not found or no access")
         
         # Create expense record
         expense_id = str(uuid.uuid4())
@@ -92,10 +98,11 @@ async def create_scheduled_expense(
 @router.get("/scheduled-expenses", response_model=ScheduledExpenseListResponse)
 async def list_scheduled_expenses(
     property_id: str = Query(..., description="Property ID"),
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """List all scheduled expenses for a property"""
     try:
+        user_id = current_user["sub"]
         logger.info(f"Fetching scheduled expenses for property {property_id}")
         
         # Verify property belongs to user
@@ -146,10 +153,11 @@ async def list_scheduled_expenses(
 @router.get("/scheduled-expenses/{expense_id}", response_model=ScheduledExpenseResponse)
 async def get_scheduled_expense(
     expense_id: str,
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """Get a specific scheduled expense"""
     try:
+        user_id = current_user["sub"]
         expenses_df = read_table(NAMESPACE, EXPENSES_TABLE)
         if expenses_df is None or expenses_df.empty:
             raise HTTPException(status_code=404, detail="Expense not found")
@@ -187,10 +195,11 @@ async def get_scheduled_expense(
 async def update_scheduled_expense(
     expense_id: str,
     expense_update: ScheduledExpenseUpdate,
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """Update a scheduled expense"""
     try:
+        user_id = current_user["sub"]
         logger.info(f"Updating scheduled expense {expense_id}")
         
         # Read all expenses
@@ -254,10 +263,11 @@ async def update_scheduled_expense(
 @router.delete("/scheduled-expenses/{expense_id}")
 async def delete_scheduled_expense(
     expense_id: str,
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """Delete (soft delete) a scheduled expense"""
     try:
+        user_id = current_user["sub"]
         logger.info(f"Deleting scheduled expense {expense_id}")
         
         # Read all expenses
@@ -314,10 +324,11 @@ async def delete_scheduled_expense(
 @router.post("/scheduled-revenue", response_model=ScheduledRevenueResponse)
 async def create_scheduled_revenue(
     revenue_data: ScheduledRevenueCreate,
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """Create a new scheduled revenue"""
     try:
+        user_id = current_user["sub"]
         logger.info(f"Creating scheduled revenue for property {revenue_data.property_id}")
         
         # Verify property belongs to user
@@ -376,10 +387,11 @@ async def create_scheduled_revenue(
 @router.get("/scheduled-revenue", response_model=ScheduledRevenueListResponse)
 async def list_scheduled_revenue(
     property_id: str = Query(..., description="Property ID"),
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """List all scheduled revenue for a property"""
     try:
+        user_id = current_user["sub"]
         logger.info(f"Fetching scheduled revenue for property {property_id}")
         
         # Verify property belongs to user
@@ -431,10 +443,11 @@ async def list_scheduled_revenue(
 async def update_scheduled_revenue(
     revenue_id: str,
     revenue_update: ScheduledRevenueUpdate,
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """Update a scheduled revenue"""
     try:
+        user_id = current_user["sub"]
         logger.info(f"Updating scheduled revenue {revenue_id}")
         
         # Read all revenue
@@ -498,10 +511,11 @@ async def update_scheduled_revenue(
 @router.delete("/scheduled-revenue/{revenue_id}")
 async def delete_scheduled_revenue(
     revenue_id: str,
-    user_id: str = Depends(get_current_user_id)
+    current_user: dict = Depends(get_current_user)
 ):
     """Delete (soft delete) a scheduled revenue"""
     try:
+        user_id = current_user["sub"]
         logger.info(f"Deleting scheduled revenue {revenue_id}")
         
         # Read all revenue
@@ -606,6 +620,10 @@ def calculate_revenue_annual_amount(revenue: dict) -> Decimal | None:
     elif revenue_type == 'value_added':
         # Direct value_added_amount
         return revenue.get('value_added_amount')
+    
+    elif revenue_type == 'tax_savings':
+        # Direct annual_amount (tax savings from depreciation)
+        return revenue.get('annual_amount')
     
     return None
 

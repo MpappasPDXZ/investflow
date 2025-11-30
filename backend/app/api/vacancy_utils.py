@@ -74,6 +74,9 @@ async def create_or_update_vacancy_expenses(property_id: str, square_feet: int, 
                 schema_column_order = [field.name for field in table_schema]
                 df = df[[col for col in schema_column_order if col in df.columns]]
                 
+                # Reset index to avoid __index_level_0__ column
+                df = df.reset_index(drop=True)
+                
                 # Convert to PyArrow and cast to table schema
                 import pyarrow as pa
                 arrow_table = pa.Table.from_pandas(df, preserve_index=False)
@@ -152,8 +155,11 @@ async def delete_vacancy_expenses(property_id: str):
         schema_column_order = [field.name for field in table_schema]
         df = df[[col for col in schema_column_order if col in df.columns]]
         
+        # Reset index to avoid __index_level_0__ column
+        df = df.reset_index(drop=True)
+        
         import pyarrow as pa
-        arrow_table = pa.Table.from_pandas(df)
+        arrow_table = pa.Table.from_pandas(df, preserve_index=False)
         arrow_table = arrow_table.cast(table_schema)
         table.overwrite(arrow_table)
         

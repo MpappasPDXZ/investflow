@@ -49,6 +49,17 @@ def create_user_schema() -> pa.Schema:
     ])
 
 
+def create_user_shares_schema() -> pa.Schema:
+    """Create PyArrow schema for user_shares table (bidirectional sharing)"""
+    return pa.schema([
+        pa.field("id", pa.string(), nullable=False),  # UUID as string
+        pa.field("user_id", pa.string(), nullable=False),  # User who created the share
+        pa.field("shared_email", pa.string(), nullable=False),  # Email to share with (bidirectional)
+        pa.field("created_at", pa.timestamp("us"), nullable=False),
+        pa.field("updated_at", pa.timestamp("us"), nullable=False),
+    ])
+
+
 def create_properties_schema() -> pa.Schema:
     """Create PyArrow schema for properties table"""
     return pa.schema([
@@ -758,7 +769,15 @@ async def main():
     )
     user_ids = users_df["id"].tolist()
     
-    # 3.2: Properties (depends on users)
+    # 3.2: User Shares (depends on users)
+    user_shares_df = pd.DataFrame()  # Empty initially, users can add shares later
+    await create_table_with_data(
+        pyiceberg, lakekeeper, warehouse_id,
+        "user_shares", create_user_shares_schema(), user_shares_df,
+        "User Shares table (bidirectional property sharing)"
+    )
+    
+    # 3.3: Properties (depends on users)
     properties_df = create_sample_properties(user_ids)
     await create_table_with_data(
         pyiceberg, lakekeeper, warehouse_id,
@@ -767,7 +786,7 @@ async def main():
     )
     property_ids = properties_df["id"].tolist()
     
-    # 3.3: Property Plan (depends on properties)
+    # 3.4: Property Plan (depends on properties)
     property_plan_df = create_sample_property_plan(property_ids)
     await create_table_with_data(
         pyiceberg, lakekeeper, warehouse_id,
@@ -775,7 +794,7 @@ async def main():
         "Property Plan table"
     )
     
-    # 3.4: Document Storage (depends on users)
+    # 3.5: Document Storage (depends on users)
     document_storage_df = create_sample_document_storage(user_ids)
     await create_table_with_data(
         pyiceberg, lakekeeper, warehouse_id,
@@ -784,7 +803,7 @@ async def main():
     )
     document_storage_ids = document_storage_df["id"].tolist()
     
-    # 3.5: Expenses (depends on properties, users, document_storage)
+    # 3.6: Expenses (depends on properties, users, document_storage)
     expenses_df = create_sample_expenses(property_ids, user_ids, document_storage_ids)
     await create_table_with_data(
         pyiceberg, lakekeeper, warehouse_id,
@@ -792,7 +811,7 @@ async def main():
         "Expenses table"
     )
     
-    # 3.6: Clients (depends on properties)
+    # 3.7: Clients (depends on properties)
     clients_df = create_sample_clients(property_ids)
     await create_table_with_data(
         pyiceberg, lakekeeper, warehouse_id,
@@ -801,7 +820,7 @@ async def main():
     )
     client_ids = clients_df["id"].tolist()
     
-    # 3.7: Rents (depends on clients, properties, users)
+    # 3.8: Rents (depends on clients, properties, users)
     rents_df = create_sample_rents(client_ids, property_ids, user_ids)
     await create_table_with_data(
         pyiceberg, lakekeeper, warehouse_id,
@@ -809,7 +828,7 @@ async def main():
         "Rents table"
     )
     
-    # 3.8: Scenarios (depends on properties, users)
+    # 3.9: Scenarios (depends on properties, users)
     scenarios_df = create_sample_scenarios(property_ids, user_ids)
     await create_table_with_data(
         pyiceberg, lakekeeper, warehouse_id,
@@ -822,7 +841,7 @@ async def main():
     print("Final Verification - Reading all tables")
     print("=" * 70)
     
-    tables = ["users", "properties", "property_plan", "document_storage", "expenses", "clients", "rents", "scenarios"]
+    tables = ["users", "user_shares", "properties", "property_plan", "document_storage", "expenses", "clients", "rents", "scenarios"]
     for table_name in tables:
         try:
             df = pyiceberg.read_table(NAMESPACE, table_name)

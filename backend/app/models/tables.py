@@ -59,6 +59,8 @@ class User(Base, TimestampMixin):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     tax_rate = Column(Numeric(5, 2), nullable=True)  # Tax rate for breakeven pro forma (e.g., 0.22 for 22%)
+    mortgage_interest_rate = Column(Numeric(5, 4), nullable=True)  # 30-year mortgage rate (e.g., 0.0700 for 7%)
+    loc_interest_rate = Column(Numeric(5, 4), nullable=True)  # Line of Credit interest rate (e.g., 0.0700 for 7%)
     is_active = Column(Boolean, default=True, nullable=False)
     
     # Relationships

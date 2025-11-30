@@ -40,7 +40,7 @@ async def create_property_endpoint(
             "user_id": user_id,
             "display_name": property_data.display_name,
             "purchase_price": Decimal(str(property_data.purchase_price)),
-            "purchase_date": property_data.purchase_date if property_data.purchase_date else date(2025, 10, 23),
+            "purchase_date": pd.Timestamp(property_data.purchase_date) if property_data.purchase_date else pd.Timestamp(2025, 10, 23),
             "down_payment": Decimal(str(property_data.down_payment)) if property_data.down_payment else None,
             "current_market_value": Decimal(str(property_data.current_market_value)) if property_data.current_market_value else None,
             "property_status": property_data.property_status if property_data.property_status else "evaluating",
@@ -81,6 +81,7 @@ async def create_property_endpoint(
         # Create tax savings (depreciation) revenue
         await create_or_update_tax_savings(
             property_id=property_id,
+            user_id=user_id,
             purchase_price=property_data.purchase_price,
             purchase_date=property_dict["purchase_date"]
         )
@@ -110,16 +111,29 @@ async def list_properties_endpoint(
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)
 ):
-    """List all properties for the current user from Iceberg"""
+    """List all properties for the current user from Iceberg (including shared properties)"""
     try:
         user_id = current_user["sub"]  # Already a string
+        user_email = current_user["email"]
         
         if not table_exists(NAMESPACE, TABLE_NAME):
             return PropertyListResponse(items=[], total=0, page=1, limit=limit)
         
-        # Read all properties for user
+        # Read all properties
         df = read_table(NAMESPACE, TABLE_NAME)
-        user_properties = df[(df["user_id"] == user_id) & (df["is_active"] == True)]
+        
+        # Get shared user IDs (bidirectional)
+        from app.api.sharing_utils import get_shared_user_ids
+        shared_user_ids = get_shared_user_ids(user_id, user_email)
+        
+        # Filter: properties owned by user OR owned by shared users
+        if len(shared_user_ids) > 0:
+            user_properties = df[
+                ((df["user_id"] == user_id) | (df["user_id"].isin(shared_user_ids))) &
+                (df["is_active"] == True)
+            ]
+        else:
+            user_properties = df[(df["user_id"] == user_id) & (df["is_active"] == True)]
         
         total = len(user_properties)
         
@@ -134,6 +148,7 @@ async def list_properties_endpoint(
                 "user_id": UUID(str(row["user_id"])),
                 "display_name": row.get("display_name"),
                 "purchase_price": Decimal(str(row["purchase_price"])),
+                "purchase_date": row.get("purchase_date").to_pydatetime() if pd.notna(row.get("purchase_date")) else None,
                 "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
                 "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
                 "property_status": row.get("property_status", "evaluating"),
@@ -173,18 +188,27 @@ async def get_property_endpoint(
     property_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get a property by ID from Iceberg"""
+    """Get a property by ID from Iceberg (checks ownership and sharing)"""
     try:
         user_id = current_user["sub"]  # Already a string
+        user_email = current_user["email"]
         
         if not table_exists(NAMESPACE, TABLE_NAME):
             raise HTTPException(status_code=404, detail="Property not found")
         
         # Read table and find property
         df = read_table(NAMESPACE, TABLE_NAME)
-        property_rows = df[(df["id"] == property_id) & (df["user_id"] == user_id)]
+        property_rows = df[df["id"] == property_id]
         
         if len(property_rows) == 0:
+            raise HTTPException(status_code=404, detail="Property not found")
+        
+        property_row = property_rows.iloc[0]
+        property_user_id = str(property_row["user_id"])
+        
+        # Check access: owner OR bidirectional share
+        from app.api.sharing_utils import user_has_property_access
+        if not user_has_property_access(property_user_id, user_id, user_email):
             raise HTTPException(status_code=404, detail="Property not found")
         
         row = property_rows.iloc[0]
@@ -195,6 +219,7 @@ async def get_property_endpoint(
             "user_id": UUID(str(row["user_id"])),
             "display_name": row.get("display_name"),
             "purchase_price": Decimal(str(row["purchase_price"])),
+            "purchase_date": row.get("purchase_date").to_pydatetime() if pd.notna(row.get("purchase_date")) else None,
             "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
             "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
             "property_status": row.get("property_status", "evaluating"),
@@ -231,19 +256,30 @@ async def update_property_endpoint(
     property_data: PropertyUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Update a property in Iceberg"""
+    """Update a property in Iceberg (checks ownership and sharing)"""
     try:
         user_id = current_user["sub"]  # Already a string
+        user_email = current_user["email"]
         
         if not table_exists(NAMESPACE, TABLE_NAME):
             raise HTTPException(status_code=404, detail="Property not found")
         
-        # Read table, update, and write back (Iceberg update pattern)
+        # Read table and find property
         df = read_table(NAMESPACE, TABLE_NAME)
-        mask = (df["id"] == property_id) & (df["user_id"] == user_id)
+        property_rows = df[df["id"] == property_id]
         
-        if not mask.any():
+        if len(property_rows) == 0:
             raise HTTPException(status_code=404, detail="Property not found")
+        
+        property_user_id = str(property_rows.iloc[0]["user_id"])
+        
+        # Check access: owner OR bidirectional share
+        from app.api.sharing_utils import user_has_property_access
+        if not user_has_property_access(property_user_id, user_id, user_email):
+            raise HTTPException(status_code=404, detail="Property not found")
+        
+        # Update the property
+        mask = df["id"] == property_id
         
         # Update fields
         update_dict = property_data.model_dump(exclude_none=True)
@@ -299,6 +335,7 @@ async def update_property_endpoint(
             logger.info(f"Updating tax savings: purchase_price=${purchase_price}, purchase_date={purchase_date}")
             await create_or_update_tax_savings(
                 property_id=property_id,
+                user_id=user_id,
                 purchase_price=purchase_price,
                 purchase_date=purchase_date
             )
@@ -369,19 +406,19 @@ async def delete_property_endpoint(
     property_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete a property (soft delete) in Iceberg"""
+    """Delete a property (soft delete) in Iceberg - OWNER ONLY"""
     try:
         user_id = current_user["sub"]  # Already a string
         
         if not table_exists(NAMESPACE, TABLE_NAME):
             raise HTTPException(status_code=404, detail="Property not found")
         
-        # Verify property exists and belongs to user before soft delete
+        # Verify property exists and user is the OWNER (not just shared access)
         df = read_table(NAMESPACE, TABLE_NAME)
         mask = (df["id"] == property_id) & (df["user_id"] == user_id) & (df["is_active"] == True)
         
         if not mask.any():
-            raise HTTPException(status_code=404, detail="Property not found")
+            raise HTTPException(status_code=404, detail="Property not found or you don't have permission to delete")
         
         # SOFT DELETE: Update is_active to False (we keep the data)
         # For hard delete, we would use: table.delete(And(EqualTo("id", property_id), EqualTo("user_id", user_id)))
