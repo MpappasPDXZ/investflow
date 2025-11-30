@@ -5,12 +5,13 @@ import pandas as pd
 import pyarrow as pa
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
+from pyiceberg.expressions import EqualTo
 
 from app.core.dependencies import get_current_user
 from app.schemas.user import UserResponse, UserUpdate, UserCreate
 from app.core.security import get_password_hash
 from app.core.exceptions import ConflictError
-from app.core.iceberg import read_table, append_data, table_exists, load_table
+from app.core.iceberg import read_table, read_table_filtered, append_data, table_exists, load_table
 from app.core.logging import get_logger
 
 NAMESPACE = ("investflow",)
@@ -29,10 +30,14 @@ async def create_user(
     logger.info(f"Creating user with email: {user_data.email}")
     
     try:
-        # Check if user already exists
+        # Check if user already exists using filtered lookup (fast)
         if table_exists(NAMESPACE, TABLE_NAME):
-            df = read_table(NAMESPACE, TABLE_NAME)
-            existing = df[df["email"] == user_data.email]
+            existing = read_table_filtered(
+                NAMESPACE, 
+                TABLE_NAME,
+                row_filter=EqualTo("email", user_data.email),
+                selected_columns=["id"]  # Only need to know if row exists
+            )
             if len(existing) > 0:
                 logger.warning(f"Attempted to create user with existing email: {user_data.email}")
                 raise ConflictError("User with this email already exists")
@@ -83,12 +88,15 @@ async def get_current_user_profile(
     try:
         user_id = current_user["sub"]  # Already a string
         
-        if not table_exists(NAMESPACE, TABLE_NAME):
+        # Use filtered lookup for fast retrieval
+        try:
+            user_row = read_table_filtered(
+                NAMESPACE, 
+                TABLE_NAME,
+                row_filter=EqualTo("id", user_id)
+            )
+        except Exception:
             raise HTTPException(status_code=404, detail="User not found")
-        
-        # Get user from Iceberg
-        df = read_table(NAMESPACE, TABLE_NAME)
-        user_row = df[df["id"] == user_id]
         
         if len(user_row) == 0:
             raise HTTPException(status_code=404, detail="User not found")

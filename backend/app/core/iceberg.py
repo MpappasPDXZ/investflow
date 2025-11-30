@@ -1,10 +1,11 @@
 """PyIceberg helper for direct Iceberg table operations"""
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 import pandas as pd
 import pyarrow as pa
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.table import Table
+from pyiceberg.expressions import BooleanExpression, EqualTo
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -64,6 +65,36 @@ def read_table(namespace: Tuple[str, ...], table_name: str, limit: Optional[int]
         return df
     except Exception as e:
         logger.error(f"Failed to read table {'.'.join((*namespace, table_name))}: {e}", exc_info=True)
+        raise
+
+
+def read_table_filtered(
+    namespace: Tuple[str, ...], 
+    table_name: str, 
+    row_filter: BooleanExpression,
+    selected_columns: Optional[List[str]] = None
+) -> pd.DataFrame:
+    """Read filtered data from an Iceberg table using predicate pushdown.
+    
+    This is much faster than read_table() + pandas filtering because the filter
+    is pushed down to the storage layer, avoiding full table scans.
+    
+    Args:
+        namespace: Table namespace tuple
+        table_name: Name of the table
+        row_filter: PyIceberg filter expression (e.g., EqualTo("email", "user@example.com"))
+        selected_columns: Optional list of columns to read (reduces I/O)
+    
+    Returns:
+        Filtered DataFrame
+    """
+    try:
+        table = load_table(namespace, table_name)
+        scan = table.scan(row_filter=row_filter, selected_fields=selected_columns)
+        arrow_table = scan.to_arrow()
+        return arrow_table.to_pandas()
+    except Exception as e:
+        logger.error(f"Failed to read filtered table {'.'.join((*namespace, table_name))}: {e}", exc_info=True)
         raise
 
 def append_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame):

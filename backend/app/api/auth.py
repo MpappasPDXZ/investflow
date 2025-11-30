@@ -5,6 +5,7 @@ import uuid
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
+from pyiceberg.expressions import EqualTo
 
 from app.core.config import settings
 from app.core.security import (
@@ -16,7 +17,7 @@ from app.core.security import (
 from app.core.dependencies import security
 from app.core.exceptions import UnauthorizedError, ConflictError
 from app.schemas.auth import UserRegister, UserLogin, Token
-from app.core.iceberg import read_table, append_data, table_exists
+from app.core.iceberg import read_table, read_table_filtered, append_data, table_exists
 from app.core.logging import get_logger
 
 NAMESPACE = ("investflow",)
@@ -32,12 +33,15 @@ async def register(
 ):
     """Register a new user in Iceberg"""
     try:
-        # Check if user already exists
+        # Check if user already exists using filtered lookup (fast)
         if table_exists(NAMESPACE, TABLE_NAME):
-            df = read_table(NAMESPACE, TABLE_NAME)
-            existing = df[df["email"] == user_data.email]
+            existing = read_table_filtered(
+                NAMESPACE, 
+                TABLE_NAME,
+                row_filter=EqualTo("email", user_data.email),
+                selected_columns=["id"]  # Only need to know if row exists
+            )
             if len(existing) > 0:
-                logger.warning(f"Registration failed - user already exists: {user_data.email}")
                 raise ConflictError("User with this email already exists")
         
         # Create user with string UUID
@@ -86,48 +90,39 @@ async def login(
 ):
     """Login and get access token from Iceberg"""
     try:
-        logger.info(f"Login attempt for email: {credentials.email}")
-        
-        # Get user from Iceberg
-        if not table_exists(NAMESPACE, TABLE_NAME):
-            logger.error("Users table does not exist")
+        # Use filtered read for fast lookup - avoids full table scan
+        # Only fetch columns needed for authentication
+        try:
+            user_rows = read_table_filtered(
+                NAMESPACE, 
+                TABLE_NAME,
+                row_filter=EqualTo("email", credentials.email),
+                selected_columns=["id", "email", "password_hash", "is_active"]
+            )
+        except Exception:
+            # Table doesn't exist or other error
             raise UnauthorizedError("Incorrect email or password")
         
-        df = read_table(NAMESPACE, TABLE_NAME)
-        logger.info(f"Read {len(df)} users from table")
-        logger.info(f"Columns in users table: {df.columns.tolist()}")
-        logger.info(f"Emails in table: {df['email'].tolist()}")
-        
-        user_rows = df[df["email"] == credentials.email]
-        
         if len(user_rows) == 0:
-            logger.warning(f"No user found with email: {credentials.email}")
             raise UnauthorizedError("Incorrect email or password")
         
         user = user_rows.iloc[0]
-        logger.info(f"Found user: {user['id']}")
-        logger.info(f"User has password_hash: {'password_hash' in user and pd.notna(user.get('password_hash'))}")
         
         # Verify password
         password_hash = user.get("password_hash")
         if not password_hash or pd.isna(password_hash):
-            logger.error("User has no password_hash")
             raise UnauthorizedError("Incorrect email or password")
             
         if not verify_password(credentials.password, password_hash):
-            logger.warning("Password verification failed")
             raise UnauthorizedError("Incorrect email or password")
         
         # Check if user is active
         is_active = user.get("is_active", True)
         if pd.notna(is_active) and not bool(is_active):
-            logger.warning("User account is inactive")
             raise UnauthorizedError("User account is inactive")
         
         user_id = str(user["id"])
         user_email = user["email"]
-        
-        logger.info(f"Login successful for user: {user_id}")
         
         # Generate access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

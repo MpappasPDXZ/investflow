@@ -125,10 +125,10 @@ class DocumentService:
                 )
             )
             
-            # Get first result
-            for batch in scan.to_arrow():
-                if len(batch) > 0:
-                    return batch.to_pylist()[0]
+            # Get first result - scan.to_arrow() returns a Table
+            arrow_table = scan.to_arrow()
+            if len(arrow_table) > 0:
+                return arrow_table.to_pylist()[0]
             
             return None
             
