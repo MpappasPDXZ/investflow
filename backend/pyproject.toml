@@ -25,7 +25,7 @@ dependencies = [
     "httpx>=0.25.0",
     "pandas>=2.0.0",
     "pyarrow>=16.0.0",
-    "pyiceberg[adlfs]>=0.6.0",
+    "pyiceberg[adlfs,pyiceberg-core]>=0.6.0",
     "cython>=3.0.0",
 ]
 

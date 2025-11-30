@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = ""
     
     # Azure ADLS Gen2 Configuration
-    AZURE_STORAGE_ACCOUNT_NAME: str = "investflowadls"
-    AZURE_STORAGE_ACCOUNT_KEY: str = ""
+    AZURE_STORAGE_CONNECTION_STRING: str = ""
+    AZURE_STORAGE_ACCOUNT_NAME: str = ""  # Extracted from connection string if not set
+    AZURE_STORAGE_ACCOUNT_KEY: str = ""   # Extracted from connection string if not set
     AZURE_STORAGE_CONTAINER_NAME: str = "documents"
     
     # Azure Key Vault

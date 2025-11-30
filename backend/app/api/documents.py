@@ -1,11 +1,11 @@
 """API routes for document management"""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from typing import Optional
 from uuid import UUID
 
 from app.core.dependencies import get_current_user
-from app.schemas.document import DocumentResponse, DocumentUploadResponse
-from app.services.document_service import upload_document, get_document_download_url, get_document
+from app.schemas.document import DocumentResponse, DocumentUploadResponse, DocumentListResponse
+from app.services import document_service
 from app.core.logging import get_logger
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -15,7 +15,9 @@ logger = get_logger(__name__)
 @router.post("/upload", response_model=DocumentUploadResponse, status_code=201)
 async def upload_document_endpoint(
     file: UploadFile = File(...),
-    document_type: Optional[str] = Form("receipt"),
+    document_type: Optional[str] = Form("other"),
+    property_id: Optional[str] = Form(None),
+    unit_id: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     """Upload a document to Azure Blob Storage"""
@@ -42,16 +44,18 @@ async def upload_document_endpoint(
         user_id = UUID(current_user["sub"])
         
         # Upload document
-        document = upload_document(
+        document = document_service.upload_document(
             user_id=user_id,
             file_content=file_content,
             filename=file.filename or "document",
             content_type=content_type,
-            document_type=document_type or "receipt"
+            document_type=document_type or "other",
+            property_id=UUID(property_id) if property_id else None,
+            unit_id=UUID(unit_id) if unit_id else None
         )
         
         # Generate download URL
-        download_url = get_document_download_url(document["id"], user_id)
+        download_url = document_service.get_document_download_url(UUID(document["id"]), user_id)
         
         return DocumentUploadResponse(
             document=DocumentResponse(**document),
@@ -65,6 +69,40 @@ async def upload_document_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("", response_model=DocumentListResponse)
+async def list_documents_endpoint(
+    property_id: Optional[UUID] = Query(None, description="Filter by property ID"),
+    unit_id: Optional[UUID] = Query(None, description="Filter by unit ID"),
+    document_type: Optional[str] = Query(None, description="Filter by document type"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: dict = Depends(get_current_user)
+):
+    """List documents for the current user"""
+    try:
+        user_id = UUID(current_user["sub"])
+        documents, total = document_service.list_documents(
+            user_id=user_id,
+            property_id=property_id,
+            unit_id=unit_id,
+            document_type=document_type,
+            skip=skip,
+            limit=limit
+        )
+        
+        items = [DocumentResponse(**doc) for doc in documents]
+        
+        return DocumentListResponse(
+            items=items,
+            total=total,
+            page=(skip // limit) + 1 if limit > 0 else 1,
+            limit=limit
+        )
+    except Exception as e:
+        logger.error(f"Error listing documents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document_endpoint(
     document_id: UUID,
@@ -73,7 +111,7 @@ async def get_document_endpoint(
     """Get document metadata by ID"""
     try:
         user_id = UUID(current_user["sub"])
-        document = get_document(document_id, user_id)
+        document = document_service.get_document(document_id, user_id)
         
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -94,7 +132,7 @@ async def download_document_endpoint(
     """Get download URL for a document"""
     try:
         user_id = UUID(current_user["sub"])
-        download_url = get_document_download_url(document_id, user_id)
+        download_url = document_service.get_document_download_url(document_id, user_id)
         
         if not download_url:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -104,5 +142,26 @@ async def download_document_endpoint(
         raise
     except Exception as e:
         logger.error(f"Error getting document download URL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{document_id}", status_code=204)
+async def delete_document_endpoint(
+    document_id: UUID,
+    current_user: dict = Depends(get_current_user)
+):
+    """Soft delete a document"""
+    try:
+        user_id = UUID(current_user["sub"])
+        success = document_service.delete_document(document_id, user_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 

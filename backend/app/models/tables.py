@@ -206,8 +206,9 @@ class Rent(Base, TimestampMixin):
     __tablename__ = "rents"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
     property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    unit_id = Column(UUID(as_uuid=True), nullable=True, index=True)  # Optional unit reference
     amount = Column(Numeric(10, 2), nullable=False)
     rent_period_start = Column(Date, nullable=False)
     rent_period_end = Column(Date, nullable=False)
@@ -226,6 +227,7 @@ class Rent(Base, TimestampMixin):
     __table_args__ = (
         Index('idx_rents_property_date', 'property_id', 'payment_date'),
         Index('idx_rents_client_date', 'client_id', 'payment_date'),
+        Index('idx_rents_unit_date', 'unit_id', 'payment_date'),
     )
 
 

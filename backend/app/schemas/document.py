@@ -39,3 +39,11 @@ class DocumentUploadResponse(BaseModel):
     document: DocumentResponse
     download_url: str = Field(..., description="Temporary download URL (expires in 1 hour)")
 
+
+class DocumentListResponse(BaseModel):
+    """Schema for paginated document list response"""
+    items: list[DocumentResponse]
+    total: int
+    page: int
+    limit: int
+
