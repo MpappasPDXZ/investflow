@@ -13,6 +13,7 @@ from app.core.security import get_password_hash
 from app.core.exceptions import ConflictError
 from app.core.iceberg import read_table, read_table_filtered, append_data, table_exists, load_table
 from app.core.logging import get_logger
+from app.services.auth_cache_service import auth_cache
 
 NAMESPACE = ("investflow",)
 TABLE_NAME = "users"
@@ -26,21 +27,14 @@ logger = get_logger(__name__)
 async def create_user(
     user_data: UserCreate,
 ):
-    """Create a new user in Iceberg"""
+    """Create a new user in Iceberg with CDC cache update"""
     logger.info(f"Creating user with email: {user_data.email}")
     
     try:
-        # Check if user already exists using filtered lookup (fast)
-        if table_exists(NAMESPACE, TABLE_NAME):
-            existing = read_table_filtered(
-                NAMESPACE, 
-                TABLE_NAME,
-                row_filter=EqualTo("email", user_data.email),
-                selected_columns=["id"]  # Only need to know if row exists
-            )
-            if len(existing) > 0:
-                logger.warning(f"Attempted to create user with existing email: {user_data.email}")
-                raise ConflictError("User with this email already exists")
+        # Check if user already exists using CDC cache (fast O(1) lookup)
+        if auth_cache.email_exists(user_data.email):
+            logger.warning(f"Attempted to create user with existing email: {user_data.email}")
+            raise ConflictError("User with this email already exists")
         
         # Create user with string UUID
         user_id = str(uuid.uuid4())
@@ -60,9 +54,12 @@ async def create_user(
             "is_active": True,
         }
         
-        # Append to Iceberg table
+        # Append to Iceberg table (source of truth)
         df = pd.DataFrame([user_dict])
         append_data(NAMESPACE, TABLE_NAME, df)
+        
+        # Update CDC cache (inline CDC)
+        auth_cache.on_user_created(user_dict)
         
         logger.info(f"Successfully created user {user_id} with email {user_data.email}")
         
@@ -84,24 +81,15 @@ async def create_user(
 async def get_current_user_profile(
     current_user: dict = Depends(get_current_user)
 ):
-    """Get the current user's profile from Iceberg"""
+    """Get the current user's profile using CDC cache for fast lookup"""
     try:
         user_id = current_user["sub"]  # Already a string
         
-        # Use filtered lookup for fast retrieval
-        try:
-            user_row = read_table_filtered(
-                NAMESPACE, 
-                TABLE_NAME,
-                row_filter=EqualTo("id", user_id)
-            )
-        except Exception:
-            raise HTTPException(status_code=404, detail="User not found")
+        # Use CDC cache for fast O(1) lookup
+        user = auth_cache.get_user_by_id(user_id)
         
-        if len(user_row) == 0:
+        if user is None:
             raise HTTPException(status_code=404, detail="User not found")
-        
-        user = user_row.iloc[0]
         
         # Convert to response (exclude password_hash)
         user_dict = {
@@ -130,7 +118,7 @@ async def update_current_user_profile(
     user_data: UserUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Update the current user's profile in Iceberg"""
+    """Update the current user's profile in Iceberg with CDC cache update"""
     try:
         user_id = current_user["sub"]  # Already a string
         logger.info(f"Updating user profile for user_id: {user_id}")
@@ -142,8 +130,6 @@ async def update_current_user_profile(
         # Read table, update, and write back (Iceberg update pattern)
         df = read_table(NAMESPACE, TABLE_NAME)
         logger.info(f"Read {len(df)} users from table")
-        logger.info(f"User IDs in table: {df['id'].tolist()}")
-        logger.info(f"Looking for user_id: {user_id} (type: {type(user_id)})")
         
         mask = df["id"] == user_id
         
@@ -174,9 +160,6 @@ async def update_current_user_profile(
         table = load_table(NAMESPACE, TABLE_NAME)
         table_schema = table.schema().as_arrow()
         
-        logger.info(f"Table schema columns: {[field.name for field in table_schema]}")
-        logger.info(f"DataFrame columns: {df.columns.tolist()}")
-        
         # Reorder DataFrame columns to match table schema
         schema_column_order = [field.name for field in table_schema]
         df = df[[col for col in schema_column_order if col in df.columns]]
@@ -185,15 +168,19 @@ async def update_current_user_profile(
         arrow_table = pa.Table.from_pandas(df, preserve_index=False)
         arrow_table = arrow_table.cast(table_schema)
         
-        # Overwrite the table
+        # Overwrite the table (source of truth)
         logger.info("Overwriting table with updated data")
         table.overwrite(arrow_table)
         logger.info("Table overwritten successfully")
         
-        # Re-read the table to get the updated user
-        df_updated = read_table(NAMESPACE, TABLE_NAME)
-        mask_updated = df_updated["id"] == user_id
-        updated_user = df_updated[mask_updated].iloc[0]
+        # Get the updated user row
+        updated_user = df[mask].iloc[0]
+        
+        # Build user dict for cache update and response
+        user_dict_full = updated_user.to_dict()
+        
+        # Update CDC cache (inline CDC)
+        auth_cache.on_user_updated(user_dict_full)
         
         # Convert to response (exclude password_hash)
         user_dict = {
@@ -221,28 +208,23 @@ async def update_current_user_profile(
 async def get_shared_users(
     current_user: dict = Depends(get_current_user)
 ):
-    """Get list of users who have bidirectional sharing with the current user (from Iceberg)"""
+    """Get list of users who have bidirectional sharing with the current user (using CDC cache)"""
     try:
         user_id = current_user["sub"]
         user_email = current_user["email"]
         
-        # Use the sharing utility to get shared user IDs
-        from app.api.sharing_utils import get_shared_user_ids
-        shared_user_ids = get_shared_user_ids(user_id, user_email)
+        # Use CDC cache for fast O(1) shared user lookup
+        shared_user_ids = auth_cache.get_shared_user_ids(user_id, user_email)
         
         if len(shared_user_ids) == 0:
             return []
         
-        # Read users table and filter by shared user IDs
-        if not table_exists(NAMESPACE, TABLE_NAME):
-            return []
-        
-        df = read_table(NAMESPACE, TABLE_NAME)
-        shared_users = df[df["id"].isin(shared_user_ids)]
+        # Get shared users from cache
+        shared_users = auth_cache.get_users_by_ids(shared_user_ids)
         
         # Convert to UserResponse objects (exclude password_hash)
         result = []
-        for _, user in shared_users.iterrows():
+        for user in shared_users:
             user_dict = {
                 "id": str(user["id"]),
                 "first_name": user["first_name"],

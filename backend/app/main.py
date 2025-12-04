@@ -94,7 +94,7 @@ async def root():
 # Create database tables on startup (in production, use migrations instead)
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database and DuckDB on startup"""
+    """Initialize database, Iceberg, and auth cache on startup"""
     try:
         from app.core.database import get_engine
         engine = get_engine()
@@ -111,6 +111,17 @@ async def startup_event():
         logger.info("PyIceberg catalog initialized")
     except Exception as e:
         logger.warning(f"Could not initialize PyIceberg catalog: {e}")
+    
+    # Initialize auth cache (CDC parquet cache for fast authentication and sharing)
+    try:
+        from app.services.auth_cache_service import auth_cache
+        if auth_cache.initialize():
+            stats = auth_cache.get_stats()
+            logger.info(f"Auth cache initialized: {stats['users_count']} users, {stats['shares_count']} shares")
+        else:
+            logger.warning("Auth cache initialization failed, will use Iceberg fallback on first request")
+    except Exception as e:
+        logger.warning(f"Could not initialize auth cache: {e}")
 
 
 # Include routers

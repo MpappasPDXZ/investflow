@@ -19,6 +19,7 @@ from app.core.exceptions import UnauthorizedError, ConflictError
 from app.schemas.auth import UserRegister, UserLogin, Token
 from app.core.iceberg import read_table, read_table_filtered, append_data, table_exists
 from app.core.logging import get_logger
+from app.services.auth_cache_service import auth_cache
 
 NAMESPACE = ("investflow",)
 TABLE_NAME = "users"
@@ -31,18 +32,11 @@ logger = get_logger(__name__)
 async def register(
     user_data: UserRegister,
 ):
-    """Register a new user in Iceberg"""
+    """Register a new user in Iceberg with CDC cache update"""
     try:
-        # Check if user already exists using filtered lookup (fast)
-        if table_exists(NAMESPACE, TABLE_NAME):
-            existing = read_table_filtered(
-                NAMESPACE, 
-                TABLE_NAME,
-                row_filter=EqualTo("email", user_data.email),
-                selected_columns=["id"]  # Only need to know if row exists
-            )
-            if len(existing) > 0:
-                raise ConflictError("User with this email already exists")
+        # Check if user already exists using CDC cache (fast O(1) lookup)
+        if auth_cache.email_exists(user_data.email):
+            raise ConflictError("User with this email already exists")
         
         # Create user with string UUID
         user_id = str(uuid.uuid4())
@@ -61,9 +55,12 @@ async def register(
             "is_active": True,
         }
         
-        # Append to Iceberg table
+        # Append to Iceberg table (source of truth)
         df = pd.DataFrame([user_dict])
         append_data(NAMESPACE, TABLE_NAME, df)
+        
+        # Update CDC cache (inline CDC)
+        auth_cache.on_user_created(user_dict)
         
         # Generate access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -88,25 +85,13 @@ async def register(
 async def login(
     credentials: UserLogin,
 ):
-    """Login and get access token from Iceberg"""
+    """Login and get access token using CDC cache for fast lookup"""
     try:
-        # Use filtered read for fast lookup - avoids full table scan
-        # Only fetch columns needed for authentication
-        try:
-            user_rows = read_table_filtered(
-                NAMESPACE, 
-                TABLE_NAME,
-                row_filter=EqualTo("email", credentials.email),
-                selected_columns=["id", "email", "password_hash", "is_active"]
-            )
-        except Exception:
-            # Table doesn't exist or other error
-            raise UnauthorizedError("Incorrect email or password")
+        # Use CDC cache for fast O(1) lookup instead of Iceberg scan
+        user = auth_cache.get_user_by_email(credentials.email)
         
-        if len(user_rows) == 0:
+        if user is None:
             raise UnauthorizedError("Incorrect email or password")
-        
-        user = user_rows.iloc[0]
         
         # Verify password
         password_hash = user.get("password_hash")

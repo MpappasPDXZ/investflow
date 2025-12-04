@@ -20,3 +20,7 @@ COMMENT ON COLUMN users.loc_interest_rate IS 'Line of Credit interest rate as de
 
 -- Note: Both columns are nullable to allow users to set their own rates
 
+
+
+
+

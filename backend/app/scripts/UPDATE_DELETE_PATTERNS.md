@@ -261,3 +261,7 @@ See `backend/app/services/property_service.py` for production-ready implementati
 - Property Service: `backend/app/services/property_service.py`
 - Test Script: `backend/app/scripts/create_data.py`
 
+
+
+
+

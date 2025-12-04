@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     AZURE_STORAGE_ACCOUNT_KEY: str = ""   # Extracted from connection string if not set
     AZURE_STORAGE_CONTAINER_NAME: str = "documents"
     
+    # CDC Cache Configuration (defaults to documents container if not set)
+    CDC_CACHE_CONTAINER_NAME: str = ""  # Leave empty to use AZURE_STORAGE_CONTAINER_NAME
+    
     # Azure Key Vault
     AZURE_KEY_VAULT_NAME: str = "investflow-kv"
     

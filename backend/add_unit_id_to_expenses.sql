@@ -17,3 +17,7 @@ COMMENT ON COLUMN expenses.unit_id IS 'Optional unit ID for multi-unit propertie
 -- Show updated schema
 \d expenses;
 
+
+
+
+

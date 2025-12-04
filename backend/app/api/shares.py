@@ -10,6 +10,7 @@ from app.core.dependencies import get_current_user
 from app.schemas.share import UserShareCreate, UserShareResponse
 from app.core.iceberg import read_table, append_data, load_table, table_exists
 from app.core.logging import get_logger
+from app.services.auth_cache_service import auth_cache
 
 router = APIRouter(prefix="/users/me/shares", tags=["shares"])
 logger = get_logger(__name__)
@@ -23,7 +24,7 @@ async def create_share(
     share_data: UserShareCreate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Add an email to share properties with (bidirectional)"""
+    """Add an email to share properties with (bidirectional) with CDC cache update"""
     try:
         user_id = current_user["sub"]
         user_email = current_user["email"]
@@ -35,18 +36,13 @@ async def create_share(
                 detail="Cannot share with yourself"
             )
         
-        # Check if share already exists
-        if table_exists(NAMESPACE, TABLE_NAME):
-            df = read_table(NAMESPACE, TABLE_NAME)
-            existing = df[
-                (df["user_id"] == user_id) & 
-                (df["shared_email"] == share_data.shared_email)
-            ]
-            if len(existing) > 0:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Already sharing with {share_data.shared_email}"
-                )
+        # Check if share already exists using cache
+        existing_shares = auth_cache.get_shares_by_user(user_id)
+        if share_data.shared_email in existing_shares:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Already sharing with {share_data.shared_email}"
+            )
         
         # Create share
         share_id = str(uuid.uuid4())
@@ -60,9 +56,12 @@ async def create_share(
             "updated_at": now
         }
         
-        # Append to Iceberg table
+        # Append to Iceberg table (source of truth)
         df = pd.DataFrame([share_dict])
         append_data(NAMESPACE, TABLE_NAME, df)
+        
+        # Update CDC cache (inline CDC)
+        auth_cache.on_share_created(user_id, share_data.shared_email)
         
         logger.info(f"User {user_id} created share with {share_data.shared_email}")
         
@@ -151,7 +150,7 @@ async def delete_share(
     share_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Remove a share (stop sharing with an email)"""
+    """Remove a share (stop sharing with an email) with CDC cache update"""
     try:
         user_id = current_user["sub"]
         
@@ -173,6 +172,10 @@ async def delete_share(
                 detail="Share not found"
             )
         
+        # Get the shared_email before deletion (for cache update)
+        deleted_share = df[mask].iloc[0]
+        shared_email = deleted_share["shared_email"]
+        
         # Remove the share from dataframe
         df_filtered = df[~mask]
         
@@ -181,7 +184,7 @@ async def delete_share(
             if pd.api.types.is_datetime64_any_dtype(df_filtered[col]):
                 df_filtered[col] = df_filtered[col].astype('datetime64[us]')
         
-        # Overwrite table without the deleted share
+        # Overwrite table without the deleted share (source of truth)
         table = load_table(NAMESPACE, TABLE_NAME)
         table_schema = table.schema().as_arrow()
         
@@ -193,6 +196,9 @@ async def delete_share(
         arrow_table = pa.Table.from_pandas(df_filtered, preserve_index=False)
         arrow_table = arrow_table.cast(table_schema)
         table.overwrite(arrow_table)
+        
+        # Update CDC cache (inline CDC)
+        auth_cache.on_share_deleted(user_id, shared_email)
         
         logger.info(f"User {user_id} deleted share {share_id}")
         

@@ -82,3 +82,7 @@ if __name__ == "__main__":
         print(f"\n❌ Failed to create expenses table: {e}")
         sys.exit(1)
 
+
+
+
+

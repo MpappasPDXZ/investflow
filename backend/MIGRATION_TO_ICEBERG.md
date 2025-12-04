@@ -165,3 +165,7 @@ print(f'Found {total} properties')
 - Property service example: `backend/app/services/property_service.py`
 - Property endpoints example: `backend/app/api/properties.py`
 
+
+
+
+

@@ -25,3 +25,7 @@ COMMENT ON TABLE user_shares IS 'Bidirectional property sharing - when A adds B,
 COMMENT ON COLUMN user_shares.user_id IS 'User who created the share';
 COMMENT ON COLUMN user_shares.shared_email IS 'Email of the user to share with (bidirectional)';
 
+
+
+
+

@@ -8,6 +8,7 @@ from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 from app.core.iceberg import append_data, read_table, load_table, table_exists
 from app.core.logging import get_logger
+from app.services.auth_cache_service import auth_cache
 
 NAMESPACE = ("investflow",)
 REVENUE_TABLE = "scheduled_revenue"
@@ -51,14 +52,13 @@ async def create_or_update_tax_savings(property_id: str, user_id: str, purchase_
         if purchase_date:
             logger.info(f"  Purchase Date: {purchase_date}")
         
-        # Get user's tax rate from users table
-        users_df = read_table(NAMESPACE, "users")
-        user_row = users_df[users_df["id"] == user_id]
-        if user_row.empty:
+        # Get user's tax rate from CDC cache (fast O(1) lookup)
+        user = auth_cache.get_user_by_id(user_id)
+        if user is None:
             logger.warning(f"  ⚠️  User {user_id} not found, cannot calculate tax savings")
             return
         
-        tax_rate = Decimal(str(user_row.iloc[0]["tax_rate"]))
+        tax_rate = Decimal(str(user.get("tax_rate", 0)))
         logger.info(f"  User Tax Rate: {tax_rate*100}%")
         
         # Check if tax savings revenue already exists

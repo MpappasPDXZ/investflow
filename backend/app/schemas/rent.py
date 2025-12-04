@@ -73,3 +73,7 @@ class RentListResponse(BaseModel):
     page: int
     limit: int
 
+
+
+
+
