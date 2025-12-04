@@ -29,6 +29,10 @@ RUN uv pip install --system --no-binary pyiceberg -e .
 # Copy application code
 COPY app/ ./app/
 
+# Copy migration scripts
+COPY migrate_user_cache.py ./
+COPY view_user_cache.py ./
+
 # Expose port
 EXPOSE 8000
 

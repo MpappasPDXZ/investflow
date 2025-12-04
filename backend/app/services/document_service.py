@@ -225,6 +225,82 @@ class DocumentService:
             logger.error(f"Error listing documents: {e}", exc_info=True)
             return [], 0
     
+    def update_document(
+        self,
+        document_id: uuid.UUID,
+        user_id: uuid.UUID,
+        property_id: Optional[uuid.UUID] = None,
+        unit_id: Optional[uuid.UUID] = None,
+        document_type: Optional[str] = None,
+        display_name: Optional[str] = None,
+        clear_property: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update a document's metadata
+        
+        Args:
+            document_id: Document ID
+            user_id: User ID for access control
+            property_id: New property ID (or None to keep unchanged)
+            unit_id: New unit ID (or None to keep unchanged)
+            document_type: New document type (or None to keep unchanged)
+            display_name: Custom display name (or None to keep unchanged)
+            clear_property: If True, remove property association
+        
+        Returns:
+            Updated document or None if not found
+        """
+        try:
+            # Get the document
+            document = self.get_document(document_id, user_id)
+            
+            if not document:
+                return None
+            
+            table = self._get_table()
+            
+            # Delete old record
+            table.delete(
+                And(
+                    EqualTo("id", str(document_id)),
+                    EqualTo("user_id", str(user_id))
+                )
+            )
+            
+            # Update fields
+            if clear_property:
+                document["property_id"] = None
+            elif property_id is not None:
+                document["property_id"] = str(property_id)
+            
+            if unit_id is not None:
+                document["unit_id"] = str(unit_id)
+            
+            if document_type is not None:
+                document["document_type"] = document_type
+            
+            # Handle display_name in document_metadata
+            if display_name is not None:
+                metadata = document.get("document_metadata") or {}
+                metadata["display_name"] = display_name
+                document["document_metadata"] = metadata
+            
+            document["updated_at"] = datetime.utcnow()
+            
+            # Insert updated record
+            import pyarrow as pa
+            schema = table.schema().as_arrow()
+            arrow_table = pa.Table.from_pylist([document], schema=schema)
+            table.append(arrow_table)
+            
+            logger.info(f"Updated document: {document_id}")
+            
+            return document
+            
+        except Exception as e:
+            logger.error(f"Error updating document: {e}", exc_info=True)
+            return None
+
     def soft_delete_document(self, document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """
         Soft delete a document (mark as deleted in Iceberg, keep in ADLS)
@@ -336,3 +412,24 @@ def list_documents(
 def delete_document(document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
     """Soft delete a document"""
     return document_service.soft_delete_document(document_id, user_id)
+
+
+def update_document(
+    document_id: uuid.UUID,
+    user_id: uuid.UUID,
+    property_id: Optional[uuid.UUID] = None,
+    unit_id: Optional[uuid.UUID] = None,
+    document_type: Optional[str] = None,
+    display_name: Optional[str] = None,
+    clear_property: bool = False
+) -> Optional[Dict[str, Any]]:
+    """Update a document's metadata"""
+    return document_service.update_document(
+        document_id=document_id,
+        user_id=user_id,
+        property_id=property_id,
+        unit_id=unit_id,
+        document_type=document_type,
+        display_name=display_name,
+        clear_property=clear_property
+    )

@@ -4,7 +4,7 @@ from typing import Optional
 from uuid import UUID
 
 from app.core.dependencies import get_current_user
-from app.schemas.document import DocumentResponse, DocumentUploadResponse, DocumentListResponse
+from app.schemas.document import DocumentResponse, DocumentUploadResponse, DocumentListResponse, DocumentUpdateRequest
 from app.services import document_service
 from app.core.logging import get_logger
 
@@ -58,7 +58,7 @@ async def upload_document_endpoint(
         download_url = document_service.get_document_download_url(UUID(document["id"]), user_id)
         
         return DocumentUploadResponse(
-            document=DocumentResponse(**document),
+            document=DocumentResponse.from_document(document),
             download_url=download_url or document["blob_location"]
         )
         
@@ -81,6 +81,8 @@ async def list_documents_endpoint(
     """List documents for the current user"""
     try:
         user_id = UUID(current_user["sub"])
+        logger.info(f"Listing documents for user {user_id}")
+        
         documents, total = document_service.list_documents(
             user_id=user_id,
             property_id=property_id,
@@ -90,7 +92,18 @@ async def list_documents_endpoint(
             limit=limit
         )
         
-        items = [DocumentResponse(**doc) for doc in documents]
+        logger.info(f"Found {len(documents)} documents, parsing...")
+        
+        items = []
+        for i, doc in enumerate(documents):
+            try:
+                items.append(DocumentResponse.from_document(doc))
+            except Exception as parse_err:
+                logger.error(f"Error parsing document {i}: {parse_err}, doc: {doc}")
+                # Skip problematic documents instead of failing entirely
+                continue
+        
+        logger.info(f"Successfully parsed {len(items)} documents")
         
         return DocumentListResponse(
             items=items,
@@ -116,11 +129,49 @@ async def get_document_endpoint(
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
         
-        return DocumentResponse(**document)
+        return DocumentResponse.from_document(document)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/{document_id}", response_model=DocumentResponse)
+async def update_document_endpoint(
+    document_id: UUID,
+    update_data: DocumentUpdateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update document metadata (property assignment, name, type)"""
+    try:
+        user_id = UUID(current_user["sub"])
+        
+        logger.info(f"Updating document {document_id} with data: {update_data}")
+        
+        updated_document = document_service.update_document(
+            document_id=document_id,
+            user_id=user_id,
+            property_id=update_data.property_id,
+            unit_id=update_data.unit_id,
+            document_type=update_data.document_type.value if update_data.document_type else None,
+            display_name=update_data.display_name,
+            clear_property=update_data.clear_property or False
+        )
+        
+        if not updated_document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        logger.info(f"Document updated successfully, building response")
+        
+        response = DocumentResponse.from_document(updated_document)
+        logger.info(f"Response built: {response.id}")
+        
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating document {document_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
