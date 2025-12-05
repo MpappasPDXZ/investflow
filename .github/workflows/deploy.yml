@@ -232,10 +232,12 @@ jobs:
             IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest"
           fi
           echo "Using image: $IMAGE_TAG"
+          # Force new revision with timestamp to ensure new image is pulled
           az containerapp update \
             --name investflow-backend \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image "$IMAGE_TAG"
+            --image "$IMAGE_TAG" \
+            --set-env-vars "DEPLOY_TIMESTAMP=$(date +%s)"
       
       - name: Get Backend URL
         id: deploy
