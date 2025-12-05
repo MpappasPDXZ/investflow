@@ -189,11 +189,15 @@ jobs:
       - name: Create Backend Container App
         if: steps.check.outputs.exists == ''
         run: |
+          IMAGE_TAG="${{ needs.build-backend.outputs.image_tag }}"
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest"
+          fi
           az containerapp create \
             --name investflow-backend \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --environment ${{ env.CONTAINER_APP_ENV }} \
-            --image ${{ needs.build-backend.outputs.image_tag }} \
+            --image "$IMAGE_TAG" \
             --registry-server ${{ env.ACR_LOGIN_SERVER }} \
             --registry-username ${{ secrets.ACR_USERNAME }} \
             --registry-password ${{ secrets.ACR_PASSWORD }} \
@@ -223,10 +227,15 @@ jobs:
       - name: Update Backend Container App
         if: steps.check.outputs.exists != ''
         run: |
+          IMAGE_TAG="${{ needs.build-backend.outputs.image_tag }}"
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest"
+          fi
+          echo "Using image: $IMAGE_TAG"
           az containerapp update \
             --name investflow-backend \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ needs.build-backend.outputs.image_tag }}
+            --image "$IMAGE_TAG"
       
       - name: Get Backend URL
         id: deploy
@@ -254,11 +263,15 @@ jobs:
       - name: Create Frontend Container App
         if: steps.check.outputs.exists == ''
         run: |
+          IMAGE_TAG="${{ needs.build-frontend.outputs.image_tag }}"
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest"
+          fi
           az containerapp create \
             --name investflow-frontend \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --environment ${{ env.CONTAINER_APP_ENV }} \
-            --image ${{ needs.build-frontend.outputs.image_tag }} \
+            --image "$IMAGE_TAG" \
             --registry-server ${{ env.ACR_LOGIN_SERVER }} \
             --registry-username ${{ secrets.ACR_USERNAME }} \
             --registry-password ${{ secrets.ACR_PASSWORD }} \
@@ -274,11 +287,16 @@ jobs:
       - name: Update Frontend Container App
         if: steps.check.outputs.exists != ''
         run: |
+          IMAGE_TAG="${{ needs.build-frontend.outputs.image_tag }}"
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest"
+          fi
+          echo "Using image: $IMAGE_TAG"
           # Force new revision to pull new image
           az containerapp update \
             --name investflow-frontend \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ needs.build-frontend.outputs.image_tag }} \
+            --image "$IMAGE_TAG" \
             --set-env-vars "DEPLOY_TIMESTAMP=$(date +%s)"
 
   # Run CDC cache migration
