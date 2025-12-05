@@ -15,7 +15,8 @@ import {
   Trash2,
   Edit2,
   DollarSign,
-  Filter
+  Filter,
+  Eye
 } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -356,9 +357,19 @@ export default function ExpensesPage() {
                               <span className="font-semibold text-gray-900 mr-1">
                                 ${Number(expense.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </span>
-                              {expense.document_storage_id ? (
-                                <ReceiptViewer expenseId={expense.id} />
-                              ) : null}
+                              {expense.document_storage_id && (
+                                <ReceiptViewer 
+                                  expenseId={expense.id}
+                                  trigger={
+                                    <button 
+                                      className="text-gray-400 hover:text-blue-600 p-0.5"
+                                      title="View receipt"
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                    </button>
+                                  }
+                                />
+                              )}
                               <Link href={`/expenses/${expense.id}/edit`}>
                                 <button className="text-gray-300 hover:text-blue-600 p-0.5">
                                   <Edit2 className="h-3 w-3" />

@@ -31,11 +31,11 @@ COPY app/ ./app/
 
 # Copy migration scripts
 COPY migrate_user_cache.py ./
-COPY view_user_cache.py ./
 
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Unset PORT env var that Azure might inject, then run on port 8000
+ENV PORT=8000
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000"]
 

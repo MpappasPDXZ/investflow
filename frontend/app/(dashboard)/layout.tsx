@@ -1,29 +1,45 @@
-'use client';
+"use client";
 
-import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
-import { Sidebar } from '@/components/Sidebar';
-import { useAuth } from '@/lib/hooks/use-auth';
-import { useRouter } from 'next/navigation';
-import { useEffect, memo } from 'react';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Sidebar } from "@/components/Sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { apiClient } from "@/lib/api-client";
 
-function DashboardLayout({
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push('/login');
-    }
-  }, [isAuthenticated, loading]); // Remove router from dependencies
+    const checkAuth = async () => {
+      const token = localStorage.getItem("auth_token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
 
-  if (loading) {
+      try {
+        // Verify token is valid by fetching user profile
+        await apiClient.get("/users/me");
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error("Auth check failed:", error);
+        localStorage.removeItem("auth_token");
+        router.push("/login");
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  if (isAuthenticated === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -34,21 +50,12 @@ function DashboardLayout({
 
   return (
     <SidebarProvider>
-      <Sidebar />
-      <SidebarInset className="flex-1">
-        <div className="min-h-screen bg-gray-50">
-          {/* Sidebar Toggle Header */}
-          <header className="sticky top-0 z-10 flex h-10 items-center gap-2 border-b bg-white px-3">
-            <SidebarTrigger className="h-7 w-7" />
-          </header>
-          <main>
-            {children}
-          </main>
-        </div>
-      </SidebarInset>
+      <div className="flex min-h-screen bg-background w-full">
+        <Sidebar />
+        <main className="flex-1 p-6 overflow-auto">
+          {children}
+        </main>
+      </div>
     </SidebarProvider>
   );
 }
-
-export default memo(DashboardLayout);
-

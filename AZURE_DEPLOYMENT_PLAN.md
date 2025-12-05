@@ -4,15 +4,17 @@
 
 Deploy the InvestFlow property management application to Azure using Container Apps for serverless container hosting with Lakekeeper for Iceberg catalog management.
 
+**Key Feature**: CDC (Change Data Capture) Parquet cache in ADLS for fast authentication (~100ms login vs ~400ms without cache).
+
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Azure Resource Group                      │
-│                      investflow-rg                           │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    Azure Resource Group                         │
+│                      investflow-rg                              │
+└─────────────────────────────────────────────────────────────────┘
                               │
         ┌─────────────────────┼─────────────────────┐
         │                     │                     │
@@ -23,13 +25,22 @@ Deploy the InvestFlow property management application to Azure using Container A
 │    App      │      │    App      │      │    App      │
 └─────────────┘      └─────────────┘      └─────────────┘
                               │                     │
-                              │                     │
                               ▼                     ▼
                      ┌─────────────┐      ┌─────────────┐
                      │   ADLS      │      │ PostgreSQL  │
                      │   Gen2      │      │   Flex      │
-                     │ (Iceberg)   │      │  (Catalog)  │
-                     └─────────────┘      └─────────────┘
+                     │ (Iceberg +  │      │  (Catalog)  │
+                     │  CDC Cache) │      └─────────────┘
+                     └─────────────┘
+
+ADLS Storage Structure:
+├── documents/
+│   ├── cdc/
+│   │   ├── users/users_current.parquet       # Fast auth lookups
+│   │   └── shares/user_shares_current.parquet # Fast sharing lookups
+│   ├── expenses/                              # Receipt images
+│   └── user_documents/                        # Other documents
+└── iceberg/                                   # Iceberg table data
 ```
 
 ---
@@ -43,50 +54,52 @@ Deploy the InvestFlow property management application to Azure using Container A
 - ✅ **Container Apps Environment**: `investflow-env`
 - ✅ **Key Vault**: `investflow-kv`
 - ✅ **Application Insights**: `investflow-insights`
+- ✅ **PostgreSQL Flexible Server**: `if-postgres`
+
+### Need to Create:
+- ⬜ **Container App**: `investflow-lakekeeper`
+- ⬜ **Container App**: `investflow-backend`
+- ⬜ **Container App**: `investflow-frontend`
 
 ---
 
-## 🚀 Deployment Steps
+## 🚀 Quick Deploy (Recommended)
 
-### Phase 1: Database Setup (Use Existing)
+### Option 1: GitHub Actions (Automatic)
 
-**✅ PostgreSQL server already exists - just create Lakekeeper database**
+1. **Set up GitHub Secrets** (see `.github/SECRETS_SETUP.md`)
+2. **Push to main branch** - deployment runs automatically
+3. **Or trigger manually**: Actions → Deploy to Azure → Run workflow
+
+### Option 2: Manual CLI Deployment
+
+Follow the steps below.
+
+---
+
+## 📋 Step-by-Step Manual Deployment
+
+### Step 1: Set Up GitHub Secrets
+
+See `.github/SECRETS_SETUP.md` for the complete list. Quick summary:
 
 ```bash
-# Assuming your existing PostgreSQL server details:
-# Server: <your-postgres-server>.postgres.database.azure.com
-# Admin: <your-admin-user>
-
-# Create database for Lakekeeper (if not exists)
-az postgres flexible-server db create \
-  --resource-group investflow-rg \
-  --server-name <your-postgres-server> \
-  --database-name lakekeeper
-
-# Ensure Azure services can access the database
-az postgres flexible-server firewall-rule create \
-  --resource-group investflow-rg \
-  --name <your-postgres-server> \
-  --rule-name AllowAzureServices \
-  --start-ip-address 0.0.0.0 \
-  --end-ip-address 0.0.0.0
-
-# Store connection string in Key Vault
-# Replace with your actual server details
-CONNECTION_STRING="postgresql://<admin-user>:<password>@<your-postgres-server>.postgres.database.azure.com:5432/lakekeeper?sslmode=require"
-az keyvault secret set \
-  --vault-name investflow-kv \
-  --name PostgresConnectionString \
-  --value "$CONNECTION_STRING"
+# Required secrets to add to GitHub:
+AZURE_CREDENTIALS          # Service principal JSON
+ACR_USERNAME               # investflowregistry admin username
+ACR_PASSWORD               # investflowregistry admin password
+POSTGRES_HOST              # if-postgres.postgres.database.azure.com
+POSTGRES_DB                # investflow
+POSTGRES_USER              # your-username
+POSTGRES_PASSWORD          # your-password
+POSTGRES_CONNECTION_STRING # Full PostgreSQL connection string
+AZURE_STORAGE_ACCOUNT_NAME # investflowadls
+AZURE_STORAGE_ACCOUNT_KEY  # Storage account key
+APP_SECRET_KEY             # openssl rand -base64 32
+LAKEKEEPER_ENCRYPTION_KEY  # openssl rand -base64 32
 ```
 
-**Cost**: $0 (using existing server)
-
----
-
-### Phase 2: Container Images
-
-**Build and push Docker images to ACR**
+### Step 2: Build and Push Images
 
 ```bash
 # Login to ACR
@@ -101,28 +114,21 @@ docker push investflowregistry.azurecr.io/investflow-backend:latest
 cd ../frontend
 docker build -t investflowregistry.azurecr.io/investflow-frontend:latest .
 docker push investflowregistry.azurecr.io/investflow-frontend:latest
-
-# Build and push Lakekeeper (if custom build needed)
-# Or use official image: ghcr.io/lakekeeper/lakekeeper:latest
 ```
 
----
-
-### Phase 3: Deploy Container Apps
-
-#### 3.1 Deploy Lakekeeper Container App
+### Step 3: Deploy Lakekeeper
 
 ```bash
-# Get secrets from Key Vault
-POSTGRES_URL=$(az keyvault secret show --vault-name investflow-kv --name PostgresConnectionString --query value -o tsv)
-ADLS_KEY=$(az keyvault secret show --vault-name investflow-kv --name ADLSStorageAccountKey --query value -o tsv)
+# Get credentials
+POSTGRES_URL="postgresql://<user>:<pass>@if-postgres.postgres.database.azure.com:5432/lakekeeper?sslmode=require"
+ENCRYPTION_KEY=$(openssl rand -base64 32)
 
-# Deploy Lakekeeper
+# Create Lakekeeper Container App
 az containerapp create \
   --name investflow-lakekeeper \
   --resource-group investflow-rg \
   --environment investflow-env \
-  --image ghcr.io/lakekeeper/lakekeeper:latest \
+  --image quay.io/lakekeeper/catalog:latest \
   --target-port 8181 \
   --ingress external \
   --min-replicas 1 \
@@ -132,110 +138,111 @@ az containerapp create \
   --env-vars \
     LAKEKEEPER__PG_DATABASE_URL_READ="$POSTGRES_URL" \
     LAKEKEEPER__PG_DATABASE_URL_WRITE="$POSTGRES_URL" \
-    LAKEKEEPER__PG_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-    LAKEKEEPER__AZURE_STORAGE_ACCOUNT_NAME="investflowadls" \
-    LAKEKEEPER__AZURE_STORAGE_ACCOUNT_KEY="$ADLS_KEY" \
-    LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS="true"
+    LAKEKEEPER__PG_ENCRYPTION_KEY="$ENCRYPTION_KEY"
 ```
 
-**Cost**: ~$10-20/month (0.5 vCPU, 1GB RAM)
-
-#### 3.2 Deploy Backend Container App
+### Step 4: Deploy Backend
 
 ```bash
 # Get Lakekeeper URL
 LAKEKEEPER_URL=$(az containerapp show \
   --name investflow-lakekeeper \
   --resource-group investflow-rg \
-  --query properties.configuration.ingress.fqdn \
-  -o tsv)
+  --query properties.configuration.ingress.fqdn -o tsv)
 
-ADLS_CONNECTION=$(az storage account show-connection-string \
-  --name investflowadls \
+# Get storage key
+STORAGE_KEY=$(az storage account keys list \
+  --account-name investflowadls \
   --resource-group investflow-rg \
-  --query connectionString -o tsv)
+  --query [0].value -o tsv)
 
-# Deploy Backend
+# Get ACR credentials
+ACR_USER=$(az acr credential show --name investflowregistry --query username -o tsv)
+ACR_PASS=$(az acr credential show --name investflowregistry --query passwords[0].value -o tsv)
+
+# Create Backend Container App
 az containerapp create \
   --name investflow-backend \
   --resource-group investflow-rg \
   --environment investflow-env \
   --image investflowregistry.azurecr.io/investflow-backend:latest \
+  --registry-server investflowregistry.azurecr.io \
+  --registry-username "$ACR_USER" \
+  --registry-password "$ACR_PASS" \
   --target-port 8000 \
   --ingress external \
   --min-replicas 1 \
   --max-replicas 3 \
   --cpu 0.5 \
   --memory 1.0Gi \
-  --registry-server investflowregistry.azurecr.io \
-  --registry-identity system \
   --env-vars \
     ENVIRONMENT="production" \
     SECRET_KEY="$(openssl rand -base64 32)" \
-    CORS_ORIGINS="https://investflow-frontend.yellowsky-ca466dfe.eastus.azurecontainerapps.io" \
+    CORS_ORIGINS="https://investflow-frontend.*.azurecontainerapps.io" \
     LAKEKEEPER__BASE_URI="https://$LAKEKEEPER_URL" \
-    LAKEKEEPER__WAREHOUSE_NAME="investflow" \
-    AZURE_STORAGE_CONNECTION_STRING="$ADLS_CONNECTION" \
+    LAKEKEEPER__WAREHOUSE_NAME="lakekeeper" \
+    AZURE_STORAGE_ACCOUNT_NAME="investflowadls" \
+    AZURE_STORAGE_ACCOUNT_KEY="$STORAGE_KEY" \
     AZURE_STORAGE_CONTAINER_NAME="documents" \
-    APPLICATIONINSIGHTS_CONNECTION_STRING="@Microsoft.KeyVault(SecretUri=https://investflow-kv.vault.azure.net/secrets/AppInsightsConnectionString/)"
+    CDC_CACHE_CONTAINER_NAME="documents" \
+    POSTGRES_HOST="if-postgres.postgres.database.azure.com" \
+    POSTGRES_PORT="5432" \
+    POSTGRES_DB="investflow" \
+    POSTGRES_USER="<your-user>" \
+    POSTGRES_PASSWORD="<your-password>"
 ```
 
-**Cost**: ~$10-30/month (0.5 vCPU, 1GB RAM, scales 1-3)
-
-#### 3.3 Deploy Frontend Container App
+### Step 5: Deploy Frontend
 
 ```bash
 # Get Backend URL
 BACKEND_URL=$(az containerapp show \
   --name investflow-backend \
   --resource-group investflow-rg \
-  --query properties.configuration.ingress.fqdn \
-  -o tsv)
+  --query properties.configuration.ingress.fqdn -o tsv)
 
-# Deploy Frontend
+# Create Frontend Container App
 az containerapp create \
   --name investflow-frontend \
   --resource-group investflow-rg \
   --environment investflow-env \
   --image investflowregistry.azurecr.io/investflow-frontend:latest \
+  --registry-server investflowregistry.azurecr.io \
+  --registry-username "$ACR_USER" \
+  --registry-password "$ACR_PASS" \
   --target-port 3000 \
   --ingress external \
   --min-replicas 1 \
   --max-replicas 3 \
   --cpu 0.25 \
   --memory 0.5Gi \
-  --registry-server investflowregistry.azurecr.io \
-  --registry-identity system \
   --env-vars \
+    NODE_ENV="production" \
     NEXT_PUBLIC_API_URL="https://$BACKEND_URL/api/v1"
 ```
 
-**Cost**: ~$5-15/month (0.25 vCPU, 0.5GB RAM, scales 1-3)
-
----
-
-### Phase 4: Configure Custom Domain (Optional)
+### Step 6: Run CDC Cache Migration
 
 ```bash
-# Add custom domain to frontend
-az containerapp hostname add \
-  --name investflow-frontend \
-  --resource-group investflow-rg \
-  --hostname app.investflow.com
-
-# Add custom domain to backend  
-az containerapp hostname add \
+# Sync the CDC cache from Iceberg tables
+BACKEND_URL=$(az containerapp show \
   --name investflow-backend \
   --resource-group investflow-rg \
-  --hostname api.investflow.com
+  --query properties.configuration.ingress.fqdn -o tsv)
+
+# Sync cache
+curl -X POST "https://$BACKEND_URL/api/v1/health/cache/sync"
+
+# Verify cache
+curl "https://$BACKEND_URL/api/v1/health/cache"
 ```
 
 ---
 
-## 💰 Total Monthly Cost Estimate
+## 💰 Cost Estimate
 
-| Service | Tier | Est. Cost |
-|---------|------|-----------|
+| Service | Tier | Est. Cost/Month |
+|---------|------|-----------------|
 | PostgreSQL Flexible Server | Existing (shared) | $0 |
 | ADLS Gen2 Storage | Standard LRS | $5-10 |
 | Container Apps - Lakekeeper | 0.5 vCPU, 1GB | $10-20 |
@@ -248,56 +255,55 @@ az containerapp hostname add \
 
 ---
 
-## 🔐 Security Best Practices
+## 🔒 CDC Cache Details
 
-### Managed Identity Setup
+### What is the CDC Cache?
+
+The CDC (Change Data Capture) cache stores user and sharing data as Parquet files in ADLS for fast authentication lookups.
+
+### Cache Files
+
+| File | Purpose | Update Trigger |
+|------|---------|----------------|
+| `cdc/users/users_current.parquet` | User auth data | User create/update |
+| `cdc/shares/user_shares_current.parquet` | Sharing relationships | Share create/delete |
+
+### Performance Impact
+
+| Operation | Without Cache | With Cache | Improvement |
+|-----------|---------------|------------|-------------|
+| Login | ~400ms | ~100ms | 4x faster |
+| Get Profile | ~200ms | ~5ms | 40x faster |
+| Check Sharing | ~300ms | ~1ms | 300x faster |
+
+### Cache Management APIs
 
 ```bash
-# Enable system-assigned managed identity for backend
-az containerapp identity assign \
-  --name investflow-backend \
-  --resource-group investflow-rg \
-  --system-assigned
+# View cache status
+GET /api/v1/health/cache
 
-# Grant access to Key Vault
-BACKEND_IDENTITY=$(az containerapp identity show \
-  --name investflow-backend \
-  --resource-group investflow-rg \
-  --query principalId -o tsv)
+# Force sync from Iceberg
+POST /api/v1/health/cache/sync
 
-az keyvault set-policy \
-  --name investflow-kv \
-  --object-id $BACKEND_IDENTITY \
-  --secret-permissions get list
+# Invalidate cache (rebuilds on next access)
+POST /api/v1/health/cache/invalidate
+```
 
-# Grant access to ADLS
-az role assignment create \
-  --assignee $BACKEND_IDENTITY \
-  --role "Storage Blob Data Contributor" \
-  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/investflow-rg/providers/Microsoft.Storage/storageAccounts/investflowadls"
+### Migration Script
+
+The backend includes a migration script for initial cache population:
+
+```bash
+# Run in container
+docker exec investflow-backend python migrate_user_cache.py
+
+# Or use the API
+curl -X POST https://<backend-url>/api/v1/health/cache/sync
 ```
 
 ---
 
-## 📊 Monitoring & Observability
-
-### Application Insights Configuration
-
-```bash
-# All logs automatically flow to Application Insights
-# View logs in Azure Portal:
-# https://portal.azure.com -> Application Insights -> investflow-insights
-
-# Query example (in Logs section):
-traces
-| where customDimensions.container == "investflow-backend"
-| order by timestamp desc
-| take 100
-```
-
----
-
-## 🚨 Troubleshooting
+## 🔍 Monitoring & Troubleshooting
 
 ### View Container Logs
 
@@ -321,127 +327,68 @@ az containerapp logs show \
   --follow
 ```
 
-### Test Connectivity
+### Health Checks
 
 ```bash
-# Test backend health
-curl https://$(az containerapp show --name investflow-backend --resource-group investflow-rg --query properties.configuration.ingress.fqdn -o tsv)/api/v1/health
+# Backend health
+curl https://<backend-url>/health
 
-# Test Lakekeeper
-curl https://$(az containerapp show --name investflow-lakekeeper --resource-group investflow-rg --query properties.configuration.ingress.fqdn -o tsv)/catalog/v1/config
+# Cache status
+curl https://<backend-url>/api/v1/health/cache
+
+# Lakekeeper health
+curl https://<lakekeeper-url>/health
 ```
 
----
+### Common Issues
 
-## 🔄 CI/CD Setup (GitHub Actions)
-
-### Required GitHub Secrets
-
-```bash
-# Add these secrets to your GitHub repository
-# Settings -> Secrets and variables -> Actions
-
-AZURE_CREDENTIALS          # Service principal JSON
-ACR_LOGIN_SERVER          # investflowregistry.azurecr.io
-ACR_USERNAME              # Service principal app ID
-ACR_PASSWORD              # Service principal password
-AZURE_RESOURCE_GROUP      # investflow-rg
-```
-
-### Sample GitHub Actions Workflow
-
-Create `.github/workflows/deploy.yml`:
-
-```yaml
-name: Deploy to Azure
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Login to ACR
-        run: |
-          echo ${{ secrets.ACR_PASSWORD }} | docker login \
-            ${{ secrets.ACR_LOGIN_SERVER }} \
-            -u ${{ secrets.ACR_USERNAME }} \
-            --password-stdin
-      
-      - name: Build and push backend
-        run: |
-          cd backend
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/investflow-backend:${{ github.sha }} .
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/investflow-backend:${{ github.sha }}
-      
-      - name: Build and push frontend
-        run: |
-          cd frontend
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/investflow-frontend:${{ github.sha }} .
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/investflow-frontend:${{ github.sha }}
-      
-      - name: Deploy backend
-        run: |
-          az containerapp update \
-            --name investflow-backend \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/investflow-backend:${{ github.sha }}
-      
-      - name: Deploy frontend
-        run: |
-          az containerapp update \
-            --name investflow-frontend \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/investflow-frontend:${{ github.sha }}
-```
+| Issue | Solution |
+|-------|----------|
+| Login 401 Unauthorized | Run cache sync: `POST /api/v1/health/cache/sync` |
+| Cache shows 0 users | Run migration or sync endpoint |
+| Lakekeeper connection failed | Check POSTGRES_CONNECTION_STRING |
+| CORS errors | Verify CORS_ORIGINS includes frontend URL |
 
 ---
 
 ## 📝 Post-Deployment Checklist
 
-- [ ] Verify all containers are running
-- [ ] Test frontend URL loads
-- [ ] Test backend API health endpoint
-- [ ] Create initial user via backend API
-- [ ] Test creating a property
-- [ ] Verify data is stored in ADLS
-- [ ] Check Application Insights for logs
-- [ ] Set up alerts for errors
-- [ ] Configure backups for PostgreSQL
-- [ ] Document final URLs for team
+- [ ] All containers running (`az containerapp list -g investflow-rg`)
+- [ ] Frontend loads at `https://investflow-frontend.*.azurecontainerapps.io`
+- [ ] Backend health check returns OK
+- [ ] CDC cache populated (`/api/v1/health/cache` shows users > 0)
+- [ ] Can register new user
+- [ ] Can login with existing user
+- [ ] Properties load correctly
+- [ ] Sharing works between users
+- [ ] Documents upload to ADLS
 
 ---
 
-## 🎯 Next Steps
+## 🔄 CI/CD Pipeline
 
-1. **Immediate**: Deploy Lakekeeper + PostgreSQL
-2. **Day 1**: Deploy Backend with Iceberg integration
-3. **Day 2**: Deploy Frontend, test end-to-end
-4. **Week 1**: Set up CI/CD pipeline
-5. **Week 2**: Add custom domain, SSL certificates
-6. **Month 1**: Monitor costs, optimize resources
+The `.github/workflows/deploy.yml` handles:
+
+1. **Build** - Creates Docker images for backend and frontend
+2. **Push** - Pushes to Azure Container Registry
+3. **Deploy Lakekeeper** - Creates/updates Lakekeeper container
+4. **Deploy Backend** - Creates/updates backend container
+5. **Deploy Frontend** - Creates/updates frontend container
+6. **Migration** - Runs CDC cache sync
+
+**Trigger**: Push to `main` branch or manual workflow dispatch.
 
 ---
 
-## 📚 Additional Resources
+## 📚 Resources
 
 - [Azure Container Apps Docs](https://learn.microsoft.com/en-us/azure/container-apps/)
-- [Lakekeeper Documentation](https://github.com/lakekeeper/lakekeeper)
-- [Apache Iceberg on Azure](https://iceberg.apache.org/)
-- [ADLS Gen2 Best Practices](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-best-practices)
+- [Lakekeeper Documentation](https://lakekeeper.io/)
+- [Apache Iceberg](https://iceberg.apache.org/)
+- [CDC Cache Implementation](./backend/app/services/auth_cache_service.py)
 
 ---
 
 **Created**: 2025-11-30  
-**Last Updated**: 2025-11-30  
+**Last Updated**: 2025-12-04  
 **Status**: Ready for deployment 🚀
-

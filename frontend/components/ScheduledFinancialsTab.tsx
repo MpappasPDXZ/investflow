@@ -118,35 +118,11 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
     value_added_amount: '',
   });
 
-  // Fetch expenses and revenues in parallel on mount
+  // Fetch expenses and revenues on mount
   useEffect(() => {
-    fetchData();
+    fetchExpenses();
+    fetchRevenues();
   }, [propertyId]);
-
-  const fetchData = async () => {
-    try {
-      setLoadingExpenses(true);
-      setLoadingRevenues(true);
-      
-      // Fetch both in parallel
-      const [expensesResponse, revenuesResponse] = await Promise.all([
-        apiClient.get<{ items: ScheduledExpense[]; total: number }>(
-          `/scheduled-expenses?property_id=${propertyId}`
-        ),
-        apiClient.get<{ items: ScheduledRevenue[]; total: number }>(
-          `/scheduled-revenue?property_id=${propertyId}`
-        )
-      ]);
-      
-      setExpenses(expensesResponse.items);
-      setRevenues(revenuesResponse.items);
-    } catch (err) {
-      console.error('❌ [FINANCIALS] Error fetching data:', err);
-    } finally {
-      setLoadingExpenses(false);
-      setLoadingRevenues(false);
-    }
-  };
 
   const fetchExpenses = async () => {
     try {
@@ -571,7 +547,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                     const typeLabel = type === 'capex' ? 'Capital Expenses' : 
                                      type === 'maintenance' ? 'Maintenance' :
                                      type === 'vacancy' ? 'Vacancy Costs' :
-                                     type === 'pti' ? 'PTI (Property Tax & Insurance)' : 
+                                     type === 'pti' ? 'PTI (Tax & Insurance)' : 
                                      'P&I (Financing)';
                     const isCollapsed = collapsedExpenseSections.has(type);
 

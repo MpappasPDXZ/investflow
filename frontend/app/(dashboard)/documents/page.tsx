@@ -1,503 +1,810 @@
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
-import { useDocuments, useDeleteDocument } from '@/lib/hooks/use-documents';
-import { useProperties } from '@/lib/hooks/use-properties';
-import { DocumentUpload } from '@/components/DocumentUpload';
-import { ReceiptViewer } from '@/components/ReceiptViewer';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { 
-  FileText, 
-  Image, 
-  Upload, 
-  Trash2, 
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  FileText,
+  Trash2,
   Download,
-  Grid3X3,
-  List,
-  Search,
-  Filter,
-  FolderOpen,
-  File,
-  ChevronDown,
-  ChevronRight,
-  X
-} from 'lucide-react';
-import { format } from 'date-fns';
-import type { Document } from '@/lib/types';
+  Loader2,
+  Building2,
+  Image,
+  FileIcon,
+  Eye,
+  Pencil,
+  Plus,
+  Upload,
+  X,
+  AlertCircle,
+} from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import { ReceiptViewer } from "@/components/ReceiptViewer";
 
-// Note: receipts and invoices are managed in Expenses, not here
-type DocumentType = 'all' | 'lease' | 'screening' | 'other';
-type ViewMode = 'grid' | 'list';
+interface Document {
+  id: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  document_type: string;
+  property_id?: string;
+  unit_id?: string;
+  display_name?: string;
+  uploaded_at: string;
+  created_at: string;
+  blob_location: string;
+}
 
-const documentTypeLabels: Record<string, string> = {
-  lease: 'Leases',
-  screening: 'Screenings',
-  other: 'Other',
-};
+interface Property {
+  id: string;
+  display_name?: string;
+  address_line1?: string;
+  city?: string;
+  state?: string;
+}
 
-const documentTypeColors: Record<string, string> = {
-  lease: 'bg-blue-100 text-blue-800 border-blue-200',
-  screening: 'bg-purple-100 text-purple-800 border-purple-200',
-  other: 'bg-gray-100 text-gray-800 border-gray-200',
-};
+const DOCUMENT_TYPES = [
+  { value: "receipt", label: "Receipt" },
+  { value: "lease", label: "Lease" },
+  { value: "background_check", label: "Background Check" },
+  { value: "contract", label: "Contract" },
+  { value: "invoice", label: "Invoice" },
+  { value: "other", label: "Other" },
+];
 
 export default function DocumentsPage() {
-  const [selectedType, setSelectedType] = useState<DocumentType>('all');
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedProperty, setSelectedProperty] = useState<string>("all");
 
-  const { data: properties } = useProperties();
-  const { data: documents, isLoading, refetch } = useDocuments({
-    property_id: selectedPropertyId || undefined,
-    document_type: selectedType === 'all' ? undefined : selectedType,
+  // Edit dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingDoc, setEditingDoc] = useState<Document | null>(null);
+  const [editForm, setEditForm] = useState({
+    display_name: "",
+    property_id: "",
+    document_type: "",
   });
-  const deleteDocument = useDeleteDocument();
+  const [saving, setSaving] = useState(false);
 
-  // Filter documents by search query and exclude receipts & invoices (those are in Expenses)
-  const filteredDocuments = useMemo(() => {
-    if (!documents?.items) return [];
-    
-    // Always exclude receipts and invoices - they belong in Expenses
-    let docs = documents.items.filter(doc => 
-      doc.document_type !== 'receipt' && doc.document_type !== 'invoice'
-    );
-    
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      docs = docs.filter(doc => doc.file_name.toLowerCase().includes(query));
-    }
-    
-    return docs;
-  }, [documents, searchQuery]);
+  // View dialog state
+  const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
 
-  // Group documents by type for stats (excluding receipts and invoices)
-  const documentStats = useMemo(() => {
-    if (!documents?.items) return {};
-    
-    const stats: Record<string, number> = {};
-    documents.items
-      .filter(doc => doc.document_type !== 'receipt' && doc.document_type !== 'invoice')
-      .forEach(doc => {
-        const type = doc.document_type || 'other';
-        stats[type] = (stats[type] || 0) + 1;
-      });
-    return stats;
-  }, [documents]);
+  // Upload dialog state
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [uploadForm, setUploadForm] = useState({
+    display_name: "",
+    property_id: "unassigned",
+    document_type: "other",
+  });
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handleDelete = async (doc: Document) => {
-    if (confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) {
-      await deleteDocument.mutateAsync(doc.id);
-    }
-  };
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  const handleBulkDelete = async () => {
-    if (selectedDocuments.size === 0) return;
-    
-    if (confirm(`Delete ${selectedDocuments.size} selected documents? This cannot be undone.`)) {
-      for (const docId of selectedDocuments) {
-        await deleteDocument.mutateAsync(docId);
-      }
-      setSelectedDocuments(new Set());
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [docsRes, propsRes] = await Promise.all([
+        apiClient.get("/documents"),
+        apiClient.get("/properties"),
+      ]);
+
+      const docsData = docsRes as any;
+      const propsData = propsRes as any;
+
+      // Filter out receipt documents - those are managed via Expenses page
+      const allDocs = docsData.items || docsData.data?.items || docsData || [];
+      const nonReceiptDocs = allDocs.filter((doc: Document) => doc.document_type !== "receipt");
+      setDocuments(nonReceiptDocs);
+      setProperties(propsData.items || propsData.data?.items || propsData || []);
+    } catch (err) {
+      console.error("Error fetching data:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const toggleDocumentSelection = (docId: string) => {
-    setSelectedDocuments(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(docId)) {
-        newSet.delete(docId);
-      } else {
-        newSet.add(docId);
+  const handleDelete = async (documentId: string) => {
+    if (!confirm("Delete this document?")) return;
+    try {
+      await apiClient.delete(`/documents/${documentId}`);
+      setDocuments(documents.filter((doc) => doc.id !== documentId));
+    } catch (err) {
+      console.error("Error deleting document:", err);
+    }
+  };
+
+  const handleDownload = async (doc: Document) => {
+    try {
+      const response = (await apiClient.get(`/documents/${doc.id}/download`)) as any;
+      window.open(response.download_url || response.data?.download_url, "_blank");
+    } catch (err) {
+      console.error("Error downloading:", err);
+    }
+  };
+
+  const openEditDialog = (doc: Document) => {
+    setEditingDoc(doc);
+    setEditForm({
+      display_name: doc.display_name || "",
+      property_id: doc.property_id || "unassigned",
+      document_type: doc.document_type || "other",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingDoc) return;
+
+    setSaving(true);
+    try {
+      const updateData: any = {};
+
+      // Only include document_type if it has a value
+      if (editForm.document_type) {
+        updateData.document_type = editForm.document_type;
       }
-      return newSet;
+
+      // Only include display_name if it has content
+      if (editForm.display_name.trim()) {
+        updateData.display_name = editForm.display_name.trim();
+      }
+
+      // Handle property assignment
+      if (editForm.property_id === "unassigned") {
+        updateData.clear_property = true;
+      } else if (editForm.property_id) {
+        updateData.property_id = editForm.property_id;
+      }
+
+      console.log("Updating document:", editingDoc.id, "with data:", updateData);
+
+      const response = (await apiClient.patch(
+        `/documents/${editingDoc.id}`,
+        updateData
+      )) as Document;
+      
+      console.log("Update response:", response);
+
+      // Update the document in our local state
+      setDocuments(
+        documents.map((doc) =>
+          doc.id === editingDoc.id
+            ? {
+                ...doc,
+                ...response,
+                property_id: editForm.property_id === "unassigned" ? undefined : editForm.property_id,
+              }
+            : doc
+        )
+      );
+
+      setEditDialogOpen(false);
+      setEditingDoc(null);
+    } catch (err) {
+      console.error("Error updating document:", err);
+      alert("Failed to update document");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Upload handlers
+  const handleFileSelect = (file: File) => {
+    const allowedTypes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError("Invalid file type. Please upload PDF, JPEG, PNG, GIF, or WebP.");
+      return;
+    }
+    
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError("File too large. Maximum size is 10MB.");
+      return;
+    }
+    
+    setUploadError(null);
+    setUploadFile(file);
+    
+    // Create preview for images
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (e) => setUploadPreview(e.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setUploadPreview(null);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFileSelect(files[0]);
+    }
+  };
+
+  const clearUpload = () => {
+    setUploadFile(null);
+    setUploadPreview(null);
+    setUploadError(null);
+    setUploadForm({
+      display_name: "",
+      property_id: "unassigned",
+      document_type: "other",
     });
   };
 
-  const selectAllDocuments = () => {
-    if (selectedDocuments.size === filteredDocuments.length) {
-      setSelectedDocuments(new Set());
-    } else {
-      setSelectedDocuments(new Set(filteredDocuments.map(d => d.id)));
+  const handleUpload = async () => {
+    if (!uploadFile) return;
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("document_type", uploadForm.document_type);
+      
+      if (uploadForm.property_id && uploadForm.property_id !== "unassigned") {
+        formData.append("property_id", uploadForm.property_id);
+      }
+
+      const response = await apiClient.upload<any>("/documents/upload", formData);
+      
+      // If we have a display_name, update the document with it
+      if (uploadForm.display_name.trim() && response.document?.id) {
+        await apiClient.patch(`/documents/${response.document.id}`, {
+          display_name: uploadForm.display_name.trim(),
+        });
+      }
+
+      // Refresh the documents list
+      await fetchData();
+      
+      // Close dialog and reset
+      setUploadDialogOpen(false);
+      clearUpload();
+    } catch (err) {
+      console.error("Error uploading document:", err);
+      setUploadError((err as Error).message || "Failed to upload document");
+    } finally {
+      setUploading(false);
     }
   };
 
-  const isImage = (doc: Document) => 
-    doc.file_type?.startsWith('image/') || doc.file_name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-  
-  const isPdf = (doc: Document) => 
-    doc.file_type === 'application/pdf' || doc.file_name.match(/\.pdf$/i);
-
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return '—';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const formatFileSize = (bytes: number) => {
+    if (!bytes) return "-";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i];
   };
 
-  const tabs: { value: DocumentType; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'lease', label: 'Leases' },
-    { value: 'screening', label: 'Screenings' },
-    { value: 'other', label: 'Other' },
-  ];
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "-";
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "2-digit",
+    });
+  };
+
+  const getPropertyName = (propertyId?: string) => {
+    if (!propertyId) return "Unassigned";
+    const prop = properties.find((p) => p.id === propertyId);
+    if (!prop) return "Unknown";
+    return prop.display_name || `${prop.address_line1}, ${prop.city}` || "Property";
+  };
+
+  const getFileIcon = (fileType: string) => {
+    if (fileType?.startsWith("image/")) return <Image className="h-4 w-4" />;
+    if (fileType?.includes("pdf")) return <FileText className="h-4 w-4" />;
+    return <FileIcon className="h-4 w-4" />;
+  };
+
+  const getDocTypeBadge = (docType: string) => {
+    const colors: Record<string, string> = {
+      receipt: "bg-green-100 text-green-800",
+      lease: "bg-blue-100 text-blue-800",
+      contract: "bg-purple-100 text-purple-800",
+      background_check: "bg-orange-100 text-orange-800",
+      invoice: "bg-cyan-100 text-cyan-800",
+      other: "bg-gray-100 text-gray-800",
+    };
+    return colors[docType] || colors.other;
+  };
+
+  const getDisplayName = (doc: Document) => {
+    return doc.display_name || doc.file_name;
+  };
+
+  // Filter documents
+  const filteredDocs =
+    selectedProperty === "all"
+      ? documents
+      : selectedProperty === "unassigned"
+      ? documents.filter((d) => !d.property_id)
+      : documents.filter((d) => d.property_id === selectedProperty);
+
+  // Group by property
+  const groupedByProperty = filteredDocs.reduce((acc, doc) => {
+    const key = doc.property_id || "unassigned";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(doc);
+    return acc;
+  }, {} as Record<string, Document[]>);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-4 max-w-7xl mx-auto">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-start mb-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <FolderOpen className="h-4 w-4" />
-            Documents
-          </h1>
-          <p className="text-xs text-gray-600 mt-0.5">
-            Manage receipts, leases, and other property documents
+          <h1 className="text-2xl font-bold">Documents</h1>
+          <p className="text-sm text-muted-foreground">
+            {documents.length} documents across {properties.length} properties
           </p>
         </div>
-        <Button 
-          size="sm"
-          onClick={() => setShowUploadModal(true)}
-          className="bg-black text-white hover:bg-gray-800"
-        >
-          <Upload className="h-3.5 w-3.5 mr-1.5" />
-          Upload
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filter by property" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Properties</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {properties.map((prop) => (
+                <SelectItem key={prop.id} value={prop.id}>
+                  {prop.display_name || prop.address_line1 || "Property"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={() => setUploadDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Document
+          </Button>
+        </div>
       </div>
 
-      {/* Document Type Tabs */}
-      <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
-        {tabs.map(tab => {
-          const count = tab.value === 'all' 
-            ? filteredDocuments.length
-            : documentStats[tab.value] || 0;
-          
-          return (
-            <button
-              key={tab.value}
-              onClick={() => setSelectedType(tab.value)}
+      {/* Documents grouped by property */}
+      {documents.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center py-8">
+            <FileText className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-muted-foreground text-sm">
+              No documents yet. Upload receipts when adding expenses.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        Object.entries(groupedByProperty).map(([propertyId, docs]) => (
+          <Card key={propertyId} className="overflow-hidden">
+            <CardHeader className="py-3 px-4 bg-muted/50">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                {propertyId === "unassigned"
+                  ? "Unassigned Documents"
+                  : getPropertyName(propertyId)}
+                <Badge variant="secondary" className="ml-auto">
+                  {docs.length}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs">
+                  <TableHead className="w-[35%]">Name</TableHead>
+                  <TableHead className="w-[12%]">Type</TableHead>
+                  <TableHead className="w-[10%]">Size</TableHead>
+                  <TableHead className="w-[12%]">Date</TableHead>
+                  <TableHead className="w-[31%] text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {docs.map((doc) => (
+                  <TableRow key={doc.id} className="text-sm">
+                    <TableCell className="py-2">
+                      <div className="flex items-center gap-2">
+                        {getFileIcon(doc.file_type)}
+                        <div className="flex flex-col">
+                          <span
+                            className="truncate max-w-[220px] font-medium"
+                            title={getDisplayName(doc)}
+                          >
+                            {getDisplayName(doc)}
+                          </span>
+                          {doc.display_name && (
+                            <span
+                              className="text-xs text-muted-foreground truncate max-w-[220px]"
+                              title={doc.file_name}
+                            >
+                              {doc.file_name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-2">
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${getDocTypeBadge(doc.document_type)}`}
+                      >
+                        {doc.document_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-2 text-muted-foreground">
+                      {formatFileSize(doc.file_size)}
+                    </TableCell>
+                    <TableCell className="py-2 text-muted-foreground">
+                      {formatDate(doc.created_at || doc.uploaded_at)}
+                    </TableCell>
+                    <TableCell className="py-2 text-right">
+                      <div className="flex justify-end gap-1">
+                        <ReceiptViewer
+                          documentId={doc.id}
+                          fileName={getDisplayName(doc)}
+                          fileType={doc.file_type}
+                          trigger={
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              title="View document"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                          }
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => openEditDialog(doc)}
+                          title="Edit document"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => handleDownload(doc)}
+                          title="Download"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(doc.id)}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        ))
+      )}
+
+      {/* Edit Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Document</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="display_name">Display Name</Label>
+              <Input
+                id="display_name"
+                value={editForm.display_name}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, display_name: e.target.value })
+                }
+                placeholder={editingDoc?.file_name || "Enter a name"}
+              />
+              <p className="text-xs text-muted-foreground">
+                Original: {editingDoc?.file_name}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="property">Property</Label>
+              <Select
+                value={editForm.property_id}
+                onValueChange={(val) =>
+                  setEditForm({ ...editForm, property_id: val })
+                }
+              >
+                <SelectTrigger id="property">
+                  <SelectValue placeholder="Select property" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {properties.map((prop) => (
+                    <SelectItem key={prop.id} value={prop.id}>
+                      {prop.display_name || prop.address_line1 || "Property"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="document_type">Document Type</Label>
+              <Select
+                value={editForm.document_type}
+                onValueChange={(val) =>
+                  setEditForm({ ...editForm, document_type: val })
+                }
+              >
+                <SelectTrigger id="document_type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DOCUMENT_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditDialogOpen(false)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Dialog */}
+      <Dialog open={uploadDialogOpen} onOpenChange={(open) => {
+        setUploadDialogOpen(open);
+        if (!open) clearUpload();
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Upload Document</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            {/* Drop Zone */}
+            <div
+              onDrop={handleDrop}
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+              onClick={() => document.getElementById("upload-input")?.click()}
               className={`
-                px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all
-                ${selectedType === tab.value 
-                  ? 'bg-black text-white shadow-sm' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                relative border-2 border-dashed rounded-lg p-6 transition-all cursor-pointer
+                ${isDragging
+                  ? "border-blue-500 bg-blue-50"
+                  : uploadFile
+                  ? "border-green-400 bg-green-50"
+                  : "border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100"
                 }
               `}
             >
-              {tab.label}
-              <span className={`ml-1.5 px-1 py-0.5 rounded text-xs ${
-                selectedType === tab.value ? 'bg-white/20' : 'bg-gray-200'
-              }`}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Filters & Actions Bar */}
-      <Card className="mb-4">
-        <CardContent className="py-2.5 px-3">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Search */}
-            <div className="flex-1 min-w-[180px] max-w-sm relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search..."
-                className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                id="upload-input"
+                type="file"
+                accept="application/pdf,image/jpeg,image/png,image/gif,image/webp"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) handleFileSelect(e.target.files[0]);
+                }}
+                className="hidden"
               />
-            </div>
 
-            {/* Property Filter */}
-            <select
-              value={selectedPropertyId}
-              onChange={(e) => setSelectedPropertyId(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-black"
-            >
-              <option value="">All Properties</option>
-              {properties?.items.map((prop) => (
-                <option key={prop.id} value={prop.id}>
-                  {prop.display_name || prop.address_line1 || prop.id}
-                </option>
-              ))}
-            </select>
-
-            {/* View Mode Toggle */}
-            <div className="flex items-center border rounded-md overflow-hidden">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 ${viewMode === 'grid' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
-              >
-                <Grid3X3 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-1.5 ${viewMode === 'list' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
-              >
-                <List className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            {/* Bulk Actions */}
-            {selectedDocuments.size > 0 && (
-              <div className="flex items-center gap-2 ml-auto">
-                <span className="text-xs text-gray-600">
-                  {selectedDocuments.size} selected
-                </span>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={handleBulkDelete}
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-1" />
-                  Delete
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={() => setSelectedDocuments(new Set())}
-                >
-                  Clear
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Documents Content */}
-      <Card>
-        <CardContent className="p-3">
-          {isLoading ? (
-            <div className="text-center py-8 text-gray-500 text-sm">
-              <div className="animate-pulse">Loading documents...</div>
-            </div>
-          ) : filteredDocuments.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <FileText className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-600 mb-1">No documents found</p>
-              <p className="text-xs text-gray-500 mb-3">
-                {searchQuery ? 'Try a different search term' : 'Upload your first document to get started'}
-              </p>
-              <Button size="sm" onClick={() => setShowUploadModal(true)}>
-                <Upload className="h-3.5 w-3.5 mr-1.5" />
-                Upload
-              </Button>
-            </div>
-          ) : viewMode === 'grid' ? (
-            /* Grid View */
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-              {filteredDocuments.map(doc => (
-                <div
-                  key={doc.id}
-                  className={`
-                    group relative border rounded-md p-2 hover:shadow-md transition-all cursor-pointer
-                    ${selectedDocuments.has(doc.id) ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:border-gray-400'}
-                  `}
-                >
-                  {/* Selection Checkbox */}
-                  <div className="absolute top-1.5 left-1.5 z-10">
-                    <input
-                      type="checkbox"
-                      checked={selectedDocuments.has(doc.id)}
-                      onChange={() => toggleDocumentSelection(doc.id)}
-                      className="h-3.5 w-3.5 rounded border-gray-300"
-                      onClick={(e) => e.stopPropagation()}
+              {uploadFile ? (
+                <div className="flex items-center justify-center gap-4">
+                  {uploadPreview ? (
+                    <img
+                      src={uploadPreview}
+                      alt="Preview"
+                      className="h-16 w-16 object-cover rounded-lg shadow-sm"
                     />
-                  </div>
-
-                  {/* Document Preview */}
-                  <ReceiptViewer
-                    documentId={doc.id}
-                    fileName={doc.file_name}
-                    fileType={doc.file_type}
-                    trigger={
-                      <div className="aspect-square mb-2 bg-gray-100 rounded flex items-center justify-center overflow-hidden">
-                        {isImage(doc) ? (
-                          <Image className="h-8 w-8 text-blue-400" />
-                        ) : isPdf(doc) ? (
-                          <FileText className="h-8 w-8 text-red-400" />
-                        ) : (
-                          <File className="h-8 w-8 text-gray-400" />
-                        )}
-                      </div>
-                    }
-                  />
-
-                  {/* Document Info */}
-                  <div>
-                    <p className="text-xs font-medium text-gray-900 truncate" title={doc.file_name}>
-                      {doc.file_name}
+                  ) : (
+                    <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center">
+                      <FileText className="h-8 w-8 text-red-600" />
+                    </div>
+                  )}
+                  <div className="text-left">
+                    <p className="font-medium text-gray-900 truncate max-w-[200px]">
+                      {uploadFile.name}
                     </p>
-                    <div className="flex items-center justify-between mt-0.5">
-                      <span className={`text-[10px] px-1 py-0.5 rounded ${documentTypeColors[doc.document_type] || documentTypeColors.other}`}>
-                        {documentTypeLabels[doc.document_type] || 'Other'}
-                      </span>
-                      <span className="text-[10px] text-gray-500">
-                        {formatFileSize(doc.file_size)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between mt-0.5 text-[10px] text-gray-400">
-                      <span>{format(new Date(doc.uploaded_at || doc.created_at), 'M/d/yy')}</span>
-                      <span>{doc.file_type?.split('/')[1]?.toUpperCase() || 'FILE'}</span>
-                    </div>
-                  </div>
-
-                  {/* Hover Actions */}
-                  <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                    <p className="text-sm text-gray-500">
+                      {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDelete(doc);
+                        setUploadFile(null);
+                        setUploadPreview(null);
                       }}
-                      className="p-1 bg-white rounded shadow-sm hover:bg-red-50 hover:text-red-600 transition-colors"
+                      className="text-sm text-red-600 hover:text-red-800 mt-1 flex items-center gap-1"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <X className="h-3 w-3" />
+                      Remove
                     </button>
                   </div>
                 </div>
-              ))}
+              ) : (
+                <div className="text-center">
+                  <Upload className="h-10 w-10 mx-auto text-gray-400 mb-2" />
+                  <p className="text-sm font-medium text-gray-700">
+                    Drag and drop or click to browse
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    PDF, JPEG, PNG, GIF, WebP (max 10MB)
+                  </p>
+                </div>
+              )}
             </div>
-          ) : (
-            /* List View */
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="pb-2 pl-2 w-6">
-                      <input
-                        type="checkbox"
-                        checked={selectedDocuments.size === filteredDocuments.length && filteredDocuments.length > 0}
-                        onChange={selectAllDocuments}
-                        className="h-3.5 w-3.5 rounded border-gray-300"
-                      />
-                    </th>
-                    <th className="pb-2 text-xs font-medium text-gray-600">Name</th>
-                    <th className="pb-2 text-xs font-medium text-gray-600">Type</th>
-                    <th className="pb-2 text-xs font-medium text-gray-600">Size</th>
-                    <th className="pb-2 text-xs font-medium text-gray-600">Uploaded</th>
-                    <th className="pb-2 text-xs font-medium text-gray-600 w-[80px]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredDocuments.map(doc => (
-                    <tr key={doc.id} className="border-b hover:bg-gray-50">
-                      <td className="py-2 pl-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedDocuments.has(doc.id)}
-                          onChange={() => toggleDocumentSelection(doc.id)}
-                          className="h-3.5 w-3.5 rounded border-gray-300"
-                        />
-                      </td>
-                      <td className="py-2">
-                        <div className="flex items-center gap-2">
-                          <div className="h-6 w-6 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
-                            {isImage(doc) ? (
-                              <Image className="h-3.5 w-3.5 text-blue-400" />
-                            ) : isPdf(doc) ? (
-                              <FileText className="h-3.5 w-3.5 text-red-400" />
-                            ) : (
-                              <File className="h-3.5 w-3.5 text-gray-400" />
-                            )}
-                          </div>
-                          <span className="text-xs font-medium text-gray-900 truncate max-w-[200px]">
-                            {doc.file_name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-2">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${documentTypeColors[doc.document_type] || documentTypeColors.other}`}>
-                          {documentTypeLabels[doc.document_type] || 'Other'}
-                        </span>
-                      </td>
-                      <td className="py-2 text-xs text-gray-600">
-                        {formatFileSize(doc.file_size)}
-                      </td>
-                      <td className="py-2 text-xs text-gray-600">
-                        {format(new Date(doc.created_at), 'MMM d')}
-                      </td>
-                      <td className="py-2">
-                        <div className="flex items-center gap-1">
-                          <ReceiptViewer
-                            documentId={doc.id}
-                            fileName={doc.file_name}
-                            fileType={doc.file_type}
-                          />
-                          <button
-                            onClick={() => handleDelete(doc)}
-                            className="text-gray-400 hover:text-red-600 transition-colors p-0.5"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      {/* Upload Modal */}
-      <Dialog open={showUploadModal} onOpenChange={setShowUploadModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Upload className="h-4 w-4" />
-              Upload Document
-            </DialogTitle>
-          </DialogHeader>
-          <div className="py-2">
-            {/* Property Selector */}
-            <div className="mb-3">
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Property (optional)
-              </label>
-              <select
-                value={selectedPropertyId}
-                onChange={(e) => setSelectedPropertyId(e.target.value)}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-black"
+            {/* Error */}
+            {uploadError && (
+              <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {uploadError}
+              </div>
+            )}
+
+            {/* Display Name */}
+            <div className="space-y-2">
+              <Label htmlFor="upload_display_name">Display Name (optional)</Label>
+              <Input
+                id="upload_display_name"
+                value={uploadForm.display_name}
+                onChange={(e) =>
+                  setUploadForm({ ...uploadForm, display_name: e.target.value })
+                }
+                placeholder="Enter a name for this document"
+              />
+            </div>
+
+            {/* Property */}
+            <div className="space-y-2">
+              <Label htmlFor="upload_property">Property</Label>
+              <Select
+                value={uploadForm.property_id}
+                onValueChange={(val) =>
+                  setUploadForm({ ...uploadForm, property_id: val })
+                }
               >
-                <option value="">No property</option>
-                {properties?.items.map((prop) => (
-                  <option key={prop.id} value={prop.id}>
-                    {prop.display_name || prop.address_line1 || prop.id}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="upload_property">
+                  <SelectValue placeholder="Select property" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {properties.map((prop) => (
+                    <SelectItem key={prop.id} value={prop.id}>
+                      {prop.display_name || prop.address_line1 || "Property"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <DocumentUpload
-              propertyId={selectedPropertyId || undefined}
-              documentType={selectedType === 'all' ? 'lease' : selectedType}
-              hideReceiptOption={true}
-              onUploadSuccess={() => {
-                setShowUploadModal(false);
-                refetch();
-              }}
-            />
+            {/* Document Type */}
+            <div className="space-y-2">
+              <Label htmlFor="upload_document_type">Document Type</Label>
+              <Select
+                value={uploadForm.document_type}
+                onValueChange={(val) =>
+                  setUploadForm({ ...uploadForm, document_type: val })
+                }
+              >
+                <SelectTrigger id="upload_document_type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DOCUMENT_TYPES.filter(t => t.value !== "receipt").map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Note: For receipts, upload via the Expenses page.
+              </p>
+            </div>
           </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUploadDialogOpen(false);
+                clearUpload();
+              }}
+              disabled={uploading}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpload} disabled={!uploadFile || uploading}>
+              {uploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
-
