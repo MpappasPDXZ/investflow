@@ -58,7 +58,6 @@ jobs:
   build-backend:
     name: Build Backend Image
     runs-on: ubuntu-latest
-    if: github.event.inputs.deploy_backend != 'false'
     outputs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
     steps:
@@ -92,7 +91,6 @@ jobs:
     name: Build Frontend Image
     runs-on: ubuntu-latest
     needs: get-infrastructure
-    if: github.event.inputs.deploy_frontend != 'false'
     outputs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
     steps:
@@ -174,7 +172,6 @@ jobs:
     name: Deploy Backend
     runs-on: ubuntu-latest
     needs: [build-backend, deploy-lakekeeper]
-    if: github.event.inputs.deploy_backend != 'false'
     outputs:
       backend_url: ${{ steps.deploy.outputs.fqdn }}
     steps:
@@ -242,7 +239,6 @@ jobs:
     name: Deploy Frontend
     runs-on: ubuntu-latest
     needs: [build-frontend, deploy-backend]
-    if: github.event.inputs.deploy_frontend != 'false'
     steps:
       - name: Azure Login
         uses: azure/login@v2
@@ -290,7 +286,6 @@ jobs:
     name: Run CDC Cache Migration
     runs-on: ubuntu-latest
     needs: [deploy-backend]
-    if: github.event.inputs.run_migration != 'false'
     steps:
       - name: Azure Login
         uses: azure/login@v2
