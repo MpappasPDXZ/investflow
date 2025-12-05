@@ -18,6 +18,7 @@ async def upload_document_endpoint(
     document_type: Optional[str] = Form("other"),
     property_id: Optional[str] = Form(None),
     unit_id: Optional[str] = Form(None),
+    display_name: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     """Upload a document to Azure Blob Storage"""
@@ -25,7 +26,8 @@ async def upload_document_endpoint(
         # Validate file type
         allowed_types = [
             "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp",
-            "application/pdf"
+            "application/pdf",
+            "image/heic", "image/heif"  # iOS photo formats
         ]
         
         content_type = file.content_type or "application/octet-stream"
@@ -43,6 +45,11 @@ async def upload_document_endpoint(
         
         user_id = UUID(current_user["sub"])
         
+        # Build metadata with display_name if provided
+        doc_metadata = {}
+        if display_name and display_name.strip():
+            doc_metadata["display_name"] = display_name.strip()
+        
         # Upload document
         document = document_service.upload_document(
             user_id=user_id,
@@ -51,7 +58,8 @@ async def upload_document_endpoint(
             content_type=content_type,
             document_type=document_type or "other",
             property_id=UUID(property_id) if property_id else None,
-            unit_id=UUID(unit_id) if unit_id else None
+            unit_id=UUID(unit_id) if unit_id else None,
+            document_metadata=doc_metadata if doc_metadata else None
         )
         
         # Generate download URL

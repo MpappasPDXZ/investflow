@@ -288,15 +288,13 @@ export default function DocumentsPage() {
       if (uploadForm.property_id && uploadForm.property_id !== "unassigned") {
         formData.append("property_id", uploadForm.property_id);
       }
-
-      const response = await apiClient.upload<any>("/documents/upload", formData);
       
-      // If we have a display_name, update the document with it
-      if (uploadForm.display_name.trim() && response.document?.id) {
-        await apiClient.patch(`/documents/${response.document.id}`, {
-          display_name: uploadForm.display_name.trim(),
-        });
+      // Include display_name in the initial upload
+      if (uploadForm.display_name.trim()) {
+        formData.append("display_name", uploadForm.display_name.trim());
       }
+
+      await apiClient.upload<any>("/documents/upload", formData);
 
       // Refresh the documents list
       await fetchData();
