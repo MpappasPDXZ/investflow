@@ -39,10 +39,8 @@ import {
   Eye,
   Pencil,
   Plus,
-  Upload,
-  X,
-  AlertCircle,
 } from "lucide-react";
+import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
 import { ReceiptViewer } from "@/components/ReceiptViewer";
 
@@ -74,6 +72,8 @@ const DOCUMENT_TYPES = [
   { value: "background_check", label: "Background Check" },
   { value: "contract", label: "Contract" },
   { value: "invoice", label: "Invoice" },
+  { value: "inspection", label: "Inspection" },
+  { value: "photo", label: "Property Photo" },
   { value: "other", label: "Other" },
 ];
 
@@ -93,21 +93,8 @@ export default function DocumentsPage() {
   });
   const [saving, setSaving] = useState(false);
 
-  // View dialog state
+  // View dialog state (unused but kept for potential future use)
   const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
-
-  // Upload dialog state
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
-  const [uploadForm, setUploadForm] = useState({
-    display_name: "",
-    property_id: "unassigned",
-    document_type: "other",
-  });
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -221,95 +208,6 @@ export default function DocumentsPage() {
     }
   };
 
-  // Upload handlers
-  const handleFileSelect = (file: File) => {
-    const allowedTypes = [
-      "application/pdf",
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-    ];
-    
-    if (!allowedTypes.includes(file.type)) {
-      setUploadError("Invalid file type. Please upload PDF, JPEG, PNG, GIF, or WebP.");
-      return;
-    }
-    
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError("File too large. Maximum size is 10MB.");
-      return;
-    }
-    
-    setUploadError(null);
-    setUploadFile(file);
-    
-    // Create preview for images
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (e) => setUploadPreview(e.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
-      setUploadPreview(null);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileSelect(files[0]);
-    }
-  };
-
-  const clearUpload = () => {
-    setUploadFile(null);
-    setUploadPreview(null);
-    setUploadError(null);
-    setUploadForm({
-      display_name: "",
-      property_id: "unassigned",
-      document_type: "other",
-    });
-  };
-
-  const handleUpload = async () => {
-    if (!uploadFile) return;
-
-    setUploading(true);
-    setUploadError(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", uploadFile);
-      formData.append("document_type", uploadForm.document_type);
-      
-      if (uploadForm.property_id && uploadForm.property_id !== "unassigned") {
-        formData.append("property_id", uploadForm.property_id);
-      }
-      
-      // Include display_name in the initial upload
-      if (uploadForm.display_name.trim()) {
-        formData.append("display_name", uploadForm.display_name.trim());
-      }
-
-      await apiClient.upload<any>("/documents/upload", formData);
-
-      // Refresh the documents list
-      await fetchData();
-      
-      // Close dialog and reset
-      setUploadDialogOpen(false);
-      clearUpload();
-    } catch (err) {
-      console.error("Error uploading document:", err);
-      setUploadError((err as Error).message || "Failed to upload document");
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const formatFileSize = (bytes: number) => {
     if (!bytes) return "-";
     const k = 1024;
@@ -405,10 +303,12 @@ export default function DocumentsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button onClick={() => setUploadDialogOpen(true)} className="min-h-[44px]">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Document
-          </Button>
+          <Link href="/documents/add">
+            <Button className="min-h-[44px]">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Document
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -711,184 +611,6 @@ export default function DocumentsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Upload Dialog */}
-      <Dialog open={uploadDialogOpen} onOpenChange={(open) => {
-        setUploadDialogOpen(open);
-        if (!open) clearUpload();
-      }}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Upload Document</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            {/* Drop Zone - Mobile friendly */}
-            <div
-              onDrop={handleDrop}
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-              onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-              onClick={() => document.getElementById("upload-input")?.click()}
-              className={`
-                relative border-2 border-dashed rounded-lg p-6 transition-all cursor-pointer min-h-[120px] active:bg-gray-200
-                ${isDragging
-                  ? "border-blue-500 bg-blue-50"
-                  : uploadFile
-                  ? "border-green-400 bg-green-50"
-                  : "border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100"
-                }
-              `}
-            >
-              <input
-                id="upload-input"
-                type="file"
-                accept="application/pdf,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif"
-                onChange={(e) => {
-                  if (e.target.files?.[0]) handleFileSelect(e.target.files[0]);
-                }}
-                className="hidden"
-              />
-
-              {uploadFile ? (
-                <div className="flex items-center justify-center gap-4">
-                  {uploadPreview ? (
-                    <img
-                      src={uploadPreview}
-                      alt="Preview"
-                      className="h-16 w-16 object-cover rounded-lg shadow-sm"
-                    />
-                  ) : (
-                    <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center">
-                      <FileText className="h-8 w-8 text-red-600" />
-                    </div>
-                  )}
-                  <div className="text-left">
-                    <p className="font-medium text-gray-900 truncate max-w-[200px]">
-                      {uploadFile.name}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setUploadFile(null);
-                        setUploadPreview(null);
-                      }}
-                      className="text-sm text-red-600 hover:text-red-800 mt-1 flex items-center gap-1"
-                    >
-                      <X className="h-3 w-3" />
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center">
-                  <Upload className="h-10 w-10 mx-auto text-gray-400 mb-2" />
-                  <p className="text-sm font-medium text-gray-700">
-                    Drag and drop or click to browse
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    PDF, JPEG, PNG, GIF, WebP (max 10MB)
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Error */}
-            {uploadError && (
-              <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                {uploadError}
-              </div>
-            )}
-
-            {/* Display Name */}
-            <div className="space-y-2">
-              <Label htmlFor="upload_display_name">Display Name (optional)</Label>
-              <Input
-                id="upload_display_name"
-                value={uploadForm.display_name}
-                onChange={(e) =>
-                  setUploadForm({ ...uploadForm, display_name: e.target.value })
-                }
-                placeholder="Enter a name for this document"
-              />
-            </div>
-
-            {/* Property */}
-            <div className="space-y-2">
-              <Label htmlFor="upload_property">Property</Label>
-              <Select
-                value={uploadForm.property_id}
-                onValueChange={(val) =>
-                  setUploadForm({ ...uploadForm, property_id: val })
-                }
-              >
-                <SelectTrigger id="upload_property">
-                  <SelectValue placeholder="Select property" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {properties.map((prop) => (
-                    <SelectItem key={prop.id} value={prop.id}>
-                      {prop.display_name || prop.address_line1 || "Property"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Document Type */}
-            <div className="space-y-2">
-              <Label htmlFor="upload_document_type">Document Type</Label>
-              <Select
-                value={uploadForm.document_type}
-                onValueChange={(val) =>
-                  setUploadForm({ ...uploadForm, document_type: val })
-                }
-              >
-                <SelectTrigger id="upload_document_type">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DOCUMENT_TYPES.filter(t => t.value !== "receipt").map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Note: For receipts, upload via the Expenses page.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setUploadDialogOpen(false);
-                clearUpload();
-              }}
-              disabled={uploading}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleUpload} disabled={!uploadFile || uploading}>
-              {uploading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

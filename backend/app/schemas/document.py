@@ -14,6 +14,7 @@ class DocumentType(str, Enum):
     CONTRACT = "contract"
     INVOICE = "invoice"
     INSPECTION = "inspection"
+    PHOTO = "photo"
     OTHER = "other"
 
 

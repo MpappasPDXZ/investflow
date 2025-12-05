@@ -138,6 +138,14 @@ export function Sidebar() {
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild>
+                      <Link href="/documents/add">
+                        <Plus className="h-4 w-4" />
+                        <span>Add Document</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
                       <Link href="/documents">
                         <FileText className="h-4 w-4" />
                         <span>View Documents</span>
