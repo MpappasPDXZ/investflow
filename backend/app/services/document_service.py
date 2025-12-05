@@ -281,7 +281,16 @@ class DocumentService:
             
             # Handle display_name in document_metadata
             if display_name is not None:
-                metadata = document.get("document_metadata") or {}
+                import json
+                metadata = document.get("document_metadata")
+                # Parse if it's a JSON string (Iceberg might return it this way)
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except (json.JSONDecodeError, TypeError):
+                        metadata = {}
+                elif not isinstance(metadata, dict):
+                    metadata = {}
                 metadata["display_name"] = display_name
                 document["document_metadata"] = metadata
             

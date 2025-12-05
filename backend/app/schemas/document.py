@@ -40,10 +40,17 @@ class DocumentResponse(BaseModel):
     @classmethod
     def from_document(cls, doc: Dict[str, Any]) -> "DocumentResponse":
         """Create response from document dict, extracting display_name from metadata"""
+        import json
         try:
-            # Handle document_metadata - could be dict, None, or other format from Iceberg
+            # Handle document_metadata - could be dict, string (JSON), None, or other format from Iceberg
             metadata = doc.get("document_metadata")
-            if not isinstance(metadata, dict):
+            if isinstance(metadata, str):
+                # Parse JSON string to dict
+                try:
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = {}
+            elif not isinstance(metadata, dict):
                 metadata = {}
             display_name = metadata.get("display_name") if metadata else None
             
