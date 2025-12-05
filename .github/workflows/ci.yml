@@ -82,8 +82,7 @@ jobs:
           context: ./backend
           platforms: linux/amd64
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          provenance: false
       
       - name: Build frontend image
         uses: docker/build-push-action@v5
@@ -93,5 +92,4 @@ jobs:
           push: false
           build-args: |
             NEXT_PUBLIC_API_URL=http://localhost:8000
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          provenance: false

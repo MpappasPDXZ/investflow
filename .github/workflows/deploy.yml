@@ -92,8 +92,7 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.image_tag }}
             ${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          provenance: false
 
   # Build frontend image (needs backend URL for NEXT_PUBLIC_API_URL)
   build-frontend:
@@ -136,8 +135,7 @@ jobs:
             ${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest
           build-args: |
             NEXT_PUBLIC_API_URL=${{ needs.get-infrastructure.outputs.backend_url }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          provenance: false
 
   # Deploy Lakekeeper (only on first deployment or manual trigger)
   deploy-lakekeeper:
