@@ -31,7 +31,8 @@ class DocumentService:
         document_type: str,
         property_id: Optional[uuid.UUID] = None,
         unit_id: Optional[uuid.UUID] = None,
-        document_metadata: Optional[Dict[str, str]] = None
+        document_metadata: Optional[Dict[str, str]] = None,
+        display_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Upload a document to ADLS and store metadata in Iceberg
@@ -61,8 +62,15 @@ class DocumentService:
             )
             
             # Create document record
+            import json
             doc_id = str(uuid.uuid4())
             now = datetime.utcnow()
+            
+            # Serialize document_metadata as JSON string for Iceberg storage
+            metadata_dict = document_metadata or {}
+            if display_name:
+                metadata_dict["display_name"] = display_name
+            metadata_json = json.dumps(metadata_dict) if metadata_dict else None
             
             record = {
                 "id": doc_id,
@@ -76,7 +84,7 @@ class DocumentService:
                 "file_type": blob_metadata["file_type"],
                 "file_size": blob_metadata["file_size"],
                 "document_type": document_type,
-                "document_metadata": document_metadata or {},
+                "document_metadata": metadata_json,
                 "uploaded_at": now,
                 "expires_at": None,
                 "is_deleted": False,
@@ -280,25 +288,30 @@ class DocumentService:
                 document["document_type"] = document_type
             
             # Handle display_name in document_metadata
-            if display_name is not None:
-                import json
-                metadata = document.get("document_metadata")
-                # Parse if it's a JSON string (Iceberg might return it this way)
-                if isinstance(metadata, str):
-                    try:
-                        metadata = json.loads(metadata)
-                    except (json.JSONDecodeError, TypeError):
-                        metadata = {}
-                elif not isinstance(metadata, dict):
+            import json
+            metadata = document.get("document_metadata")
+            # Parse if it's a JSON string (Iceberg might return it this way)
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
                     metadata = {}
+            elif not isinstance(metadata, dict):
+                metadata = {}
+            
+            if display_name is not None:
                 metadata["display_name"] = display_name
-                document["document_metadata"] = metadata
+            
+            # Serialize metadata back to JSON string for Iceberg storage
+            document["document_metadata"] = json.dumps(metadata) if metadata else None
             
             document["updated_at"] = datetime.utcnow()
             
             # Insert updated record
             import pyarrow as pa
             schema = table.schema().as_arrow()
+            logger.info(f"Inserting updated document with schema fields: {[f.name for f in schema]}")
+            logger.info(f"Document keys: {list(document.keys())}")
             arrow_table = pa.Table.from_pylist([document], schema=schema)
             table.append(arrow_table)
             
@@ -374,7 +387,8 @@ def upload_document(
     document_type: str,
     property_id: Optional[uuid.UUID] = None,
     unit_id: Optional[uuid.UUID] = None,
-    document_metadata: Optional[Dict[str, str]] = None
+    document_metadata: Optional[Dict[str, str]] = None,
+    display_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """Upload a document"""
     return document_service.upload_document(
@@ -385,7 +399,8 @@ def upload_document(
         document_type=document_type,
         property_id=property_id,
         unit_id=unit_id,
-        document_metadata=document_metadata
+        document_metadata=document_metadata,
+        display_name=display_name
     )
 
 

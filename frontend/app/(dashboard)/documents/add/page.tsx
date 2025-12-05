@@ -211,7 +211,6 @@ export default function AddDocumentPage() {
                   ref={fileInputRef}
                   type="file"
                   accept={FILE_ACCEPT}
-                  capture="environment"
                   onChange={handleFileSelect}
                   className="hidden"
                 />

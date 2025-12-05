@@ -46,11 +46,7 @@ async def upload_document_endpoint(
         user_id = UUID(current_user["sub"])
         
         # Build metadata with display_name if provided
-        doc_metadata = {}
-        if display_name and display_name.strip():
-            doc_metadata["display_name"] = display_name.strip()
-        
-        # Upload document
+        # Upload document with display_name passed directly
         document = document_service.upload_document(
             user_id=user_id,
             file_content=file_content,
@@ -59,7 +55,7 @@ async def upload_document_endpoint(
             document_type=document_type or "other",
             property_id=UUID(property_id) if property_id else None,
             unit_id=UUID(unit_id) if unit_id else None,
-            document_metadata=doc_metadata if doc_metadata else None
+            display_name=display_name.strip() if display_name else None
         )
         
         # Generate download URL

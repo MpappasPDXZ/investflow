@@ -337,7 +337,6 @@ export default function AddExpensePage() {
                     ref={fileInputRef}
                     type="file"
                     accept={FILE_ACCEPT}
-                    capture="environment"
                     onChange={handleFileSelect}
                     className="hidden"
                   />
