@@ -236,11 +236,11 @@ export default function ExpensesPage() {
           {showFilters ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </button>
         {showFilters && (
-          <div className="grid grid-cols-4 gap-2 mt-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
             <select
               value={selectedPropertyId}
               onChange={(e) => setSelectedPropertyId(e.target.value)}
-              className="px-2 py-1 border border-gray-300 rounded text-xs"
+              className="px-2 py-2 md:py-1 border border-gray-300 rounded text-sm md:text-xs min-h-[44px] md:min-h-0"
             >
               <option value="">All Properties</option>
               {properties?.items.map((prop) => (
@@ -252,7 +252,7 @@ export default function ExpensesPage() {
             <select
               value={selectedExpenseType}
               onChange={(e) => setSelectedExpenseType(e.target.value)}
-              className="px-2 py-1 border border-gray-300 rounded text-xs"
+              className="px-2 py-2 md:py-1 border border-gray-300 rounded text-sm md:text-xs min-h-[44px] md:min-h-0"
             >
               <option value="">All Types</option>
               {Object.entries(expenseTypeLabels).map(([value, label]) => (
@@ -263,14 +263,14 @@ export default function ExpensesPage() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="px-2 py-1 border border-gray-300 rounded text-xs"
+              className="px-2 py-2 md:py-1 border border-gray-300 rounded text-sm md:text-xs min-h-[44px] md:min-h-0"
               placeholder="Start"
             />
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="px-2 py-1 border border-gray-300 rounded text-xs"
+              className="px-2 py-2 md:py-1 border border-gray-300 rounded text-sm md:text-xs min-h-[44px] md:min-h-0"
               placeholder="End"
             />
           </div>
@@ -310,10 +310,10 @@ export default function ExpensesPage() {
 
                 return (
                   <div key={year}>
-                    {/* Year Header */}
+                    {/* Year Header - Mobile friendly touch target */}
                     <button
                       onClick={() => toggleYear(year)}
-                      className="flex items-center justify-between w-full text-left hover:bg-gray-50 px-2 py-1 rounded"
+                      className="flex items-center justify-between w-full text-left hover:bg-gray-50 active:bg-gray-100 px-2 py-3 md:py-1 rounded min-h-[44px]"
                     >
                       <div className="flex items-center gap-1.5">
                         {isExpanded ? (
@@ -329,58 +329,66 @@ export default function ExpensesPage() {
                       </div>
                     </button>
 
-                    {/* Year Items */}
+                    {/* Year Items - Responsive layout */}
                     {isExpanded && (
-                      <div className="space-y-1 ml-5 mt-1">
+                      <div className="space-y-2 md:space-y-1 ml-2 md:ml-5 mt-2 md:mt-1">
                         {yearExpenses.map((expense) => (
                           <div 
                             key={expense.id} 
-                            className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded text-xs"
+                            className="flex flex-col md:flex-row md:justify-between md:items-center py-3 md:py-1 px-3 md:px-2 bg-gray-50 rounded text-sm md:text-xs gap-2 md:gap-0"
                           >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {/* Mobile: Stacked layout, Desktop: Inline */}
+                            <div className="flex items-start md:items-center gap-2 flex-1 min-w-0">
                               <span className="text-gray-500 w-12 shrink-0">
                                 {format(new Date(expense.date), 'M/d')}
                               </span>
-                              <span className="font-medium text-gray-900 truncate">
-                                {expense.description}
-                              </span>
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${expenseTypeBadgeColors[expense.expense_type] || 'bg-gray-100'}`}>
-                                {expenseTypeLabels[expense.expense_type] || expense.expense_type}
-                              </span>
-                              {expense.vendor && (
-                                <span className="text-gray-400 truncate hidden sm:inline">
-                                  {expense.vendor}
+                              <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 flex-1 min-w-0">
+                                <span className="font-medium text-gray-900 truncate">
+                                  {expense.description}
                                 </span>
-                              )}
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${expenseTypeBadgeColors[expense.expense_type] || 'bg-gray-100'}`}>
+                                    {expenseTypeLabels[expense.expense_type] || expense.expense_type}
+                                  </span>
+                                  {expense.vendor && (
+                                    <span className="text-gray-400 truncate hidden sm:inline text-xs">
+                                      {expense.vendor}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <span className="font-semibold text-gray-900 mr-1">
+                            {/* Actions row - larger touch targets on mobile */}
+                            <div className="flex items-center justify-between md:justify-end gap-3 md:gap-1 shrink-0 pl-14 md:pl-0">
+                              <span className="font-semibold text-gray-900 mr-2 md:mr-1 text-base md:text-xs">
                                 ${Number(expense.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </span>
-                              {expense.document_storage_id && (
-                                <ReceiptViewer 
-                                  expenseId={expense.id}
-                                  trigger={
-                                    <button 
-                                      className="text-gray-400 hover:text-blue-600 p-0.5"
-                                      title="View receipt"
-                                    >
-                                      <Eye className="h-3 w-3" />
-                                    </button>
-                                  }
-                                />
-                              )}
-                              <Link href={`/expenses/${expense.id}/edit`}>
-                                <button className="text-gray-300 hover:text-blue-600 p-0.5">
-                                  <Edit2 className="h-3 w-3" />
+                              <div className="flex items-center gap-1">
+                                {expense.document_storage_id && (
+                                  <ReceiptViewer 
+                                    expenseId={expense.id}
+                                    trigger={
+                                      <button 
+                                        className="text-gray-400 hover:text-blue-600 active:text-blue-700 p-2 md:p-0.5 -m-1 md:m-0 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
+                                        title="View receipt"
+                                      >
+                                        <Eye className="h-5 w-5 md:h-3 md:w-3" />
+                                      </button>
+                                    }
+                                  />
+                                )}
+                                <Link href={`/expenses/${expense.id}/edit`}>
+                                  <button className="text-gray-400 hover:text-blue-600 active:text-blue-700 p-2 md:p-0.5 -m-1 md:m-0 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center">
+                                    <Edit2 className="h-5 w-5 md:h-3 md:w-3" />
+                                  </button>
+                                </Link>
+                                <button
+                                  onClick={() => handleDelete(expense.id, expense.description)}
+                                  className="text-gray-400 hover:text-red-600 active:text-red-700 p-2 md:p-0.5 -m-1 md:m-0 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
+                                >
+                                  <Trash2 className="h-5 w-5 md:h-3 md:w-3" />
                                 </button>
-                              </Link>
-                              <button
-                                onClick={() => handleDelete(expense.id, expense.description)}
-                                className="text-gray-300 hover:text-red-600 p-0.5"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                              </div>
                             </div>
                           </div>
                         ))}

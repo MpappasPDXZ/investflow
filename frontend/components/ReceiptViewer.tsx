@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import {
   Dialog,
@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { FileText, Download, ExternalLink, ZoomIn, ZoomOut, X, Loader2 } from 'lucide-react';
+import { FileText, Download, ExternalLink, ZoomIn, ZoomOut, X, Loader2, RotateCcw } from 'lucide-react';
 
 interface ReceiptViewerProps {
   expenseId?: string;
@@ -33,6 +33,8 @@ export function ReceiptViewer({
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [imageLoading, setImageLoading] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchReceipt() {
@@ -70,7 +72,15 @@ export function ReceiptViewer({
     }
   }, [expenseId, documentId, propDownloadUrl]);
 
-  const isImage = downloadUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || 
+  // Reset zoom when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      setZoom(1);
+      setImageLoading(true);
+    }
+  }, [isOpen]);
+
+  const isImage = downloadUrl?.match(/\.(jpg|jpeg|png|gif|webp|heic|heif)/i) || 
                   fileType?.startsWith('image/');
   const isPdf = downloadUrl?.match(/\.pdf/i) || 
                 fileType === 'application/pdf';
@@ -107,88 +117,134 @@ export function ReceiptViewer({
       </div>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0">
-          <DialogHeader className="px-6 py-4 border-b bg-gray-50 flex flex-row items-center justify-between">
-            <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-              <FileText className="h-5 w-5" />
-              {displayName}
-            </DialogTitle>
-            <div className="flex items-center gap-2">
-              {isImage && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleZoomOut}
-                    disabled={zoom <= 0.5}
-                  >
-                    <ZoomOut className="h-4 w-4" />
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] md:h-[85vh] flex flex-col p-0 gap-0">
+          {/* Header - Responsive */}
+          <DialogHeader className="px-4 md:px-6 py-3 md:py-4 border-b bg-gray-50 shrink-0">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2 text-base md:text-lg font-semibold truncate">
+                <FileText className="h-5 w-5 shrink-0" />
+                <span className="truncate">{displayName}</span>
+              </DialogTitle>
+              
+              {/* Action buttons - scrollable on mobile */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 -mx-1 px-1">
+                {isImage && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleZoomOut}
+                      disabled={zoom <= 0.5}
+                      className="h-9 w-9 p-0 shrink-0"
+                    >
+                      <ZoomOut className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm text-gray-600 min-w-[3rem] text-center shrink-0">
+                      {Math.round(zoom * 100)}%
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleZoomIn}
+                      disabled={zoom >= 3}
+                      className="h-9 w-9 p-0 shrink-0"
+                    >
+                      <ZoomIn className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResetZoom}
+                      className="h-9 px-2 shrink-0"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
+                <a
+                  href={downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0"
+                >
+                  <Button variant="outline" size="sm" className="h-9 px-3">
+                    <ExternalLink className="h-4 w-4 md:mr-1" />
+                    <span className="hidden md:inline">Open</span>
                   </Button>
-                  <span className="text-sm text-gray-600 min-w-[4rem] text-center">
-                    {Math.round(zoom * 100)}%
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleZoomIn}
-                    disabled={zoom >= 3}
-                  >
-                    <ZoomIn className="h-4 w-4" />
+                </a>
+                <a href={downloadUrl} download className="inline-flex shrink-0">
+                  <Button variant="outline" size="sm" className="h-9 px-3">
+                    <Download className="h-4 w-4 md:mr-1" />
+                    <span className="hidden md:inline">Download</span>
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleResetZoom}
-                  >
-                    Reset
-                  </Button>
-                </>
-              )}
-              <a
-                href={downloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex"
-              >
-                <Button variant="outline" size="sm">
-                  <ExternalLink className="h-4 w-4 mr-1" />
-                  Open
-                </Button>
-              </a>
-              <a href={downloadUrl} download className="inline-flex">
-                <Button variant="outline" size="sm">
-                  <Download className="h-4 w-4 mr-1" />
-                  Download
-                </Button>
-              </a>
+                </a>
+              </div>
             </div>
           </DialogHeader>
 
-          <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-4">
+          {/* Content - Touch-friendly with native scroll/zoom on mobile */}
+          <div 
+            ref={containerRef}
+            className="flex-1 overflow-auto bg-gray-100 flex items-start md:items-center justify-center p-2 md:p-4 touch-pan-x touch-pan-y"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             {isImage ? (
               <div 
-                className="transition-transform duration-200 ease-out"
-                style={{ transform: `scale(${zoom})` }}
+                className="transition-transform duration-200 ease-out w-full flex justify-center"
+                style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
               >
+                {imageLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  </div>
+                )}
                 <img
                   src={downloadUrl}
                   alt={displayName}
                   className="max-w-full h-auto rounded-lg shadow-lg"
-                  style={{ maxHeight: '80vh' }}
+                  style={{ 
+                    maxHeight: zoom === 1 ? '100%' : 'none',
+                    opacity: imageLoading ? 0 : 1,
+                    transition: 'opacity 0.2s'
+                  }}
+                  onLoad={() => setImageLoading(false)}
+                  onError={() => setImageLoading(false)}
                 />
               </div>
             ) : isPdf ? (
-              <iframe
-                src={`${downloadUrl}#view=FitH`}
-                className="w-full h-full rounded-lg shadow-lg bg-white"
-                title={displayName}
-              />
+              <div className="w-full h-full flex flex-col">
+                {/* On iOS, PDFs in iframes can be problematic, offer download as fallback */}
+                <div className="md:hidden text-center py-8">
+                  <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+                  <p className="text-gray-600 mb-4">PDF preview works best on desktop</p>
+                  <div className="flex flex-col gap-3 items-center">
+                    <a href={downloadUrl} target="_blank" rel="noopener noreferrer">
+                      <Button className="min-h-[44px]">
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Open in New Tab
+                      </Button>
+                    </a>
+                    <a href={downloadUrl} download>
+                      <Button variant="outline" className="min-h-[44px]">
+                        <Download className="h-4 w-4 mr-2" />
+                        Download PDF
+                      </Button>
+                    </a>
+                  </div>
+                </div>
+                {/* Desktop PDF viewer */}
+                <iframe
+                  src={`${downloadUrl}#view=FitH`}
+                  className="hidden md:block w-full h-full rounded-lg shadow-lg bg-white"
+                  title={displayName}
+                />
+              </div>
             ) : (
-              <div className="text-center text-gray-500">
+              <div className="text-center text-gray-500 py-8">
                 <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
                 <p className="mb-4">Preview not available for this file type</p>
                 <a href={downloadUrl} download>
-                  <Button>
+                  <Button className="min-h-[44px]">
                     <Download className="h-4 w-4 mr-2" />
                     Download File
                   </Button>

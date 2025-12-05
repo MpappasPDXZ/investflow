@@ -384,17 +384,17 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header - Responsive */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Documents</h1>
+          <h1 className="text-xl md:text-2xl font-bold">Documents</h1>
           <p className="text-sm text-muted-foreground">
             {documents.length} documents across {properties.length} properties
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger className="w-full sm:w-[200px] min-h-[44px]">
               <SelectValue placeholder="Filter by property" />
             </SelectTrigger>
             <SelectContent>
@@ -407,7 +407,7 @@ export default function DocumentsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button onClick={() => setUploadDialogOpen(true)}>
+          <Button onClick={() => setUploadDialogOpen(true)} className="min-h-[44px]">
             <Plus className="h-4 w-4 mr-2" />
             Add Document
           </Button>
@@ -438,104 +438,190 @@ export default function DocumentsPage() {
                 </Badge>
               </CardTitle>
             </CardHeader>
-            <Table>
-              <TableHeader>
-                <TableRow className="text-xs">
-                  <TableHead className="w-[35%]">Name</TableHead>
-                  <TableHead className="w-[12%]">Type</TableHead>
-                  <TableHead className="w-[10%]">Size</TableHead>
-                  <TableHead className="w-[12%]">Date</TableHead>
-                  <TableHead className="w-[31%] text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {docs.map((doc) => (
-                  <TableRow key={doc.id} className="text-sm">
-                    <TableCell className="py-2">
-                      <div className="flex items-center gap-2">
-                        {getFileIcon(doc.file_type)}
-                        <div className="flex flex-col">
-                          <span
-                            className="truncate max-w-[220px] font-medium"
-                            title={getDisplayName(doc)}
-                          >
-                            {getDisplayName(doc)}
-                          </span>
-                          {doc.display_name && (
-                            <span
-                              className="text-xs text-muted-foreground truncate max-w-[220px]"
-                              title={doc.file_name}
-                            >
-                              {doc.file_name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-2">
-                      <Badge
-                        variant="outline"
-                        className={`text-xs ${getDocTypeBadge(doc.document_type)}`}
-                      >
-                        {doc.document_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-2 text-muted-foreground">
-                      {formatFileSize(doc.file_size)}
-                    </TableCell>
-                    <TableCell className="py-2 text-muted-foreground">
-                      {formatDate(doc.created_at || doc.uploaded_at)}
-                    </TableCell>
-                    <TableCell className="py-2 text-right">
-                      <div className="flex justify-end gap-1">
-                        <ReceiptViewer
-                          documentId={doc.id}
-                          fileName={getDisplayName(doc)}
-                          fileType={doc.file_type}
-                          trigger={
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0"
-                              title="View document"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                          }
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0"
-                          onClick={() => openEditDialog(doc)}
-                          title="Edit document"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0"
-                          onClick={() => handleDownload(doc)}
-                          title="Download"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(doc.id)}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
+            
+            {/* Desktop Table View */}
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow className="text-xs">
+                    <TableHead className="w-[35%]">Name</TableHead>
+                    <TableHead className="w-[12%]">Type</TableHead>
+                    <TableHead className="w-[10%]">Size</TableHead>
+                    <TableHead className="w-[12%]">Date</TableHead>
+                    <TableHead className="w-[31%] text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {docs.map((doc) => (
+                    <TableRow key={doc.id} className="text-sm">
+                      <TableCell className="py-2">
+                        <div className="flex items-center gap-2">
+                          {getFileIcon(doc.file_type)}
+                          <div className="flex flex-col">
+                            <span
+                              className="truncate max-w-[220px] font-medium"
+                              title={getDisplayName(doc)}
+                            >
+                              {getDisplayName(doc)}
+                            </span>
+                            {doc.display_name && (
+                              <span
+                                className="text-xs text-muted-foreground truncate max-w-[220px]"
+                                title={doc.file_name}
+                              >
+                                {doc.file_name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${getDocTypeBadge(doc.document_type)}`}
+                        >
+                          {doc.document_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-2 text-muted-foreground">
+                        {formatFileSize(doc.file_size)}
+                      </TableCell>
+                      <TableCell className="py-2 text-muted-foreground">
+                        {formatDate(doc.created_at || doc.uploaded_at)}
+                      </TableCell>
+                      <TableCell className="py-2 text-right">
+                        <div className="flex justify-end gap-1">
+                          <ReceiptViewer
+                            documentId={doc.id}
+                            fileName={getDisplayName(doc)}
+                            fileType={doc.file_type}
+                            trigger={
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                title="View document"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                            }
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => openEditDialog(doc)}
+                            title="Edit document"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => handleDownload(doc)}
+                            title="Download"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            onClick={() => handleDelete(doc.id)}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            
+            {/* Mobile Card View */}
+            <div className="md:hidden divide-y">
+              {docs.map((doc) => (
+                <div key={doc.id} className="p-4 space-y-3">
+                  {/* Document Info */}
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-muted rounded-lg">
+                      {getFileIcon(doc.file_type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate" title={getDisplayName(doc)}>
+                        {getDisplayName(doc)}
+                      </p>
+                      {doc.display_name && (
+                        <p className="text-xs text-muted-foreground truncate" title={doc.file_name}>
+                          {doc.file_name}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${getDocTypeBadge(doc.document_type)}`}
+                        >
+                          {doc.document_type}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {formatFileSize(doc.file_size)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(doc.created_at || doc.uploaded_at)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Action Buttons - Mobile Friendly */}
+                  <div className="flex justify-end gap-2">
+                    <ReceiptViewer
+                      documentId={doc.id}
+                      fileName={getDisplayName(doc)}
+                      fileType={doc.file_type}
+                      trigger={
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-10 px-3"
+                        >
+                          <Eye className="h-4 w-4 mr-1.5" />
+                          View
+                        </Button>
+                      }
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 px-3"
+                      onClick={() => openEditDialog(doc)}
+                    >
+                      <Pencil className="h-4 w-4 mr-1.5" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 px-3"
+                      onClick={() => handleDownload(doc)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 px-3 text-destructive hover:text-destructive border-destructive/30"
+                      onClick={() => handleDelete(doc.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </Card>
         ))
       )}
@@ -637,14 +723,14 @@ export default function DocumentsPage() {
             <DialogTitle>Upload Document</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            {/* Drop Zone */}
+            {/* Drop Zone - Mobile friendly */}
             <div
               onDrop={handleDrop}
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
               onClick={() => document.getElementById("upload-input")?.click()}
               className={`
-                relative border-2 border-dashed rounded-lg p-6 transition-all cursor-pointer
+                relative border-2 border-dashed rounded-lg p-6 transition-all cursor-pointer min-h-[120px] active:bg-gray-200
                 ${isDragging
                   ? "border-blue-500 bg-blue-50"
                   : uploadFile
@@ -656,7 +742,7 @@ export default function DocumentsPage() {
               <input
                 id="upload-input"
                 type="file"
-                accept="application/pdf,image/jpeg,image/png,image/gif,image/webp"
+                accept="application/pdf,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif"
                 onChange={(e) => {
                   if (e.target.files?.[0]) handleFileSelect(e.target.files[0]);
                 }}

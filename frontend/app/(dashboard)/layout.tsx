@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { apiClient } from "@/lib/api-client";
+import { Menu } from "lucide-react";
 
 export default function DashboardLayout({
   children,
@@ -52,9 +53,20 @@ export default function DashboardLayout({
     <SidebarProvider>
       <div className="flex min-h-screen bg-background w-full">
         <Sidebar />
-        <main className="flex-1 p-6 overflow-auto">
-          {children}
-        </main>
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Mobile Header with Menu Toggle */}
+          <header className="md:hidden sticky top-0 z-40 flex items-center gap-3 border-b bg-background px-4 py-3">
+            <SidebarTrigger className="h-9 w-9 p-0">
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle menu</span>
+            </SidebarTrigger>
+            <h1 className="font-semibold text-lg">InvestFlow</h1>
+          </header>
+          
+          <main className="flex-1 p-4 md:p-6 overflow-auto">
+            {children}
+          </main>
+        </div>
       </div>
     </SidebarProvider>
   );

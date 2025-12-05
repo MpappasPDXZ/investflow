@@ -32,6 +32,9 @@ const ACCEPTED_FILE_TYPES = [
   'image/webp',
 ];
 
+// iOS-friendly accept string (includes heic for iPhone photos)
+const ACCEPT_STRING = 'application/pdf,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif';
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 export function DocumentUpload({
@@ -142,9 +145,9 @@ export function DocumentUpload({
         <Label className="text-sm font-medium">Upload Document</Label>
         <input
           type="file"
-          accept={ACCEPTED_FILE_TYPES.join(',')}
+          accept={ACCEPT_STRING}
           onChange={handleFileSelect}
-          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer"
+          className="block w-full text-sm text-gray-500 file:mr-4 file:py-3 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer min-h-[44px]"
         />
         {validationError && (
           <p className="text-sm text-red-600">{validationError}</p>
@@ -155,18 +158,18 @@ export function DocumentUpload({
 
   return (
     <div className="space-y-4">
-      {/* Drop Zone */}
+      {/* Drop Zone - Touch friendly */}
       <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         className={`
-          relative border-2 border-dashed rounded-lg p-8 transition-all duration-200 cursor-pointer
+          relative border-2 border-dashed rounded-lg p-6 md:p-8 transition-all duration-200 cursor-pointer min-h-[120px]
           ${isDragging 
             ? 'border-blue-500 bg-blue-50' 
             : selectedFile 
               ? 'border-green-400 bg-green-50' 
-              : 'border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100'
+              : 'border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100 active:bg-gray-200'
           }
         `}
         onClick={() => document.getElementById('file-input')?.click()}
@@ -174,7 +177,7 @@ export function DocumentUpload({
         <input
           id="file-input"
           type="file"
-          accept={ACCEPTED_FILE_TYPES.join(',')}
+          accept={ACCEPT_STRING}
           onChange={handleFileSelect}
           className="hidden"
         />

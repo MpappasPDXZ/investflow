@@ -62,14 +62,14 @@ export default function PropertiesPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
+    <div className="p-4 md:p-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Properties</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Properties</h1>
           <p className="text-gray-600 mt-1">Manage your rental properties</p>
         </div>
         <Link href="/properties/add">
-          <Button className="bg-black text-white hover:bg-gray-800">
+          <Button className="bg-black text-white hover:bg-gray-800 min-h-[44px] w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Add Property
           </Button>
@@ -86,81 +86,160 @@ export default function PropertiesPage() {
               No properties found. <Link href="/properties/add" className="text-blue-600 hover:underline">Add your first property</Link>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Address</TableHead>
-                  <TableHead>Purchase Price</TableHead>
-                  <TableHead>Down Payment</TableHead>
-                  <TableHead>Market Value</TableHead>
-                  <TableHead>Vacancy Rate</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Address</TableHead>
+                      <TableHead>Purchase Price</TableHead>
+                      <TableHead>Down Payment</TableHead>
+                      <TableHead>Market Value</TableHead>
+                      <TableHead>Vacancy Rate</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data?.items.map((property) => (
+                      <TableRow 
+                        key={property.id}
+                        className="cursor-pointer hover:bg-gray-50"
+                        onClick={() => router.push(`/properties/${property.id}`)}
+                      >
+                        <TableCell className="font-medium">
+                          {property.display_name || 'Unnamed Property'}
+                        </TableCell>
+                        <TableCell>
+                          {property.address_line1 && (
+                            <div className="text-sm">
+                              {property.address_line1}
+                              {property.city && `, ${property.city}, ${property.state}`}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          ${Math.round(property.purchase_price / 1000).toLocaleString()}k
+                        </TableCell>
+                        <TableCell>
+                          {property.down_payment 
+                            ? `$${Math.round(property.down_payment / 1000).toLocaleString()}k`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {property.current_market_value 
+                            ? `$${Math.round(property.current_market_value / 1000).toLocaleString()}k`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {property.vacancy_rate !== undefined && property.vacancy_rate !== null
+                            ? `${(property.vacancy_rate * 100).toFixed(1)}%`
+                            : '7.0%'}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {property.property_type || '-'}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:bg-red-50"
+                              onClick={() => handleDelete(property.id, property.display_name || 'this property')}
+                              disabled={deleting === property.id}
+                            >
+                              {deleting === property.id ? (
+                                'Deleting...'
+                              ) : (
+                                <>
+                                  <Trash2 className="h-4 w-4" />
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              
+              {/* Mobile Card View */}
+              <div className="md:hidden space-y-3">
                 {data?.items.map((property) => (
-                  <TableRow 
+                  <div
                     key={property.id}
-                    className="cursor-pointer hover:bg-gray-50"
+                    className="border rounded-lg p-4 bg-white active:bg-gray-50 cursor-pointer"
                     onClick={() => router.push(`/properties/${property.id}`)}
                   >
-                    <TableCell className="font-medium">
-                      {property.display_name || 'Unnamed Property'}
-                    </TableCell>
-                    <TableCell>
-                      {property.address_line1 && (
-                        <div className="text-sm">
-                          {property.address_line1}
-                          {property.city && `, ${property.city}, ${property.state}`}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      ${Math.round(property.purchase_price / 1000).toLocaleString()}k
-                    </TableCell>
-                    <TableCell>
-                      {property.down_payment 
-                        ? `$${Math.round(property.down_payment / 1000).toLocaleString()}k`
-                        : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {property.current_market_value 
-                        ? `$${Math.round(property.current_market_value / 1000).toLocaleString()}k`
-                        : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {property.vacancy_rate !== undefined && property.vacancy_rate !== null
-                        ? `${(property.vacancy_rate * 100).toFixed(1)}%`
-                        : '7.0%'}
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600">
-                      {property.property_type || '-'}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600 hover:bg-red-50"
-                          onClick={() => handleDelete(property.id, property.display_name || 'this property')}
-                          disabled={deleting === property.id}
-                        >
-                          {deleting === property.id ? (
-                            'Deleting...'
-                          ) : (
-                            <>
-                              <Trash2 className="h-4 w-4" />
-                            </>
-                          )}
-                        </Button>
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">
+                          {property.display_name || 'Unnamed Property'}
+                        </h3>
+                        {property.address_line1 && (
+                          <p className="text-sm text-gray-600 mt-0.5">
+                            {property.address_line1}
+                            {property.city && `, ${property.city}, ${property.state}`}
+                          </p>
+                        )}
                       </div>
-                    </TableCell>
-                  </TableRow>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:bg-red-50 h-10 w-10 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(property.id, property.display_name || 'this property');
+                        }}
+                        disabled={deleting === property.id}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
+                      <div>
+                        <span className="text-gray-500">Purchase:</span>{' '}
+                        <span className="font-medium">${Math.round(property.purchase_price / 1000).toLocaleString()}k</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Market:</span>{' '}
+                        <span className="font-medium">
+                          {property.current_market_value 
+                            ? `$${Math.round(property.current_market_value / 1000).toLocaleString()}k`
+                            : '-'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Down:</span>{' '}
+                        <span className="font-medium">
+                          {property.down_payment 
+                            ? `$${Math.round(property.down_payment / 1000).toLocaleString()}k`
+                            : '-'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Vacancy:</span>{' '}
+                        <span className="font-medium">
+                          {property.vacancy_rate !== undefined && property.vacancy_rate !== null
+                            ? `${(property.vacancy_rate * 100).toFixed(1)}%`
+                            : '7.0%'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {property.property_type && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        Type: {property.property_type}
+                      </div>
+                    )}
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

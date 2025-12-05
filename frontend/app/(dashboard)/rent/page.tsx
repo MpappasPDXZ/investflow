@@ -131,11 +131,11 @@ export default function RentPage() {
   };
 
   return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="mb-6 flex justify-between items-start">
+    <div className="p-4 md:p-8">
+      {/* Header - Responsive */}
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-lg md:text-xl font-bold text-gray-900 flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-green-600" />
             Rent Collection
           </h1>
@@ -143,7 +143,7 @@ export default function RentPage() {
         </div>
         <Button
           onClick={() => router.push('/rent/log')}
-          className="bg-green-600 text-white hover:bg-green-700 h-9"
+          className="bg-green-600 text-white hover:bg-green-700 min-h-[44px] w-full sm:w-auto"
         >
           <Plus className="h-4 w-4 mr-1.5" />
           Log Rent Payment
@@ -197,12 +197,12 @@ export default function RentPage() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3 mb-4">
+      {/* Filters - Responsive */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-gray-400" />
+          <Filter className="h-4 w-4 text-gray-400 hidden sm:block" />
           <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-            <SelectTrigger className="w-[200px] h-9 text-sm">
+            <SelectTrigger className="w-full sm:w-[200px] min-h-[44px] text-sm">
               <SelectValue placeholder="All Properties" />
             </SelectTrigger>
             <SelectContent>
@@ -216,7 +216,7 @@ export default function RentPage() {
           </Select>
         </div>
         <Select value={selectedYear} onValueChange={setSelectedYear}>
-          <SelectTrigger className="w-[120px] h-9 text-sm">
+          <SelectTrigger className="w-full sm:w-[120px] min-h-[44px] text-sm">
             <SelectValue placeholder="All Years" />
           </SelectTrigger>
           <SelectContent>
@@ -257,16 +257,16 @@ export default function RentPage() {
             <div className="space-y-4">
               {years.map((year) => (
                 <div key={year} className="border rounded-lg overflow-hidden">
-                  {/* Year Header */}
+                  {/* Year Header - Mobile friendly */}
                   <button
                     onClick={() => toggleYear(year)}
-                    className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    className="w-full flex items-center justify-between p-4 md:p-3 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 transition-colors min-h-[52px]"
                   >
                     <div className="flex items-center gap-2">
                       {expandedYears.has(year) ? (
-                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                        <ChevronDown className="h-5 w-5 md:h-4 md:w-4 text-gray-500" />
                       ) : (
-                        <ChevronRight className="h-4 w-4 text-gray-500" />
+                        <ChevronRight className="h-5 w-5 md:h-4 md:w-4 text-gray-500" />
                       )}
                       <span className="font-bold text-gray-900">{year}</span>
                       <span className="text-sm text-gray-500">
@@ -278,81 +278,146 @@ export default function RentPage() {
                     </span>
                   </button>
 
-                  {/* Year's Payments */}
+                  {/* Year's Payments - Desktop Table */}
                   {expandedYears.has(year) && (
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gray-50/50">
-                          <TableHead className="text-xs font-medium">Period</TableHead>
-                          <TableHead className="text-xs font-medium">Property</TableHead>
-                          <TableHead className="text-xs font-medium text-right">Amount</TableHead>
-                          <TableHead className="text-xs font-medium">Payment Date</TableHead>
-                          <TableHead className="text-xs font-medium">Method</TableHead>
-                          <TableHead className="text-xs font-medium">Status</TableHead>
-                          <TableHead className="text-xs font-medium w-[80px]">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                    <>
+                      <div className="hidden md:block">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-gray-50/50">
+                              <TableHead className="text-xs font-medium">Period</TableHead>
+                              <TableHead className="text-xs font-medium">Property</TableHead>
+                              <TableHead className="text-xs font-medium text-right">Amount</TableHead>
+                              <TableHead className="text-xs font-medium">Payment Date</TableHead>
+                              <TableHead className="text-xs font-medium">Method</TableHead>
+                              <TableHead className="text-xs font-medium">Status</TableHead>
+                              <TableHead className="text-xs font-medium w-[80px]">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {groupedRents[year].map((rent) => (
+                              <TableRow key={rent.id} className="hover:bg-gray-50">
+                                <TableCell className="text-sm font-medium">
+                                  {MONTHS[rent.rent_period_month - 1]} {rent.rent_period_year}
+                                </TableCell>
+                                <TableCell className="text-sm text-gray-600">
+                                  {getPropertyName(rent.property_id)}
+                                </TableCell>
+                                <TableCell className="text-sm font-medium text-right text-green-700">
+                                  ${Number(rent.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                  {rent.late_fee && Number(rent.late_fee) > 0 && (
+                                    <span className="text-orange-600 text-xs ml-1">
+                                      (+${Number(rent.late_fee).toLocaleString()} fee)
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-sm text-gray-600">
+                                  {format(new Date(rent.payment_date), 'MMM d, yyyy')}
+                                </TableCell>
+                                <TableCell className="text-sm text-gray-600">
+                                  {rent.payment_method ? PAYMENT_METHOD_LABELS[rent.payment_method] : '-'}
+                                </TableCell>
+                                <TableCell>
+                                  {rent.is_late ? (
+                                    <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
+                                      <AlertCircle className="h-3 w-3" />
+                                      Late
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      On Time
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDelete(rent.id)}
+                                    disabled={deletingId === rent.id}
+                                    className="h-8 w-8 p-0 text-gray-400 hover:text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            {/* Year Subtotal */}
+                            <TableRow className="bg-gray-50 font-medium">
+                              <TableCell colSpan={2} className="text-sm text-gray-600">
+                                Subtotal for {year}
+                              </TableCell>
+                              <TableCell className="text-sm text-right text-green-700 font-bold">
+                                ${yearTotals[year]?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </TableCell>
+                              <TableCell colSpan={4}></TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                      </div>
+                      
+                      {/* Year's Payments - Mobile Cards */}
+                      <div className="md:hidden divide-y">
                         {groupedRents[year].map((rent) => (
-                          <TableRow key={rent.id} className="hover:bg-gray-50">
-                            <TableCell className="text-sm font-medium">
-                              {MONTHS[rent.rent_period_month - 1]} {rent.rent_period_year}
-                            </TableCell>
-                            <TableCell className="text-sm text-gray-600">
-                              {getPropertyName(rent.property_id)}
-                            </TableCell>
-                            <TableCell className="text-sm font-medium text-right text-green-700">
-                              ${Number(rent.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                              {rent.late_fee && Number(rent.late_fee) > 0 && (
-                                <span className="text-orange-600 text-xs ml-1">
-                                  (+${Number(rent.late_fee).toLocaleString()} fee)
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-sm text-gray-600">
-                              {format(new Date(rent.payment_date), 'MMM d, yyyy')}
-                            </TableCell>
-                            <TableCell className="text-sm text-gray-600">
-                              {rent.payment_method ? PAYMENT_METHOD_LABELS[rent.payment_method] : '-'}
-                            </TableCell>
-                            <TableCell>
-                              {rent.is_late ? (
-                                <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
-                                  <AlertCircle className="h-3 w-3" />
-                                  Late
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  On Time
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDelete(rent.id)}
-                                disabled={deletingId === rent.id}
-                                className="h-8 w-8 p-0 text-gray-400 hover:text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
+                          <div key={rent.id} className="p-4 bg-white">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <p className="font-medium text-gray-900">
+                                  {MONTHS[rent.rent_period_month - 1]} {rent.rent_period_year}
+                                </p>
+                                <p className="text-sm text-gray-600">{getPropertyName(rent.property_id)}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-green-700">
+                                  ${Number(rent.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                                {rent.late_fee && Number(rent.late_fee) > 0 && (
+                                  <p className="text-orange-600 text-xs">
+                                    +${Number(rent.late_fee).toLocaleString()} fee
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <div className="flex items-center gap-3 text-gray-600">
+                                <span>{format(new Date(rent.payment_date), 'MMM d, yyyy')}</span>
+                                <span>{rent.payment_method ? PAYMENT_METHOD_LABELS[rent.payment_method] : '-'}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {rent.is_late ? (
+                                  <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Late
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    On Time
+                                  </span>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDelete(rent.id)}
+                                  disabled={deletingId === rent.id}
+                                  className="h-10 w-10 p-0 text-gray-400 hover:text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
                         ))}
-                        {/* Year Subtotal */}
-                        <TableRow className="bg-gray-50 font-medium">
-                          <TableCell colSpan={2} className="text-sm text-gray-600">
-                            Subtotal for {year}
-                          </TableCell>
-                          <TableCell className="text-sm text-right text-green-700 font-bold">
+                        {/* Year Subtotal - Mobile */}
+                        <div className="p-4 bg-gray-50 flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Subtotal for {year}</span>
+                          <span className="font-bold text-green-700">
                             ${yearTotals[year]?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </TableCell>
-                          <TableCell colSpan={4}></TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
+                          </span>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               ))}
