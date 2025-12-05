@@ -64,11 +64,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
-      
       - name: Log in to Azure Container Registry
         uses: azure/docker-login@v2
         with:
@@ -84,15 +79,13 @@ jobs:
           echo "Image tag: ${{ env.ACR_LOGIN_SERVER }}/investflow-backend:${SHORT_SHA}"
       
       - name: Build and push backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ steps.meta.outputs.image_tag }}
-            ${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest
-          provenance: false
+        run: |
+          docker build --platform linux/amd64 \
+            -t ${{ steps.meta.outputs.image_tag }} \
+            -t ${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest \
+            ./backend
+          docker push ${{ steps.meta.outputs.image_tag }}
+          docker push ${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest
 
   # Build frontend image (needs backend URL for NEXT_PUBLIC_API_URL)
   build-frontend:
@@ -104,11 +97,6 @@ jobs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
       
       - name: Log in to Azure Container Registry
         uses: azure/docker-login@v2
@@ -125,17 +113,14 @@ jobs:
           echo "Image tag: ${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:${SHORT_SHA}"
       
       - name: Build and push frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ steps.meta.outputs.image_tag }}
-            ${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ needs.get-infrastructure.outputs.backend_url }}
-          provenance: false
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_API_URL=${{ needs.get-infrastructure.outputs.backend_url }} \
+            -t ${{ steps.meta.outputs.image_tag }} \
+            -t ${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest \
+            ./frontend
+          docker push ${{ steps.meta.outputs.image_tag }}
+          docker push ${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest
 
   # Deploy Lakekeeper (only on first deployment or manual trigger)
   deploy-lakekeeper:
