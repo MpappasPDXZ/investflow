@@ -438,7 +438,7 @@ export default function ExpensesPage() {
                               </span>
                               
                               {/* Type Badge */}
-                              <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${expenseCategoryBadgeColors[expense.expense_category] || 'bg-gray-100'}`}>
+                              <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${expense.expense_category ? expenseCategoryBadgeColors[expense.expense_category] || 'bg-gray-100' : 'bg-gray-100'}`}>
                                 {EXPENSE_CATEGORIES.find(t => t.key === expense.expense_category)?.label || EXPENSE_TYPE_LABELS[expense.expense_type] || expense.expense_type}
                               </span>
                               
