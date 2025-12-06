@@ -54,8 +54,8 @@ export default function DashboardLayout({
       <div className="flex min-h-screen bg-background w-full">
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Mobile Header with Menu Toggle */}
-          <header className="md:hidden sticky top-0 z-40 flex items-center gap-3 border-b bg-background px-4 py-3">
+          {/* Header with Menu Toggle (Mobile & Desktop) */}
+          <header className="sticky top-0 z-40 flex items-center gap-3 border-b bg-background px-4 py-3">
             <SidebarTrigger className="h-9 w-9 p-0">
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle menu</span>
