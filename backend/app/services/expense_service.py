@@ -132,6 +132,7 @@ class ExpenseService:
             if len(arrow_table) > 0:
                 result = arrow_table.to_pylist()[0]
                 logger.info(f"[PERF] get_expense: Total time {time.time() - start:.3f}s")
+                logger.info(f"[DEBUG] Retrieved expense date: {result.get('date')} (type: {type(result.get('date'))})")
                 return result
             
             logger.info(f"[PERF] get_expense: Not found, total time {time.time() - start:.3f}s")
@@ -331,6 +332,7 @@ class ExpenseService:
             
             # Update fields
             update_dict = expense_data.model_dump(exclude_unset=True)
+            logger.info(f"[DEBUG] Update dict before processing: {update_dict}")
             for key, value in update_dict.items():
                 if value is not None:
                     if key in ["property_id", "unit_id", "document_storage_id"] and value:
@@ -339,9 +341,13 @@ class ExpenseService:
                         existing[key] = value.value
                     elif key == "amount" and value:
                         existing[key] = Decimal(str(value))
+                    elif key == "date" and value:
+                        logger.info(f"[DEBUG] Updating date: {value} (type: {type(value)})")
+                        existing[key] = value
                     else:
                         existing[key] = value
             
+            logger.info(f"[DEBUG] Date after update: {existing.get('date')} (type: {type(existing.get('date'))})")
             existing["updated_at"] = datetime.utcnow()
             
             # Ensure amount is Decimal (it may come back as float from Iceberg)

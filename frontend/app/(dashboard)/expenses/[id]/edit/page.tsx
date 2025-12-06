@@ -142,6 +142,13 @@ export default function EditExpensePage() {
     setLoading(true);
 
     try {
+      console.log('[PAGE] 💾 Submitting expense update:', {
+        expenseId,
+        formData,
+        originalDate: expense?.date,
+        submittingDate: formData.date
+      });
+      
       await updateExpense.mutateAsync({
         id: expenseId,
         data: {
@@ -156,6 +163,7 @@ export default function EditExpensePage() {
         },
       });
       
+      console.log('[PAGE] ✅ Expense updated successfully, navigating to expenses list');
       router.push('/expenses');
     } catch (err) {
       console.error('❌ [EXPENSE] Error updating expense:', err);

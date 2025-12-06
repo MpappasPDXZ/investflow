@@ -82,7 +82,7 @@ export default function ExpensesPage() {
       
       // Find all properties that have expenses in the current year
       expenses.items.forEach(expense => {
-        const expenseYear = new Date(expense.date).getFullYear();
+        const expenseYear = parseInt(expense.date.split('-')[0]);
         if (expenseYear === currentYear) {
           const propId = expense.property_id || 'unassigned';
           newExpandedProperties.add(propId);
@@ -121,7 +121,7 @@ export default function ExpensesPage() {
     
     filteredExpenses.forEach(expense => {
       const propId = expense.property_id || 'unassigned';
-      const year = new Date(expense.date).getFullYear();
+      const year = parseInt(expense.date.split('-')[0]);
       
       if (!result[propId]) result[propId] = {};
       if (!result[propId][year]) result[propId][year] = [];
@@ -434,7 +434,7 @@ export default function ExpensesPage() {
                             >
                               {/* Date */}
                               <span className="text-[10px] text-gray-500 w-16 shrink-0">
-                                {format(new Date(expense.date), 'MM/dd')}
+                                {expense.date.slice(5).replace('-', '/')}
                               </span>
                               
                               {/* Type Badge */}

@@ -181,11 +181,13 @@ async def update_expense_endpoint(
     """Update an expense"""
     try:
         user_id = UUID(current_user["sub"])
+        logger.info(f"[UPDATE] Updating expense {expense_id}: {expense_data.model_dump(exclude_unset=True)}")
         expense_dict = expense_service.update_expense(expense_id, user_id, expense_data)
         
         if not expense_dict:
             raise HTTPException(status_code=404, detail="Expense not found")
         
+        logger.info(f"[UPDATE] Updated expense {expense_id}, stored date: {expense_dict.get('date')}")
         return ExpenseResponse(**expense_dict)
     except HTTPException:
         raise
