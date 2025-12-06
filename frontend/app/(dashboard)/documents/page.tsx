@@ -101,9 +101,6 @@ export default function DocumentsPage() {
   });
   const [saving, setSaving] = useState(false);
 
-  // View dialog state (unused but kept for potential future use)
-  const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
-
   useEffect(() => {
     fetchData();
   }, []);
@@ -262,30 +259,7 @@ export default function DocumentsPage() {
     return doc.display_name || doc.file_name;
   };
 
-  // State for photo thumbnails
-  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
-
-  // Fetch download URLs for photos
-  useEffect(() => {
-    if (typeFilter === "photo") {
-      const fetchPhotoUrls = async () => {
-        const photoDocs = documents.filter((d) => PHOTO_TYPES.includes(d.document_type));
-        const urls: Record<string, string> = {};
-        await Promise.all(
-          photoDocs.map(async (doc) => {
-            try {
-              const response = (await apiClient.get(`/documents/${doc.id}/download`)) as any;
-              urls[doc.id] = response.download_url || response.data?.download_url;
-            } catch (err) {
-              console.error(`Error fetching URL for ${doc.id}:`, err);
-            }
-          })
-        );
-        setPhotoUrls(urls);
-      };
-      fetchPhotoUrls();
-    }
-  }, [documents, typeFilter]);
+  // Remove the eager photo URL fetching - ReceiptViewer now handles lazy loading
 
   // Filter documents by type (from URL) and property
   const typeFilteredDocs = typeFilter === "photo"
@@ -385,32 +359,30 @@ export default function DocumentsPage() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                   {photosByType.photo.map((doc) => (
-                    <div
+                    <ReceiptViewer
                       key={doc.id}
-                      className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer border hover:border-primary transition-colors"
-                      onClick={() => setViewingDoc(doc)}
-                    >
-                      {photoUrls[doc.id] ? (
-                        <img
-                          src={photoUrls[doc.id]}
-                          alt={doc.display_name || doc.file_name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      documentId={doc.id}
+                      fileName={doc.display_name || doc.file_name}
+                      fileType={doc.file_type}
+                      trigger={
+                        <div
+                          className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer border hover:border-primary transition-colors flex items-center justify-center"
+                        >
+                          <div className="flex flex-col items-center gap-2 p-4 text-center">
+                            <Image className="h-8 w-8 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground truncate w-full px-2">
+                              {doc.display_name || doc.file_name}
+                            </span>
+                            <span className="text-xs text-muted-foreground/70">
+                              {new Date(doc.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Eye className="h-6 w-6 text-white" />
+                          </div>
                         </div>
-                      )}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-2">
-                        <Eye className="h-5 w-5 text-white" />
-                        <span className="text-xs text-white text-center truncate w-full">
-                          {doc.display_name || doc.file_name}
-                        </span>
-                        <span className="text-xs text-white/70">
-                          {new Date(doc.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
+                      }
+                    />
                   ))}
                 </div>
               )}
@@ -436,32 +408,30 @@ export default function DocumentsPage() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                   {photosByType.inspection.map((doc) => (
-                    <div
+                    <ReceiptViewer
                       key={doc.id}
-                      className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer border hover:border-primary transition-colors"
-                      onClick={() => setViewingDoc(doc)}
-                    >
-                      {photoUrls[doc.id] ? (
-                        <img
-                          src={photoUrls[doc.id]}
-                          alt={doc.display_name || doc.file_name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      documentId={doc.id}
+                      fileName={doc.display_name || doc.file_name}
+                      fileType={doc.file_type}
+                      trigger={
+                        <div
+                          className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer border hover:border-primary transition-colors flex items-center justify-center"
+                        >
+                          <div className="flex flex-col items-center gap-2 p-4 text-center">
+                            <FileText className="h-8 w-8 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground truncate w-full px-2">
+                              {doc.display_name || doc.file_name}
+                            </span>
+                            <span className="text-xs text-muted-foreground/70">
+                              {new Date(doc.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Eye className="h-6 w-6 text-white" />
+                          </div>
                         </div>
-                      )}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-2">
-                        <Eye className="h-5 w-5 text-white" />
-                        <span className="text-xs text-white text-center truncate w-full">
-                          {doc.display_name || doc.file_name}
-                        </span>
-                        <span className="text-xs text-white/70">
-                          {new Date(doc.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
+                      }
+                    />
                   ))}
                 </div>
               )}
@@ -766,21 +736,6 @@ export default function DocumentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Photo Viewer Dialog */}
-      {viewingDoc && (
-        <ReceiptViewer
-          documentId={viewingDoc.id}
-          fileName={viewingDoc.display_name || viewingDoc.file_name}
-          fileType={viewingDoc.file_type}
-          trigger={<span style={{ display: 'none' }} />}
-          defaultOpen={true}
-          onOpenChange={(open) => {
-            if (!open) setViewingDoc(null);
-          }}
-        />
-      )}
-
     </div>
   );
 }
