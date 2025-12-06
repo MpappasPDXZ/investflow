@@ -24,6 +24,8 @@ export function useDocuments(filters: DocumentFilters = {}) {
       const queryString = params.toString();
       return apiClient.get<DocumentListResponse>(`/documents${queryString ? `?${queryString}` : ''}`);
     },
+    refetchOnMount: 'always', // Always refetch when component mounts
+    staleTime: 0, // Consider data stale immediately
   });
 }
 

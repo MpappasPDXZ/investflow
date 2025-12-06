@@ -12,6 +12,8 @@ export function useExpenses(propertyId?: string) {
       const params = propertyId ? `?property_id=${propertyId}` : '';
       return apiClient.get<ExpenseListResponse>(`/expenses${params}`);
     },
+    refetchOnMount: 'always', // Always refetch when component mounts (e.g., after adding expense)
+    staleTime: 0, // Consider data stale immediately
   });
 }
 
