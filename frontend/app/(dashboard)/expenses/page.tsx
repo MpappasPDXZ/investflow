@@ -210,7 +210,7 @@ export default function ExpensesPage() {
       e.unit_id || '',
       e.date,
       `"${e.description.replace(/"/g, '""')}"`,
-      e.amount.toFixed(2),
+      Number(e.amount).toFixed(2),
       e.vendor || '',
       e.expense_type,
       e.expense_category || '',

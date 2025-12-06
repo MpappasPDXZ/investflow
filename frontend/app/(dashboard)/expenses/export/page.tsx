@@ -39,15 +39,23 @@ export default function ExportExpensesPage() {
       });
     }
 
-    // Convert to CSV
-    const headers = ['Date', 'Description', 'Amount', 'Type', 'Vendor', 'Property'];
+    // Convert to CSV - match the columns from the main expenses page
+    const headers = ['ID', 'Property', 'Unit ID', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Is Planned', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
     const rows = filteredExpenses.map(exp => [
-      format(new Date(exp.date), 'yyyy-MM-dd'),
-      exp.description,
-      exp.amount.toFixed(2),
-      exp.expense_type,
-      exp.vendor || '',
+      exp.id,
       properties?.items.find(p => p.id === exp.property_id)?.display_name || '',
+      exp.unit_id || '',
+      exp.date,
+      `"${exp.description.replace(/"/g, '""')}"`,
+      Number(exp.amount).toFixed(2),
+      exp.vendor || '',
+      exp.expense_type,
+      exp.expense_category || '',
+      exp.is_planned ? 'Yes' : 'No',
+      `"${(exp.notes || '').replace(/"/g, '""')}"`,
+      exp.document_storage_id ? 'Yes' : 'No',
+      exp.created_at,
+      exp.updated_at
     ]);
 
     const csv = [
@@ -88,7 +96,7 @@ export default function ExportExpensesPage() {
             <select
               value={selectedPropertyId}
               onChange={(e) => setSelectedPropertyId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900"
             >
               <option value="">All Properties</option>
               {properties?.items.map((prop) => (
@@ -106,7 +114,7 @@ export default function ExportExpensesPage() {
             <select
               value={exportType}
               onChange={(e) => setExportType(e.target.value as 'fy' | 'all')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900"
             >
               <option value="fy">Fiscal Year</option>
               <option value="all">All Time</option>
@@ -124,7 +132,7 @@ export default function ExportExpensesPage() {
                 onChange={(e) => setYear(e.target.value)}
                 min="2000"
                 max={new Date().getFullYear() + 1}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900"
               />
             </div>
           )}
