@@ -18,6 +18,8 @@ interface ReceiptViewerProps {
   fileName?: string;
   fileType?: string;
   trigger?: React.ReactNode;
+  defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function ReceiptViewer({ 
@@ -26,12 +28,19 @@ export function ReceiptViewer({
   downloadUrl: propDownloadUrl, 
   fileName,
   fileType,
-  trigger 
+  trigger,
+  defaultOpen = false,
+  onOpenChange,
 }: ReceiptViewerProps) {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(propDownloadUrl || null);
   const [loading, setLoading] = useState(!propDownloadUrl);
   const [error, setError] = useState<string | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  // Sync with defaultOpen prop
+  useEffect(() => {
+    setIsOpen(defaultOpen);
+  }, [defaultOpen]);
   const [zoom, setZoom] = useState(1);
   const [imageLoading, setImageLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -116,7 +125,10 @@ export function ReceiptViewer({
         {TriggerButton}
       </div>
 
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <Dialog open={isOpen} onOpenChange={(open) => {
+        setIsOpen(open);
+        onOpenChange?.(open);
+      }}>
         <DialogContent className="max-w-5xl w-[95vw] h-[90vh] md:h-[85vh] flex flex-col p-0 gap-0">
           {/* Header - Responsive */}
           <DialogHeader className="px-4 md:px-6 py-3 md:py-4 border-b bg-gray-50 shrink-0">

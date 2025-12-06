@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -77,7 +78,14 @@ const DOCUMENT_TYPES = [
   { value: "other", label: "Other" },
 ];
 
+// Photo types vs Document types for filtering
+const PHOTO_TYPES = ["photo", "inspection"];
+const DOCUMENT_TYPES_FILTER = ["lease", "background_check", "contract", "invoice", "other"];
+
 export default function DocumentsPage() {
+  const searchParams = useSearchParams();
+  const typeFilter = searchParams.get("type"); // "document" | "photo" | null (all)
+  
   const [documents, setDocuments] = useState<Document[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,21 +262,62 @@ export default function DocumentsPage() {
     return doc.display_name || doc.file_name;
   };
 
-  // Filter documents
+  // State for photo thumbnails
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+
+  // Fetch download URLs for photos
+  useEffect(() => {
+    if (typeFilter === "photo") {
+      const fetchPhotoUrls = async () => {
+        const photoDocs = documents.filter((d) => PHOTO_TYPES.includes(d.document_type));
+        const urls: Record<string, string> = {};
+        await Promise.all(
+          photoDocs.map(async (doc) => {
+            try {
+              const response = (await apiClient.get(`/documents/${doc.id}/download`)) as any;
+              urls[doc.id] = response.download_url || response.data?.download_url;
+            } catch (err) {
+              console.error(`Error fetching URL for ${doc.id}:`, err);
+            }
+          })
+        );
+        setPhotoUrls(urls);
+      };
+      fetchPhotoUrls();
+    }
+  }, [documents, typeFilter]);
+
+  // Filter documents by type (from URL) and property
+  const typeFilteredDocs = typeFilter === "photo"
+    ? documents.filter((d) => PHOTO_TYPES.includes(d.document_type))
+    : typeFilter === "document"
+    ? documents.filter((d) => DOCUMENT_TYPES_FILTER.includes(d.document_type))
+    : documents; // Show all if no filter
+    
   const filteredDocs =
     selectedProperty === "all"
-      ? documents
+      ? typeFilteredDocs
       : selectedProperty === "unassigned"
-      ? documents.filter((d) => !d.property_id)
-      : documents.filter((d) => d.property_id === selectedProperty);
+      ? typeFilteredDocs.filter((d) => !d.property_id)
+      : typeFilteredDocs.filter((d) => d.property_id === selectedProperty);
 
-  // Group by property
+  // Group by property (for documents view)
   const groupedByProperty = filteredDocs.reduce((acc, doc) => {
     const key = doc.property_id || "unassigned";
     if (!acc[key]) acc[key] = [];
     acc[key].push(doc);
     return acc;
   }, {} as Record<string, Document[]>);
+
+  // Group photos by type (photo vs inspection) and sort by date
+  const photosByType = typeFilter === "photo" ? {
+    photo: filteredDocs
+      .filter((d) => d.document_type === "photo")
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    inspection: filteredDocs
+      .filter((d) => d.document_type === "inspection")
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+  } : { photo: [], inspection: [] };
 
   if (loading) {
     return (
@@ -283,9 +332,11 @@ export default function DocumentsPage() {
       {/* Header - Responsive */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold">Documents</h1>
+          <h1 className="text-xl md:text-2xl font-bold">
+            {typeFilter === "photo" ? "Photos" : typeFilter === "document" ? "Documents" : "Vault"}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            {documents.length} documents across {properties.length} properties
+            {filteredDocs.length} {typeFilter === "photo" ? "photos" : typeFilter === "document" ? "documents" : "files"} across {properties.length} properties
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -312,8 +363,112 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      {/* Documents grouped by property */}
-      {documents.length === 0 ? (
+      {/* Photo Grid View */}
+      {typeFilter === "photo" ? (
+        <div className="space-y-6">
+          {/* Property Photos Group */}
+          <Card>
+            <CardHeader className="py-3 px-4 bg-muted/50">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Image className="h-4 w-4" />
+                Property Photos
+                <Badge variant="secondary" className="ml-auto">
+                  {photosByType.photo.length}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              {photosByType.photo.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No property photos yet
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {photosByType.photo.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer border hover:border-primary transition-colors"
+                      onClick={() => setViewingDoc(doc)}
+                    >
+                      {photoUrls[doc.id] ? (
+                        <img
+                          src={photoUrls[doc.id]}
+                          alt={doc.display_name || doc.file_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-2">
+                        <Eye className="h-5 w-5 text-white" />
+                        <span className="text-xs text-white text-center truncate w-full">
+                          {doc.display_name || doc.file_name}
+                        </span>
+                        <span className="text-xs text-white/70">
+                          {new Date(doc.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Inspection Photos Group */}
+          <Card>
+            <CardHeader className="py-3 px-4 bg-muted/50">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Inspection Photos
+                <Badge variant="secondary" className="ml-auto">
+                  {photosByType.inspection.length}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              {photosByType.inspection.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No inspection photos yet
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {photosByType.inspection.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer border hover:border-primary transition-colors"
+                      onClick={() => setViewingDoc(doc)}
+                    >
+                      {photoUrls[doc.id] ? (
+                        <img
+                          src={photoUrls[doc.id]}
+                          alt={doc.display_name || doc.file_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-2">
+                        <Eye className="h-5 w-5 text-white" />
+                        <span className="text-xs text-white text-center truncate w-full">
+                          {doc.display_name || doc.file_name}
+                        </span>
+                        <span className="text-xs text-white/70">
+                          {new Date(doc.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : documents.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center py-8">
             <FileText className="h-10 w-10 text-muted-foreground mb-3" />
@@ -323,6 +478,7 @@ export default function DocumentsPage() {
           </CardContent>
         </Card>
       ) : (
+        /* Documents grouped by property */
         Object.entries(groupedByProperty).map(([propertyId, docs]) => (
           <Card key={propertyId} className="overflow-hidden">
             <CardHeader className="py-3 px-4 bg-muted/50">
@@ -610,6 +766,20 @@ export default function DocumentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Photo Viewer Dialog */}
+      {viewingDoc && (
+        <ReceiptViewer
+          documentId={viewingDoc.id}
+          fileName={viewingDoc.display_name || viewingDoc.file_name}
+          fileType={viewingDoc.file_type}
+          trigger={<span style={{ display: 'none' }} />}
+          defaultOpen={true}
+          onOpenChange={(open) => {
+            if (!open) setViewingDoc(null);
+          }}
+        />
+      )}
 
     </div>
   );

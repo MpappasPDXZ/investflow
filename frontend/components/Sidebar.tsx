@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
-import { Building2, Receipt, LogIn, LogOut, Plus, List, FileDown, Home, FileText, User } from 'lucide-react';
+import { Building2, Receipt, LogIn, LogOut, Plus, List, FileDown, Home, FileText, User, Lock, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Sidebar() {
@@ -130,25 +130,34 @@ export function Sidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
 
-                  {/* Documents Section */}
+                  {/* Vault Section (Documents & Photos) */}
                   <SidebarMenuItem>
                     <SidebarGroupLabel className="text-xs font-semibold text-gray-500">
-                      Documents
+                      <Lock className="h-3 w-3 inline mr-1" />
+                      Vault
                     </SidebarGroupLabel>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild>
                       <Link href="/documents/add">
                         <Plus className="h-4 w-4" />
-                        <span>Add Document</span>
+                        <span>Add New</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild>
-                      <Link href="/documents">
+                      <Link href="/documents?type=document">
                         <FileText className="h-4 w-4" />
-                        <span>View Documents</span>
+                        <span>Documents</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <Link href="/documents?type=photo">
+                        <Image className="h-4 w-4" />
+                        <span>Photos</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
