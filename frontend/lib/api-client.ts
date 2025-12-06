@@ -20,6 +20,9 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    const startTime = performance.now();
+    
+    console.log(`[API] 🚀 ${options.method || 'GET'} ${endpoint}`);
     
     // Get token from localStorage
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -33,10 +36,12 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    const fetchStart = performance.now();
     const response = await fetch(url, {
       ...options,
       headers,
     });
+    const fetchTime = performance.now() - fetchStart;
 
     if (!response.ok) {
       let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
@@ -46,16 +51,26 @@ class ApiClient {
       } catch {
         // JSON parsing failed, use default error message
       }
-      console.error(`API Error: ${errorDetail}`, { url, status: response.status });
+      const totalTime = performance.now() - startTime;
+      console.error(`[API] ❌ ${options.method || 'GET'} ${endpoint} - ${response.status} in ${totalTime.toFixed(0)}ms`, { url, status: response.status });
       throw new Error(errorDetail);
     }
 
     // Handle 204 No Content
     if (response.status === 204) {
+      const totalTime = performance.now() - startTime;
+      console.log(`[API] ✅ ${options.method || 'GET'} ${endpoint} - 204 No Content in ${totalTime.toFixed(0)}ms`);
       return null as T;
     }
 
-    return response.json();
+    const jsonStart = performance.now();
+    const data = await response.json();
+    const jsonTime = performance.now() - jsonStart;
+    const totalTime = performance.now() - startTime;
+    
+    console.log(`[API] ✅ ${options.method || 'GET'} ${endpoint} - ${response.status} in ${totalTime.toFixed(0)}ms (fetch: ${fetchTime.toFixed(0)}ms, json: ${jsonTime.toFixed(0)}ms)`);
+    
+    return data;
   }
 
   async get<T>(endpoint: string): Promise<T> {

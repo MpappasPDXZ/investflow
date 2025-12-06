@@ -6,7 +6,8 @@ from datetime import date
 
 from app.core.dependencies import get_current_user
 from app.schemas.expense import (
-    ExpenseCreate, ExpenseUpdate, ExpenseResponse, ExpenseListResponse, ExpenseSummaryResponse
+    ExpenseCreate, ExpenseUpdate, ExpenseResponse, ExpenseListResponse, ExpenseSummaryResponse,
+    ExpenseCategory
 )
 from app.services import expense_service, document_service
 from app.core.logging import get_logger
@@ -41,6 +42,7 @@ async def create_expense_with_receipt(
     amount: str = Form(...),  # Decimal as string
     vendor: Optional[str] = Form(None),
     expense_type: str = Form(...),
+    expense_category: Optional[str] = Form(None),
     unit_id: Optional[str] = Form(None),
     is_planned: bool = Form(False),
     notes: Optional[str] = Form(None),
@@ -77,6 +79,7 @@ async def create_expense_with_receipt(
             amount=Decimal(amount),
             vendor=vendor,
             expense_type=ExpenseType(expense_type),
+            expense_category=ExpenseCategory(expense_category) if expense_category else None,
             document_storage_id=UUID(document["id"]),
             is_planned=is_planned,
             notes=notes

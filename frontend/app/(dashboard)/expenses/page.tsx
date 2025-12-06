@@ -16,22 +16,55 @@ import {
   Edit2,
   DollarSign,
   Filter,
-  Eye
+  Eye,
+  Building2
 } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Expense } from '@/lib/types';
 
-interface GroupedExpenses {
-  [year: number]: Expense[];
-}
+// Expense type labels (for the main expense type dropdown)
+const EXPENSE_TYPE_LABELS: Record<string, string> = {
+  'maintenance': 'Maintenance',
+  'capex': 'CapEx',
+  'rehab': 'Rehab',
+  'pandi': 'P&I',
+  'utilities': 'Utilities',
+  'insurance': 'Insurance',
+  'property_management': 'Prop Mgmt',
+  'other': 'Other'
+};
+
+// Cost code categories (the new numbered categories)
+const EXPENSE_CATEGORIES = [
+  { key: 'co_equip', label: '10-Co Eq', fullLabel: '10 - Co. Equipment' },
+  { key: 'rent_equip', label: '20-Rent', fullLabel: '20 - Rented Equip.' },
+  { key: 'equip_maint', label: '30-Maint', fullLabel: '30 - Equip. Maint.' },
+  { key: 'small_tools', label: '40-Tools', fullLabel: '40 - Small Tools' },
+  { key: 'bulk_comm', label: '50-Bulk', fullLabel: '50 - Bulk Commodities' },
+  { key: 'eng_equip', label: '60-Eng', fullLabel: '60 - Eng. Equipment' },
+  { key: 'subs', label: '70-Subs', fullLabel: '70 - Subcontractors' },
+  { key: 'other', label: '80-Other', fullLabel: '80 - Other' },
+];
+
+const expenseCategoryBadgeColors: Record<string, string> = {
+  co_equip: 'bg-purple-100 text-purple-800',
+  rent_equip: 'bg-indigo-100 text-indigo-800',
+  equip_maint: 'bg-blue-100 text-blue-800',
+  small_tools: 'bg-yellow-100 text-yellow-800',
+  bulk_comm: 'bg-green-100 text-green-800',
+  eng_equip: 'bg-orange-100 text-orange-800',
+  subs: 'bg-pink-100 text-pink-800',
+  other: 'bg-gray-100 text-gray-800',
+};
 
 export default function ExpensesPage() {
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
   const [selectedExpenseType, setSelectedExpenseType] = useState<string>('');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
-  const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set());
+  const [expandedProperties, setExpandedProperties] = useState<Set<string>>(new Set());
+  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set()); // "propertyId-year"
   const [showFilters, setShowFilters] = useState(false);
   
   const { data: properties } = usePropertiesHook();
@@ -39,106 +72,92 @@ export default function ExpensesPage() {
   const { data: summary } = useExpenseSummary(selectedPropertyId || undefined);
   const deleteExpense = useDeleteExpense();
 
-  const expenseTypeLabels: Record<string, string> = {
-    capex: 'CapEx',
-    rehab: 'Rehab',
-    pandi: 'P&I',
-    utilities: 'Utilities',
-    maintenance: 'Maintenance',
-    insurance: 'Insurance',
-    property_management: 'Prop Mgmt',
-    other: 'Other',
-  };
-
-  const expenseTypeBadgeColors: Record<string, string> = {
-    capex: 'bg-purple-100 text-purple-800',
-    rehab: 'bg-indigo-100 text-indigo-800',
-    pandi: 'bg-blue-100 text-blue-800',
-    utilities: 'bg-yellow-100 text-yellow-800',
-    maintenance: 'bg-orange-100 text-orange-800',
-    insurance: 'bg-green-100 text-green-800',
-    property_management: 'bg-pink-100 text-pink-800',
-    other: 'bg-gray-100 text-gray-800',
-  };
-
-  // Filter and group expenses by year
-  const groupedExpenses = useMemo(() => {
-    if (!expenses?.items) return {};
-
+  // Filter expenses
+  const filteredExpenses = useMemo(() => {
+    if (!expenses?.items) return [];
+    
     let filtered = expenses.items;
-
-    // Filter by expense type
+    
     if (selectedExpenseType) {
       filtered = filtered.filter(e => e.expense_type === selectedExpenseType);
     }
-
-    // Filter by date range
     if (startDate) {
       filtered = filtered.filter(e => e.date >= startDate);
     }
     if (endDate) {
       filtered = filtered.filter(e => e.date <= endDate);
     }
-
-    // Group by year
-    const grouped: GroupedExpenses = {};
-    filtered.forEach(expense => {
-      const year = new Date(expense.date).getFullYear();
-      if (!grouped[year]) {
-        grouped[year] = [];
-      }
-      grouped[year].push(expense);
-    });
-
-    // Sort each year's expenses by date (newest first)
-    Object.keys(grouped).forEach(year => {
-      grouped[Number(year)].sort((a, b) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-    });
-
-    return grouped;
+    
+    return filtered;
   }, [expenses, selectedExpenseType, startDate, endDate]);
 
-  // Get sorted years (newest first)
-  const sortedYears = useMemo(() => {
-    return Object.keys(groupedExpenses)
-      .map(Number)
-      .sort((a, b) => b - a);
-  }, [groupedExpenses]);
-
-  // Calculate year totals (ensure amounts are numbers)
-  const yearTotals = useMemo(() => {
-    const totals: Record<number, number> = {};
-    Object.entries(groupedExpenses).forEach(([year, yearExpenses]) => {
-      totals[Number(year)] = yearExpenses.reduce((sum: number, e: Expense) => sum + Number(e.amount), 0);
+  // Group by property, then by year
+  const groupedByPropertyAndYear = useMemo(() => {
+    const result: Record<string, Record<number, Expense[]>> = {};
+    
+    filteredExpenses.forEach(expense => {
+      const propId = expense.property_id || 'unassigned';
+      const year = new Date(expense.date).getFullYear();
+      
+      if (!result[propId]) result[propId] = {};
+      if (!result[propId][year]) result[propId][year] = [];
+      result[propId][year].push(expense);
     });
-    return totals;
-  }, [groupedExpenses]);
+    
+    // Sort expenses within each year by date (newest first)
+    Object.values(result).forEach(years => {
+      Object.values(years).forEach(exps => {
+        exps.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      });
+    });
+    
+    return result;
+  }, [filteredExpenses]);
 
-  // Grand total
-  const grandTotal = useMemo(() => {
-    return Object.values(yearTotals).reduce((sum, total) => sum + total, 0);
-  }, [yearTotals]);
+  // Calculate totals by type for a list of expenses
+  const calculateTypeBreakdown = (exps: Expense[]) => {
+    const breakdown: Record<string, number> = {};
+    EXPENSE_CATEGORIES.forEach(t => breakdown[t.key] = 0);
+    exps.forEach(e => {
+      const category = e.expense_category || 'other';
+      if (breakdown[category] !== undefined) {
+        breakdown[category] += Number(e.amount);
+      }
+    });
+    return breakdown;
+  };
 
-  const toggleYear = (year: number) => {
-    setExpandedYears(prev => {
+  // Get property name
+  const getPropertyName = (propId: string) => {
+    if (propId === 'unassigned') return 'Unassigned';
+    const prop = properties?.items.find(p => p.id === propId);
+    return prop?.display_name || prop?.address_line1 || 'Unknown Property';
+  };
+
+  // Toggle functions
+  const toggleProperty = (propId: string) => {
+    setExpandedProperties(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(year)) {
-        newSet.delete(year);
+      if (newSet.has(propId)) {
+        newSet.delete(propId);
       } else {
-        newSet.add(year);
+        newSet.add(propId);
       }
       return newSet;
     });
   };
 
-  const expandAll = () => {
-    setExpandedYears(new Set(sortedYears));
-  };
-
-  const collapseAll = () => {
-    setExpandedYears(new Set());
+  const toggleYear = (propId: string, year: number) => {
+    const key = `${propId}-${year}`;
+    setExpandedYears(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
   };
 
   const handleDelete = async (id: string, description: string) => {
@@ -149,9 +168,9 @@ export default function ExpensesPage() {
 
   const exportToCSV = () => {
     if (!expenses?.items) return;
-
-    const headers = ['Date', 'Description', 'Amount', 'Type', 'Vendor', 'Notes'];
+    const headers = ['Property', 'Date', 'Description', 'Amount', 'Type', 'Vendor', 'Notes'];
     const rows = expenses.items.map(e => [
+      getPropertyName(e.property_id || 'unassigned'),
       e.date,
       `"${e.description.replace(/"/g, '""')}"`,
       e.amount.toFixed(2),
@@ -159,7 +178,6 @@ export default function ExpensesPage() {
       e.vendor || '',
       `"${(e.notes || '').replace(/"/g, '""')}"`,
     ]);
-
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -170,8 +188,16 @@ export default function ExpensesPage() {
     URL.revokeObjectURL(url);
   };
 
+  const formatAmount = (amt: number) => 
+    amt > 0 ? `$${amt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-';
+
+  // Sort properties by name
+  const sortedPropertyIds = Object.keys(groupedByPropertyAndYear).sort((a, b) => 
+    getPropertyName(a).localeCompare(getPropertyName(b))
+  );
+
   return (
-    <div className="p-3 max-w-5xl mx-auto">
+    <div className="p-3 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex justify-between items-center mb-3">
         <div>
@@ -214,14 +240,6 @@ export default function ExpensesPage() {
             <span className="text-gray-600">Count:</span>{' '}
             <span className="font-bold">{summary.total_count}</span>
           </div>
-          {summary.yearly_totals[0] && (
-            <div className="bg-green-50 px-2 py-1 rounded">
-              <span className="text-green-600">{summary.yearly_totals[0].year}:</span>{' '}
-              <span className="font-bold text-green-900">
-                ${summary.yearly_totals[0].total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-          )}
         </div>
       )}
 
@@ -255,8 +273,8 @@ export default function ExpensesPage() {
               className="px-2 py-2 md:py-1 border border-gray-300 rounded text-sm md:text-xs min-h-[44px] md:min-h-0"
             >
               <option value="">All Types</option>
-              {Object.entries(expenseTypeLabels).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+              {EXPENSE_CATEGORIES.map(t => (
+                <option key={t.key} value={t.key}>{t.fullLabel}</option>
               ))}
             </select>
             <input
@@ -277,138 +295,186 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      {/* Expense List */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between py-2 px-3">
-          <CardTitle className="text-sm font-semibold">Expenses by Year</CardTitle>
-          <div className="flex gap-1">
-            <Button variant="ghost" size="sm" onClick={expandAll} className="h-6 px-2 text-xs">
-              Expand
-            </Button>
-            <Button variant="ghost" size="sm" onClick={collapseAll} className="h-6 px-2 text-xs">
-              Collapse
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-2">
-          {isLoading ? (
-            <div className="text-center py-6 text-gray-500 text-xs">Loading...</div>
-          ) : sortedYears.length === 0 ? (
-            <div className="text-center py-6 text-gray-500">
-              <FileText className="h-8 w-8 mx-auto text-gray-300 mb-1" />
-              <p className="text-xs">No expenses found.</p>
-              <Link href="/expenses/add" className="text-blue-600 hover:underline text-xs">
-                Add your first expense
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {sortedYears.map(year => {
-                const isExpanded = expandedYears.has(year);
-                const yearExpenses = groupedExpenses[year];
-                const yearTotal = yearTotals[year];
+      {/* Loading State */}
+      {isLoading && (
+        <div className="text-center py-8 text-gray-500 text-sm">Loading expenses...</div>
+      )}
 
-                return (
-                  <div key={year}>
-                    {/* Year Header - Mobile friendly touch target */}
-                    <button
-                      onClick={() => toggleYear(year)}
-                      className="flex items-center justify-between w-full text-left hover:bg-gray-50 active:bg-gray-100 px-2 py-3 md:py-1 rounded min-h-[44px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {isExpanded ? (
-                          <ChevronDown className="h-3 w-3 text-gray-500" />
+      {/* Empty State */}
+      {!isLoading && filteredExpenses.length === 0 && (
+        <Card>
+          <CardContent className="py-8 text-center text-gray-500">
+            <DollarSign className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No expenses found</p>
+            <Link href="/expenses/add">
+              <Button size="sm" className="mt-3">Add Expense</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Grouped by Property, then Year */}
+      {sortedPropertyIds.map(propId => {
+        const years = groupedByPropertyAndYear[propId];
+        const sortedYears = Object.keys(years).map(Number).sort((a, b) => b - a);
+        const allPropertyExpenses = sortedYears.flatMap(y => years[y]);
+        const propertyTotal = allPropertyExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+        const propertyBreakdown = calculateTypeBreakdown(allPropertyExpenses);
+        const isPropertyExpanded = expandedProperties.has(propId);
+
+        return (
+          <Card key={propId} className="mb-3">
+            {/* Property Header with Type Breakdown */}
+            <CardHeader 
+              className="py-2 px-3 cursor-pointer hover:bg-gray-50"
+              onClick={() => toggleProperty(propId)}
+            >
+              <div className="flex items-center gap-2">
+                {isPropertyExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-gray-400" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                )}
+                <Building2 className="h-4 w-4 text-gray-600" />
+                <span className="font-semibold text-sm">{getPropertyName(propId)}</span>
+                <span className="text-xs text-gray-500">({allPropertyExpenses.length})</span>
+                <span className="ml-auto font-bold text-sm">
+                  ${propertyTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              
+              {/* Type Breakdown Row - Desktop */}
+              <div className="hidden md:flex gap-1 mt-2 flex-wrap">
+                {EXPENSE_CATEGORIES.map(t => (
+                  <div 
+                    key={t.key}
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${expenseCategoryBadgeColors[t.key]}`}
+                    title={t.fullLabel}
+                  >
+                    {t.label}: {formatAmount(propertyBreakdown[t.key])}
+                  </div>
+                ))}
+              </div>
+            </CardHeader>
+
+            {/* Years within Property */}
+            {isPropertyExpanded && (
+              <CardContent className="p-0">
+                {sortedYears.map(year => {
+                  const yearExpenses = years[year];
+                  const yearKey = `${propId}-${year}`;
+                  const isYearExpanded = expandedYears.has(yearKey);
+                  const yearTotal = yearExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+                  const yearBreakdown = calculateTypeBreakdown(yearExpenses);
+
+                  return (
+                    <div key={year} className="border-t">
+                      {/* Year Header */}
+                      <div 
+                        className="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100"
+                        onClick={() => toggleYear(propId, year)}
+                      >
+                        {isYearExpanded ? (
+                          <ChevronDown className="h-3 w-3 text-gray-400" />
                         ) : (
-                          <ChevronRight className="h-3 w-3 text-gray-500" />
+                          <ChevronRight className="h-3 w-3 text-gray-400" />
                         )}
-                        <span className="text-sm font-semibold text-gray-900">{year}</span>
-                        <span className="text-xs text-gray-500">({yearExpenses.length})</span>
+                        <span className="font-medium text-xs">{year}</span>
+                        <span className="text-[10px] text-gray-500">({yearExpenses.length})</span>
+                        <span className="ml-auto font-semibold text-xs">
+                          ${yearTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
                       </div>
-                      <div className="text-sm font-semibold text-red-700">
-                        ${yearTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </div>
-                    </button>
 
-                    {/* Year Items - Responsive layout */}
-                    {isExpanded && (
-                      <div className="space-y-2 md:space-y-1 ml-2 md:ml-5 mt-2 md:mt-1">
-                        {yearExpenses.map((expense) => (
-                          <div 
-                            key={expense.id} 
-                            className="flex flex-col md:flex-row md:justify-between md:items-center py-3 md:py-1 px-3 md:px-2 bg-gray-50 rounded text-sm md:text-xs gap-2 md:gap-0"
-                          >
-                            {/* Mobile: Stacked layout, Desktop: Inline */}
-                            <div className="flex items-start md:items-center gap-2 flex-1 min-w-0">
-                              <span className="text-gray-500 w-12 shrink-0">
-                                {format(new Date(expense.date), 'M/d')}
-                              </span>
-                              <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 flex-1 min-w-0">
-                                <span className="font-medium text-gray-900 truncate">
-                                  {expense.description}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${expenseTypeBadgeColors[expense.expense_type] || 'bg-gray-100'}`}>
-                                    {expenseTypeLabels[expense.expense_type] || expense.expense_type}
-                                  </span>
-                                  {expense.vendor && (
-                                    <span className="text-gray-400 truncate hidden sm:inline text-xs">
-                                      {expense.vendor}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
+                      {/* Year Type Breakdown - collapsed view */}
+                      {!isYearExpanded && (
+                        <div className="hidden md:flex gap-1 px-3 pb-2 flex-wrap">
+                          {EXPENSE_CATEGORIES.filter(t => yearBreakdown[t.key] > 0).map(t => (
+                            <div 
+                              key={t.key}
+                              className={`text-[9px] px-1 py-0.5 rounded ${expenseCategoryBadgeColors[t.key]}`}
+                            >
+                              {t.label}: {formatAmount(yearBreakdown[t.key])}
                             </div>
-                            {/* Actions row - larger touch targets on mobile */}
-                            <div className="flex items-center justify-between md:justify-end gap-3 md:gap-1 shrink-0 pl-14 md:pl-0">
-                              <span className="font-semibold text-gray-900 mr-2 md:mr-1 text-base md:text-xs">
-                                ${Number(expense.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Expense List */}
+                      {isYearExpanded && (
+                        <div className="divide-y">
+                          {yearExpenses.map(expense => (
+                            <div 
+                              key={expense.id}
+                              className="px-3 py-2 flex items-center gap-2 hover:bg-gray-50"
+                            >
+                              {/* Date */}
+                              <span className="text-[10px] text-gray-500 w-16 shrink-0">
+                                {format(new Date(expense.date), 'MM/dd')}
                               </span>
-                              <div className="flex items-center gap-1">
+                              
+                              {/* Type Badge */}
+                              <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${expenseCategoryBadgeColors[expense.expense_category] || 'bg-gray-100'}`}>
+                                {EXPENSE_CATEGORIES.find(t => t.key === expense.expense_category)?.label || EXPENSE_TYPE_LABELS[expense.expense_type] || expense.expense_type}
+                              </span>
+                              
+                              {/* Description */}
+                              <span className="text-xs truncate flex-1">
+                                {expense.description}
+                              </span>
+                              
+                              {/* Vendor */}
+                              {expense.vendor && (
+                                <span className="text-[10px] text-gray-400 truncate max-w-[80px] hidden sm:inline">
+                                  {expense.vendor}
+                                </span>
+                              )}
+                              
+                              {/* Amount */}
+                              <span className="font-semibold text-xs w-16 text-right shrink-0">
+                                ${Number(expense.amount).toLocaleString()}
+                              </span>
+                              
+                              {/* Actions */}
+                              <div className="flex gap-1 shrink-0">
                                 {expense.document_storage_id && (
-                                  <ReceiptViewer 
-                                    expenseId={expense.id}
+                                  <ReceiptViewer
+                                    documentId={expense.document_storage_id}
+                                    fileName={expense.description}
+                                    fileType="image/jpeg"
                                     trigger={
-                                      <button 
-                                        className="text-gray-400 hover:text-blue-600 active:text-blue-700 p-2 md:p-0.5 -m-1 md:m-0 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
-                                        title="View receipt"
-                                      >
-                                        <Eye className="h-5 w-5 md:h-3 md:w-3" />
-                                      </button>
+                                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                        <Eye className="h-3 w-3" />
+                                      </Button>
                                     }
                                   />
                                 )}
                                 <Link href={`/expenses/${expense.id}/edit`}>
-                                  <button className="text-gray-400 hover:text-blue-600 active:text-blue-700 p-2 md:p-0.5 -m-1 md:m-0 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center">
-                                    <Edit2 className="h-5 w-5 md:h-3 md:w-3" />
-                                  </button>
+                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                    <Edit2 className="h-3 w-3" />
+                                  </Button>
                                 </Link>
-                                <button
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
                                   onClick={() => handleDelete(expense.id, expense.description)}
-                                  className="text-gray-400 hover:text-red-600 active:text-red-700 p-2 md:p-0.5 -m-1 md:m-0 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
                                 >
-                                  <Trash2 className="h-5 w-5 md:h-3 md:w-3" />
-                                </button>
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Grand Total */}
-              <div className="flex justify-between items-center p-2 bg-red-100 rounded font-bold text-sm mt-3">
-                <span>Total Expenses</span>
-                <span className="text-red-700">
-                  ${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            )}
+          </Card>
+        );
+      })}
     </div>
   );
 }

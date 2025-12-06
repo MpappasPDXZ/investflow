@@ -26,6 +26,8 @@ export default function EditExpensePage() {
   const params = useParams();
   const expenseId = params.id as string;
   
+  console.log(`[PAGE] 📄 EditExpensePage mounted for expense ${expenseId}`);
+  
   const { data: expense, isLoading: loadingExpense, refetch } = useExpense(expenseId);
   const { data: properties } = usePropertiesHook();
   const updateExpense = useUpdateExpense();
@@ -45,12 +47,14 @@ export default function EditExpensePage() {
     amount: '',
     vendor: '',
     expense_type: 'maintenance',
+    expense_category: 'bulk_comm',
     notes: '',
   });
 
   // Load expense data when it arrives
   useEffect(() => {
     if (expense) {
+      console.log(`[PAGE] 📝 Expense data loaded, populating form`, expense);
       setFormData({
         property_id: expense.property_id || '',
         unit_id: expense.unit_id || '',
@@ -59,6 +63,7 @@ export default function EditExpensePage() {
         amount: String(expense.amount) || '',
         vendor: expense.vendor || '',
         expense_type: expense.expense_type || 'maintenance',
+        expense_category: expense.expense_category || 'bulk_comm',
         notes: expense.notes || '',
       });
       // Fetch units for this property
@@ -70,11 +75,15 @@ export default function EditExpensePage() {
 
   const fetchUnits = async (propertyId: string) => {
     try {
+      console.log(`[PAGE] 🏢 Fetching units for property ${propertyId}`);
+      const start = performance.now();
       setLoadingUnits(true);
       const response = await apiClient.get<{ items: Unit[]; total: number }>(`/units?property_id=${propertyId}`);
       setUnits(response.items.filter(u => u.is_active));
+      const duration = performance.now() - start;
+      console.log(`[PAGE] ✅ Units loaded in ${duration.toFixed(0)}ms:`, response.items.length, 'units');
     } catch (err) {
-      console.error('Error fetching units:', err);
+      console.error('[PAGE] ❌ Error fetching units:', err);
       setUnits([]);
     } finally {
       setLoadingUnits(false);
@@ -141,6 +150,7 @@ export default function EditExpensePage() {
           amount: parseFloat(formData.amount),
           vendor: formData.vendor || undefined,
           expense_type: formData.expense_type as any,
+          expense_category: formData.expense_category as any,
           unit_id: formData.unit_id || undefined,
           notes: formData.notes || undefined,
         },
@@ -158,7 +168,16 @@ export default function EditExpensePage() {
   const hasUnits = units.length > 0;
   const hasReceipt = expense?.document_storage_id;
 
+  console.log(`[PAGE] 📊 Render state:`, {
+    loadingExpense,
+    hasExpense: !!expense,
+    propertiesCount: properties?.items?.length || 0,
+    unitsCount: units.length,
+    loadingUnits
+  });
+
   if (loadingExpense) {
+    console.log(`[PAGE] ⏳ Loading expense ${expenseId}...`);
     return (
       <div className="p-4">
         <div className="text-sm text-gray-500">Loading expense...</div>
@@ -167,12 +186,15 @@ export default function EditExpensePage() {
   }
 
   if (!expense) {
+    console.log(`[PAGE] ❌ Expense ${expenseId} not found`);
     return (
       <div className="p-4">
         <div className="text-sm text-red-500">Expense not found</div>
       </div>
     );
   }
+
+  console.log(`[PAGE] ✅ Rendering expense form for ${expenseId}`);
 
   return (
     <div className="p-4">
@@ -195,7 +217,7 @@ export default function EditExpensePage() {
                   value={formData.property_id}
                   onChange={(e) => handlePropertyChange(e.target.value)}
                   required
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1 !bg-white"
                 >
                   <option value="">Select Property</option>
                   {properties?.items.map((prop) => (
@@ -230,7 +252,7 @@ export default function EditExpensePage() {
                       id="unit_id"
                       value={formData.unit_id}
                       onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1"
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1 !bg-white"
                     >
                       <option value="">Property-level expense (no specific unit)</option>
                       {units.map((unit) => (
@@ -280,7 +302,7 @@ export default function EditExpensePage() {
                   value={formData.expense_type}
                   onChange={(e) => setFormData({ ...formData, expense_type: e.target.value })}
                   required
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1 !bg-white"
                 >
                   <option value="maintenance">Maintenance</option>
                   <option value="capex">Capital Expenditure</option>
@@ -290,6 +312,24 @@ export default function EditExpensePage() {
                   <option value="insurance">Insurance</option>
                   <option value="property_management">Property Management</option>
                   <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="expense_category" className="text-xs">Cost Code</Label>
+                <select
+                  id="expense_category"
+                  value={formData.expense_category}
+                  onChange={(e) => setFormData({ ...formData, expense_category: e.target.value })}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1 !bg-white"
+                >
+                  <option value="co_equip">10 - Co. Equipment</option>
+                  <option value="rent_equip">20 - Rented Equip.</option>
+                  <option value="equip_maint">30 - Equip. Maint.</option>
+                  <option value="small_tools">40 - Small Tools</option>
+                  <option value="bulk_comm">50 - Bulk Commodities</option>
+                  <option value="eng_equip">60 - Eng. Equipment</option>
+                  <option value="subs">70 - Subcontractors</option>
+                  <option value="other">80 - Other</option>
                 </select>
               </div>
               <div>
@@ -359,7 +399,7 @@ export default function EditExpensePage() {
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={2}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1 !bg-white"
                   placeholder="Additional details..."
                 />
               </div>

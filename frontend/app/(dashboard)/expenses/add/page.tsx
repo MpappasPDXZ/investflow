@@ -41,6 +41,7 @@ export default function AddExpensePage() {
     amount: '',
     vendor: '',
     expense_type: 'maintenance',
+    expense_category: 'bulk_comm',
     notes: '',
   });
   const [file, setFile] = useState<File | null>(null);
@@ -112,6 +113,7 @@ export default function AddExpensePage() {
       formDataToSend.append('date', formData.date);
       formDataToSend.append('amount', formData.amount);
       formDataToSend.append('expense_type', formData.expense_type);
+      if (formData.expense_category) formDataToSend.append('expense_category', formData.expense_category);
       if (formData.unit_id) formDataToSend.append('unit_id', formData.unit_id);
       if (formData.vendor) formDataToSend.append('vendor', formData.vendor);
       if (formData.notes) formDataToSend.append('notes', formData.notes);
@@ -256,6 +258,24 @@ export default function AddExpensePage() {
                   <option value="insurance">Insurance</option>
                   <option value="property_management">Property Management</option>
                   <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="expense_category" className="text-xs md:text-sm">Cost Code</Label>
+                <select
+                  id="expense_category"
+                  value={formData.expense_category}
+                  onChange={(e) => setFormData({ ...formData, expense_category: e.target.value })}
+                  className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px]"
+                >
+                  <option value="co_equip">10 - Co. Equipment</option>
+                  <option value="rent_equip">20 - Rented Equip.</option>
+                  <option value="equip_maint">30 - Equip. Maint.</option>
+                  <option value="small_tools">40 - Small Tools</option>
+                  <option value="bulk_comm">50 - Bulk Commodities</option>
+                  <option value="eng_equip">60 - Eng. Equipment</option>
+                  <option value="subs">70 - Subcontractors</option>
+                  <option value="other">80 - Other</option>
                 </select>
               </div>
               <div className="md:col-span-2">

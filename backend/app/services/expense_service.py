@@ -18,10 +18,24 @@ class ExpenseService:
         self.catalog = get_catalog()
         self.namespace = "investflow"
         self.table_name = "expenses"
+        self._table_cache = None
+        self._table_cache_time = None
+        self._cache_ttl = 60  # Cache table reference for 60 seconds
     
     def _get_table(self):
-        """Get the expenses table"""
-        return self.catalog.load_table(f"{self.namespace}.{self.table_name}")
+        """Get the expenses table with caching"""
+        import time
+        now = time.time()
+        
+        # Return cached table if still valid
+        if self._table_cache is not None and self._table_cache_time is not None:
+            if now - self._table_cache_time < self._cache_ttl:
+                return self._table_cache
+        
+        # Load table and cache it
+        self._table_cache = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
+        self._table_cache_time = now
+        return self._table_cache
     
     def create_expense(
         self,
@@ -53,6 +67,7 @@ class ExpenseService:
                 "amount": Decimal(str(expense_data.amount)),  # Convert to Decimal
                 "vendor": expense_data.vendor,
                 "expense_type": expense_data.expense_type.value,
+                "expense_category": expense_data.expense_category.value if expense_data.expense_category else None,
                 "document_storage_id": str(expense_data.document_storage_id) if expense_data.document_storage_id else None,
                 "is_planned": expense_data.is_planned,
                 "notes": expense_data.notes,
@@ -91,21 +106,35 @@ class ExpenseService:
             Expense dictionary or None if not found
         """
         try:
-            table = self._get_table()
+            import time
+            start = time.time()
             
+            table = self._get_table()
+            logger.info(f"[PERF] get_expense: Table loaded in {time.time() - start:.3f}s")
+            
+            scan_start = time.time()
             # Query for the expense
             scan = table.scan(
                 row_filter=And(
                     EqualTo("id", str(expense_id)),
                     EqualTo("created_by_user_id", str(user_id))
-                )
+                ),
+                limit=1  # Only need one result
             )
             
+            logger.info(f"[PERF] get_expense: Scan setup in {time.time() - scan_start:.3f}s")
+            
+            arrow_start = time.time()
             # Get first result - scan.to_arrow() returns a Table
             arrow_table = scan.to_arrow()
-            if len(arrow_table) > 0:
-                return arrow_table.to_pylist()[0]
+            logger.info(f"[PERF] get_expense: Arrow conversion in {time.time() - arrow_start:.3f}s")
             
+            if len(arrow_table) > 0:
+                result = arrow_table.to_pylist()[0]
+                logger.info(f"[PERF] get_expense: Total time {time.time() - start:.3f}s")
+                return result
+            
+            logger.info(f"[PERF] get_expense: Not found, total time {time.time() - start:.3f}s")
             return None
             
         except Exception as e:
@@ -306,14 +335,18 @@ class ExpenseService:
                 if value is not None:
                     if key in ["property_id", "unit_id", "document_storage_id"] and value:
                         existing[key] = str(value)
-                    elif key == "expense_type" and value:
+                    elif key in ["expense_type", "expense_category"] and value:
                         existing[key] = value.value
                     elif key == "amount" and value:
-                        existing[key] = float(value)
+                        existing[key] = Decimal(str(value))
                     else:
                         existing[key] = value
             
             existing["updated_at"] = datetime.utcnow()
+            
+            # Ensure amount is Decimal (it may come back as float from Iceberg)
+            if "amount" in existing and not isinstance(existing["amount"], Decimal):
+                existing["amount"] = Decimal(str(existing["amount"]))
             
             # Delete old record and insert updated one
             table = self._get_table()

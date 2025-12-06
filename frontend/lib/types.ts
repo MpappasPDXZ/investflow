@@ -39,6 +39,7 @@ export interface Expense {
   amount: number;
   vendor?: string;
   expense_type: 'capex' | 'rehab' | 'pandi' | 'utilities' | 'maintenance' | 'insurance' | 'property_management' | 'other';
+  expense_category?: 'co_equip' | 'rent_equip' | 'equip_maint' | 'small_tools' | 'bulk_comm' | 'eng_equip' | 'subs' | 'other';
   document_storage_id?: string;
   is_planned: boolean;
   notes?: string;

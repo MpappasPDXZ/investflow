@@ -17,10 +17,24 @@ class DocumentService:
         self.catalog = get_catalog()
         self.namespace = "investflow"
         self.table_name = "document_metadata"
+        self._table_cache = None
+        self._table_cache_time = None
+        self._cache_ttl = 60  # Cache table reference for 60 seconds
     
     def _get_table(self):
-        """Get the document metadata table"""
-        return self.catalog.load_table(f"{self.namespace}.{self.table_name}")
+        """Get the document metadata table with caching"""
+        import time
+        now = time.time()
+        
+        # Return cached table if still valid
+        if self._table_cache is not None and self._table_cache_time is not None:
+            if now - self._table_cache_time < self._cache_ttl:
+                return self._table_cache
+        
+        # Load table and cache it
+        self._table_cache = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
+        self._table_cache_time = now
+        return self._table_cache
     
     def upload_document(
         self,

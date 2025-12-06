@@ -21,6 +21,18 @@ class ExpenseType(str, Enum):
     OTHER = "other"
 
 
+class ExpenseCategory(str, Enum):
+    """Expense category enum - numbered cost code categories for sorting"""
+    CO_EQUIP = "co_equip"           # 10 - Company Equipment
+    RENT_EQUIP = "rent_equip"       # 20 - Rented Equipment
+    EQUIP_MAINT = "equip_maint"     # 30 - Equipment Maintenance
+    SMALL_TOOLS = "small_tools"     # 40 - Small Tools
+    BULK_COMM = "bulk_comm"         # 50 - Bulk Commodities (default)
+    ENG_EQUIP = "eng_equip"         # 60 - Engineered Equipment
+    SUBS = "subs"                   # 70 - Subcontractors
+    OTHER = "other"                 # 80 - Other
+
+
 class ExpenseBase(BaseModel):
     """Base expense schema with common fields"""
     property_id: UUID = Field(..., description="Property this expense belongs to")
@@ -29,7 +41,8 @@ class ExpenseBase(BaseModel):
     date: datetime.date = Field(..., description="Date the expense occurred or is planned")
     amount: Decimal = Field(..., ge=0, description="Expense amount")
     vendor: Optional[str] = Field(None, max_length=255, description="Vendor or service provider name")
-    expense_type: ExpenseType = Field(..., description="Expense category")
+    expense_type: ExpenseType = Field(..., description="Expense type (capex, rehab, maintenance, etc.)")
+    expense_category: Optional[ExpenseCategory] = Field(None, description="Cost code category (co_equip, bulk_comm, subs, etc.)")
     document_storage_id: Optional[UUID] = Field(None, description="Link to receipt document")
     is_planned: bool = Field(default=False, description="True if planned/future expense, false if actual/receipted")
     notes: Optional[str] = Field(None, description="Additional notes")
@@ -48,6 +61,7 @@ class ExpenseUpdate(BaseModel):
     amount: Optional[Decimal] = Field(None, ge=0)
     vendor: Optional[str] = Field(None, max_length=255)
     expense_type: Optional[ExpenseType] = None
+    expense_category: Optional[ExpenseCategory] = None
     document_storage_id: Optional[UUID] = None
     is_planned: Optional[bool] = None
     notes: Optional[str] = None

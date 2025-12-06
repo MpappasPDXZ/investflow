@@ -20,8 +20,17 @@ export function useExpenses(propertyId?: string) {
 export function useExpense(expenseId: string) {
   return useQuery<Expense>({
     queryKey: ['expense', expenseId],
-    queryFn: () => apiClient.get<Expense>(`/expenses/${expenseId}`),
+    queryFn: async () => {
+      console.log(`[HOOK] 🔍 useExpense: Fetching expense ${expenseId}`);
+      const start = performance.now();
+      const data = await apiClient.get<Expense>(`/expenses/${expenseId}`);
+      const duration = performance.now() - start;
+      console.log(`[HOOK] ✅ useExpense: Loaded expense ${expenseId} in ${duration.toFixed(0)}ms`);
+      return data;
+    },
     enabled: !!expenseId,
+    staleTime: 30000, // Cache for 30 seconds
+    gcTime: 60000, // Keep in cache for 60 seconds after unmount
   });
 }
 

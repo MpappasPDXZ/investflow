@@ -110,11 +110,13 @@ def create_expenses_schema() -> pa.Schema:
     return pa.schema([
         pa.field("id", pa.string(), nullable=False),  # UUID as string
         pa.field("property_id", pa.string(), nullable=False),  # UUID as string
+        pa.field("unit_id", pa.string(), nullable=True),  # UUID as string - for multi-unit properties
         pa.field("description", pa.string(), nullable=False),
         pa.field("date", pa.date32(), nullable=False),
         pa.field("amount", pa.decimal128(10, 2), nullable=False),
         pa.field("vendor", pa.string(), nullable=True),
-        pa.field("expense_type", pa.string(), nullable=False),  # enum as string
+        pa.field("expense_type", pa.string(), nullable=False),  # enum as string (capex, rehab, etc.)
+        pa.field("expense_category", pa.string(), nullable=True),  # enum as string (co_equip, bulk_comm, etc.)
         pa.field("document_storage_id", pa.string(), nullable=True),  # UUID as string
         pa.field("is_planned", pa.bool_(), nullable=True),
         pa.field("notes", pa.string(), nullable=True),
