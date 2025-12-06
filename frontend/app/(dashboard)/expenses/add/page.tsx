@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCreateExpenseWithReceipt } from '@/lib/hooks/use-expenses';
+import { useCreateExpense, useCreateExpenseWithReceipt } from '@/lib/hooks/use-expenses';
 import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,7 +26,8 @@ const FILE_ACCEPT = 'image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.he
 export default function AddExpensePage() {
   const router = useRouter();
   const { data: properties } = usePropertiesHook();
-  const createExpense = useCreateExpenseWithReceipt();
+  const createExpense = useCreateExpense();
+  const createExpenseWithReceipt = useCreateExpenseWithReceipt();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [loading, setLoading] = useState(false);
@@ -104,27 +105,45 @@ export default function AddExpensePage() {
     setLoading(true);
 
     console.log('📝 [EXPENSE] Creating expense:', formData);
-    console.log('📤 [EXPENSE] POST /api/v1/expenses/with-receipt - Request');
 
     try {
-      const formDataToSend = new FormData();
-      formDataToSend.append('property_id', formData.property_id);
-      formDataToSend.append('description', formData.description);
-      formDataToSend.append('date', formData.date);
-      formDataToSend.append('amount', formData.amount);
-      formDataToSend.append('expense_type', formData.expense_type);
-      if (formData.expense_category) formDataToSend.append('expense_category', formData.expense_category);
-      if (formData.unit_id) formDataToSend.append('unit_id', formData.unit_id);
-      if (formData.vendor) formDataToSend.append('vendor', formData.vendor);
-      if (formData.notes) formDataToSend.append('notes', formData.notes);
       if (file) {
+        // Use with-receipt endpoint if file is provided
+        console.log('📤 [EXPENSE] POST /api/v1/expenses/with-receipt - Request');
+        const formDataToSend = new FormData();
+        formDataToSend.append('property_id', formData.property_id);
+        formDataToSend.append('description', formData.description);
+        formDataToSend.append('date', formData.date);
+        formDataToSend.append('amount', formData.amount);
+        formDataToSend.append('expense_type', formData.expense_type);
+        if (formData.expense_category) formDataToSend.append('expense_category', formData.expense_category);
+        if (formData.unit_id) formDataToSend.append('unit_id', formData.unit_id);
+        if (formData.vendor) formDataToSend.append('vendor', formData.vendor);
+        if (formData.notes) formDataToSend.append('notes', formData.notes);
         formDataToSend.append('file', file);
         formDataToSend.append('document_type', 'receipt');
-      }
 
-      const response = await createExpense.mutateAsync(formDataToSend);
+        const response = await createExpenseWithReceipt.mutateAsync(formDataToSend);
+        console.log('✅ [EXPENSE] POST /api/v1/expenses/with-receipt - Response:', response);
+      } else {
+        // Use regular endpoint if no file
+        console.log('📤 [EXPENSE] POST /api/v1/expenses - Request (no receipt)');
+        const expenseData = {
+          property_id: formData.property_id,
+          description: formData.description,
+          date: formData.date,
+          amount: parseFloat(formData.amount),
+          expense_type: formData.expense_type,
+          expense_category: formData.expense_category || undefined,
+          unit_id: formData.unit_id || undefined,
+          vendor: formData.vendor || undefined,
+          notes: formData.notes || undefined,
+        };
+
+        const response = await createExpense.mutateAsync(expenseData);
+        console.log('✅ [EXPENSE] POST /api/v1/expenses - Response:', response);
+      }
       
-      console.log('✅ [EXPENSE] POST /api/v1/expenses/with-receipt - Response:', response);
       console.log('📝 [EXPENSE] Backend to PostgreSQL/Lakekeeper: Expense created');
       
       router.push('/expenses');
@@ -291,7 +310,7 @@ export default function AddExpensePage() {
               
               {/* Receipt/Photo Upload - Mobile Friendly */}
               <div className="md:col-span-2">
-                <Label className="text-xs md:text-sm">Receipt/Invoice (Photo or PDF)</Label>
+                <Label className="text-xs md:text-sm">Receipt/Invoice (Optional)</Label>
                 <div className="mt-2">
                   {file ? (
                     // File Selected Preview

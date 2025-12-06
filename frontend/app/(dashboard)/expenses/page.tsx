@@ -63,6 +63,7 @@ export default function ExpensesPage() {
   const [selectedExpenseType, setSelectedExpenseType] = useState<string>('');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+  const [vendorFilter, setVendorFilter] = useState<string>('');
   const [expandedProperties, setExpandedProperties] = useState<Set<string>>(new Set());
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set()); // "propertyId-year"
   const [showFilters, setShowFilters] = useState(false);
@@ -111,9 +112,16 @@ export default function ExpensesPage() {
     if (endDate) {
       filtered = filtered.filter(e => e.date <= endDate);
     }
+    if (vendorFilter) {
+      const lowerFilter = vendorFilter.toLowerCase();
+      filtered = filtered.filter(e => 
+        e.vendor?.toLowerCase().includes(lowerFilter) || 
+        e.description?.toLowerCase().includes(lowerFilter)
+      );
+    }
     
     return filtered;
-  }, [expenses, selectedExpenseType, startDate, endDate]);
+  }, [expenses, selectedExpenseType, startDate, endDate, vendorFilter]);
 
   // Group by property, then by year
   const groupedByPropertyAndYear = useMemo(() => {
@@ -278,7 +286,7 @@ export default function ExpensesPage() {
           {showFilters ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </button>
         {showFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-2">
             <select
               value={selectedPropertyId}
               onChange={(e) => setSelectedPropertyId(e.target.value)}
@@ -301,6 +309,13 @@ export default function ExpensesPage() {
                 <option key={t.key} value={t.key}>{t.fullLabel}</option>
               ))}
             </select>
+            <input
+              type="text"
+              value={vendorFilter}
+              onChange={(e) => setVendorFilter(e.target.value)}
+              placeholder="Search vendor/description"
+              className="px-2 py-2 md:py-1 border border-gray-300 rounded text-sm md:text-xs min-h-[44px] md:min-h-0"
+            />
             <input
               type="date"
               value={startDate}
