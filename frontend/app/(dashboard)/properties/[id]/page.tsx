@@ -61,14 +61,17 @@ export default function PropertyDetailPage() {
     property_status: '',
     vacancy_rate: '',
     address_line1: '',
+    address_line2: '',
     city: '',
     state: '',
     zip_code: '',
     property_type: '',
+    year_built: '',
     bedrooms: '',
     bathrooms: '',
     square_feet: '',
     current_monthly_rent: '',
+    notes: '',
   });
 
   // Check if property is multi-unit
@@ -193,14 +196,17 @@ export default function PropertyDetailPage() {
       property_status: property.property_status || 'evaluating',
       vacancy_rate: property.vacancy_rate?.toString() || '0.07',
       address_line1: property.address_line1 || '',
+      address_line2: property.address_line2 || '',
       city: property.city || '',
       state: property.state || '',
       zip_code: property.zip_code || '',
       property_type: property.property_type || '',
+      year_built: property.year_built?.toString() || '',
       bedrooms: property.bedrooms?.toString() || '',
       bathrooms: property.bathrooms?.toString() || '',
       square_feet: property.square_feet?.toString() || '',
       current_monthly_rent: property.current_monthly_rent?.toString() || '',
+      notes: property.notes || '',
     });
   };
 
@@ -215,10 +221,13 @@ export default function PropertyDetailPage() {
         property_status: propertyForm.property_status || undefined,
         vacancy_rate: propertyForm.vacancy_rate ? parseFloat(propertyForm.vacancy_rate) : undefined,
         address_line1: propertyForm.address_line1 || undefined,
+        address_line2: propertyForm.address_line2 || undefined,
         city: propertyForm.city || undefined,
         state: propertyForm.state || undefined,
         zip_code: propertyForm.zip_code || undefined,
         property_type: propertyForm.property_type || undefined,
+        year_built: propertyForm.year_built ? parseInt(propertyForm.year_built) : undefined,
+        notes: propertyForm.notes || undefined,
       };
 
       // For single-unit properties, include unit details
@@ -466,6 +475,16 @@ export default function PropertyDetailPage() {
                     />
                   </div>
                   <div>
+                    <Label htmlFor="edit_address_line2">Address Line 2</Label>
+                    <Input
+                      id="edit_address_line2"
+                      value={propertyForm.address_line2}
+                      onChange={(e) => setPropertyForm({ ...propertyForm, address_line2: e.target.value })}
+                      className="text-sm"
+                      placeholder="Apt, Suite, Unit, etc."
+                    />
+                  </div>
+                  <div>
                     <Label htmlFor="edit_city">City</Label>
                     <Input
                       id="edit_city"
@@ -490,6 +509,19 @@ export default function PropertyDetailPage() {
                       value={propertyForm.zip_code}
                       onChange={(e) => setPropertyForm({ ...propertyForm, zip_code: e.target.value })}
                       className="text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_year_built">Year Built</Label>
+                    <Input
+                      id="edit_year_built"
+                      type="number"
+                      min="1800"
+                      max="2100"
+                      value={propertyForm.year_built}
+                      onChange={(e) => setPropertyForm({ ...propertyForm, year_built: e.target.value })}
+                      className="text-sm"
+                      placeholder="e.g., 1985"
                     />
                   </div>
                   <div>
@@ -562,6 +594,20 @@ export default function PropertyDetailPage() {
                     </>
                   )}
                 </div>
+                
+                {/* Notes field - always shown */}
+                <div className="mt-4 pt-4 border-t">
+                  <Label htmlFor="edit_notes">Notes</Label>
+                  <textarea
+                    id="edit_notes"
+                    value={propertyForm.notes}
+                    onChange={(e) => setPropertyForm({ ...propertyForm, notes: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mt-1"
+                    placeholder="Additional details about the property..."
+                  />
+                </div>
+                
                 <div className="flex gap-2 mt-4">
                   <Button
                     type="button"

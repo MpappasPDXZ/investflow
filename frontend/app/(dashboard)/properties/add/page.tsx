@@ -22,14 +22,17 @@ export default function AddPropertyPage() {
     property_status: 'evaluating',
     vacancy_rate: '0.07',
     address_line1: '',
+    address_line2: '',
     city: '',
     state: '',
     zip_code: '',
     property_type: '',
+    year_built: '',
     bedrooms: '',
     bathrooms: '',
     square_feet: '',
     current_monthly_rent: '',
+    notes: '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -52,10 +55,13 @@ export default function AddPropertyPage() {
         vacancy_rate: formData.vacancy_rate ? parseFloat(formData.vacancy_rate) : 0.07,
         monthly_rent_to_income_ratio: 2.75,
         address_line1: formData.address_line1 || undefined,
+        address_line2: formData.address_line2 || undefined,
         city: formData.city || undefined,
         state: formData.state || undefined,
         zip_code: formData.zip_code || undefined,
         property_type: formData.property_type || undefined,
+        year_built: formData.year_built ? parseInt(formData.year_built) : undefined,
+        notes: formData.notes || undefined,
         has_units: isMultiUnit,
         unit_count: isMultiUnit ? 0 : null,
       };
@@ -135,27 +141,7 @@ export default function AddPropertyPage() {
                   onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
                   className="text-sm"
                 />
-              </div>
-              <div>
-                <Label htmlFor="purchase_date">Purchase Date</Label>
-                <Input
-                  id="purchase_date"
-                  type="date"
-                  value={formData.purchase_date}
-                  onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
-                  className="text-sm"
-                />
                 <p className="text-xs text-gray-500 mt-1">Used for depreciation calculations</p>
-              </div>
-              <div>
-                <Label htmlFor="purchase_date">Purchase Date</Label>
-                <Input
-                  id="purchase_date"
-                  type="date"
-                  value={formData.purchase_date}
-                  onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
-                  className="text-sm"
-                />
               </div>
               <div>
                 <Label htmlFor="down_payment">Down Payment</Label>
@@ -226,6 +212,16 @@ export default function AddPropertyPage() {
                 />
               </div>
               <div>
+                <Label htmlFor="address_line2">Address Line 2</Label>
+                <Input
+                  id="address_line2"
+                  value={formData.address_line2}
+                  onChange={(e) => setFormData({ ...formData, address_line2: e.target.value })}
+                  className="text-sm"
+                  placeholder="Apt, Suite, Unit, etc."
+                />
+              </div>
+              <div>
                 <Label htmlFor="city">City</Label>
                 <Input
                   id="city"
@@ -250,6 +246,19 @@ export default function AddPropertyPage() {
                   value={formData.zip_code}
                   onChange={(e) => setFormData({ ...formData, zip_code: e.target.value })}
                   className="text-sm"
+                />
+              </div>
+              <div>
+                <Label htmlFor="year_built">Year Built</Label>
+                <Input
+                  id="year_built"
+                  type="number"
+                  min="1800"
+                  max="2100"
+                  value={formData.year_built}
+                  onChange={(e) => setFormData({ ...formData, year_built: e.target.value })}
+                  className="text-sm"
+                  placeholder="e.g., 1985"
                 />
               </div>
               <div className="col-span-2">
@@ -329,6 +338,19 @@ export default function AddPropertyPage() {
                 </div>
               </div>
             )}
+
+            {/* Notes field - always shown */}
+            <div className="pt-4 border-t">
+              <Label htmlFor="notes">Notes</Label>
+              <textarea
+                id="notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mt-1"
+                placeholder="Additional details about the property..."
+              />
+            </div>
 
             {error && (
               <div className="text-sm text-red-600 bg-red-50 p-3 rounded">
