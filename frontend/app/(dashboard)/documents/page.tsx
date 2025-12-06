@@ -283,15 +283,15 @@ export default function DocumentsPage() {
     return acc;
   }, {} as Record<string, Document[]>);
 
-  // Group photos by type (photo vs inspection) and sort by date
-  const photosByType = typeFilter === "photo" ? {
-    photo: filteredDocs
-      .filter((d) => d.document_type === "photo")
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-    inspection: filteredDocs
-      .filter((d) => d.document_type === "inspection")
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-  } : { photo: [], inspection: [] };
+  // Group photos by property (similar to expenses page)
+  const photosByProperty = typeFilter === "photo" ? 
+    filteredDocs.reduce((acc, doc) => {
+      const key = doc.property_id || "unassigned";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(doc);
+      return acc;
+    }, {} as Record<string, Document[]>) 
+    : {};
 
   if (loading) {
     return (
@@ -337,107 +337,209 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      {/* Photo Grid View */}
+      {/* Photo Table View - Organized by Property */}
       {typeFilter === "photo" ? (
-        <div className="space-y-6">
-          {/* Property Photos Group */}
+        Object.entries(photosByProperty).length === 0 ? (
           <Card>
-            <CardHeader className="py-3 px-4 bg-muted/50">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Image className="h-4 w-4" />
-                Property Photos
-                <Badge variant="secondary" className="ml-auto">
-                  {photosByType.photo.length}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              {photosByType.photo.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No property photos yet
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {photosByType.photo.map((doc) => (
-                    <ReceiptViewer
-                      key={doc.id}
-                      documentId={doc.id}
-                      fileName={doc.display_name || doc.file_name}
-                      fileType={doc.file_type}
-                      trigger={
-                        <div
-                          className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer border hover:border-primary transition-colors flex items-center justify-center"
-                        >
-                          <div className="flex flex-col items-center gap-2 p-4 text-center">
-                            <Image className="h-8 w-8 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground truncate w-full px-2">
-                              {doc.display_name || doc.file_name}
-                            </span>
-                            <span className="text-xs text-muted-foreground/70">
-                              {new Date(doc.created_at).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Eye className="h-6 w-6 text-white" />
-                          </div>
-                        </div>
-                      }
-                    />
-                  ))}
-                </div>
-              )}
+            <CardContent className="flex flex-col items-center py-8">
+              <Image className="h-10 w-10 text-muted-foreground mb-3" />
+              <p className="text-muted-foreground text-sm">
+                No photos yet. Add photos from the vault.
+              </p>
             </CardContent>
           </Card>
-
-          {/* Inspection Photos Group */}
-          <Card>
-            <CardHeader className="py-3 px-4 bg-muted/50">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Inspection Photos
-                <Badge variant="secondary" className="ml-auto">
-                  {photosByType.inspection.length}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              {photosByType.inspection.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No inspection photos yet
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {photosByType.inspection.map((doc) => (
-                    <ReceiptViewer
-                      key={doc.id}
-                      documentId={doc.id}
-                      fileName={doc.display_name || doc.file_name}
-                      fileType={doc.file_type}
-                      trigger={
-                        <div
-                          className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer border hover:border-primary transition-colors flex items-center justify-center"
-                        >
-                          <div className="flex flex-col items-center gap-2 p-4 text-center">
-                            <FileText className="h-8 w-8 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground truncate w-full px-2">
-                              {doc.display_name || doc.file_name}
-                            </span>
-                            <span className="text-xs text-muted-foreground/70">
-                              {new Date(doc.created_at).toLocaleDateString()}
-                            </span>
+        ) : (
+          Object.entries(photosByProperty).map(([propertyId, docs]) => (
+            <Card key={propertyId} className="overflow-hidden">
+              <CardHeader className="py-3 px-4 bg-muted/50">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  {propertyId === "unassigned"
+                    ? "Unassigned Photos"
+                    : getPropertyName(propertyId)}
+                  <Badge variant="secondary" className="ml-auto">
+                    {docs.length}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              
+              {/* Desktop Table View */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="text-xs">
+                      <TableHead className="w-[35%]">Name</TableHead>
+                      <TableHead className="w-[15%]">Type</TableHead>
+                      <TableHead className="w-[12%]">Date</TableHead>
+                      <TableHead className="w-[38%] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {docs.map((doc) => (
+                      <TableRow key={doc.id} className="text-sm">
+                        <TableCell className="py-2">
+                          <div className="flex items-center gap-2">
+                            <Image className="h-4 w-4 text-muted-foreground" />
+                            <div className="flex flex-col">
+                              <span
+                                className="truncate max-w-[220px] font-medium"
+                                title={getDisplayName(doc)}
+                              >
+                                {getDisplayName(doc)}
+                              </span>
+                              {doc.display_name && (
+                                <span
+                                  className="text-xs text-muted-foreground truncate max-w-[220px]"
+                                  title={doc.file_name}
+                                >
+                                  {doc.file_name}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Eye className="h-6 w-6 text-white" />
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${getDocTypeBadge(doc.document_type)}`}
+                          >
+                            {doc.document_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 text-muted-foreground">
+                          {formatDate(doc.created_at || doc.uploaded_at)}
+                        </TableCell>
+                        <TableCell className="py-2 text-right">
+                          <div className="flex justify-end gap-1">
+                            <ReceiptViewer
+                              documentId={doc.id}
+                              fileName={getDisplayName(doc)}
+                              fileType={doc.file_type}
+                              trigger={
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  title="View photo"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Button>
+                              }
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => openEditDialog(doc)}
+                              title="Edit"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => handleDownload(doc)}
+                              title="Download"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                              onClick={() => handleDelete(doc.id)}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              
+              {/* Mobile Card View */}
+              <div className="md:hidden divide-y">
+                {docs.map((doc) => (
+                  <div key={doc.id} className="p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-muted rounded-lg">
+                        <Image className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate" title={getDisplayName(doc)}>
+                          {getDisplayName(doc)}
+                        </p>
+                        {doc.display_name && (
+                          <p className="text-xs text-muted-foreground truncate" title={doc.file_name}>
+                            {doc.file_name}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${getDocTypeBadge(doc.document_type)}`}
+                          >
+                            {doc.document_type}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDate(doc.created_at || doc.uploaded_at)}
+                          </span>
                         </div>
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-end gap-2">
+                      <ReceiptViewer
+                        documentId={doc.id}
+                        fileName={getDisplayName(doc)}
+                        fileType={doc.file_type}
+                        trigger={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-10 px-3"
+                          >
+                            <Eye className="h-4 w-4 mr-1.5" />
+                            View
+                          </Button>
+                        }
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 px-3"
+                        onClick={() => openEditDialog(doc)}
+                      >
+                        <Pencil className="h-4 w-4 mr-1.5" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 px-3"
+                        onClick={() => handleDownload(doc)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 px-3 text-destructive hover:text-destructive border-destructive/30"
+                        onClick={() => handleDelete(doc.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))
+        )
       ) : documents.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center py-8">
