@@ -62,15 +62,8 @@ class DocumentService:
             )
             
             # Create document record
-            import json
             doc_id = str(uuid.uuid4())
             now = datetime.utcnow()
-            
-            # Serialize document_metadata as JSON string for Iceberg storage
-            metadata_dict = document_metadata or {}
-            if display_name:
-                metadata_dict["display_name"] = display_name
-            metadata_json = json.dumps(metadata_dict) if metadata_dict else None
             
             record = {
                 "id": doc_id,
@@ -84,7 +77,8 @@ class DocumentService:
                 "file_type": blob_metadata["file_type"],
                 "file_size": blob_metadata["file_size"],
                 "document_type": document_type,
-                "document_metadata": metadata_json,
+                "document_metadata": document_metadata or {},
+                "display_name": display_name,  # Direct column, not nested in metadata
                 "uploaded_at": now,
                 "expires_at": None,
                 "is_deleted": False,
@@ -260,11 +254,14 @@ class DocumentService:
         """
         try:
             # Get the document
+            logger.info(f"update_document: Getting document {document_id} for user {user_id}")
             document = self.get_document(document_id, user_id)
             
             if not document:
+                logger.warning(f"update_document: Document {document_id} not found for user {user_id}")
                 return None
             
+            logger.info(f"update_document: Found document, getting table")
             table = self._get_table()
             
             # Delete old record
@@ -287,23 +284,9 @@ class DocumentService:
             if document_type is not None:
                 document["document_type"] = document_type
             
-            # Handle display_name in document_metadata
-            import json
-            metadata = document.get("document_metadata")
-            # Parse if it's a JSON string (Iceberg might return it this way)
-            if isinstance(metadata, str):
-                try:
-                    metadata = json.loads(metadata)
-                except (json.JSONDecodeError, TypeError):
-                    metadata = {}
-            elif not isinstance(metadata, dict):
-                metadata = {}
-            
+            # Set display_name directly (it's now a direct column)
             if display_name is not None:
-                metadata["display_name"] = display_name
-            
-            # Serialize metadata back to JSON string for Iceberg storage
-            document["document_metadata"] = json.dumps(metadata) if metadata else None
+                document["display_name"] = display_name
             
             document["updated_at"] = datetime.utcnow()
             

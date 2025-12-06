@@ -40,21 +40,8 @@ class DocumentResponse(BaseModel):
     
     @classmethod
     def from_document(cls, doc: Dict[str, Any]) -> "DocumentResponse":
-        """Create response from document dict, extracting display_name from metadata"""
-        import json
+        """Create response from document dict"""
         try:
-            # Handle document_metadata - could be dict, string (JSON), None, or other format from Iceberg
-            metadata = doc.get("document_metadata")
-            if isinstance(metadata, str):
-                # Parse JSON string to dict
-                try:
-                    metadata = json.loads(metadata)
-                except (json.JSONDecodeError, TypeError):
-                    metadata = {}
-            elif not isinstance(metadata, dict):
-                metadata = {}
-            display_name = metadata.get("display_name") if metadata else None
-            
             # Handle document_type - validate against enum, fallback to OTHER
             doc_type = doc.get("document_type")
             if doc_type:
@@ -77,6 +64,16 @@ class DocumentResponse(BaseModel):
             if user_id == "" or user_id == "None":
                 user_id = None
             
+            # Get display_name directly (it's now a direct column)
+            display_name = doc.get("display_name")
+            if display_name == "" or display_name == "None":
+                display_name = None
+            
+            # Handle document_metadata for backwards compatibility
+            metadata = doc.get("document_metadata")
+            if not isinstance(metadata, dict):
+                metadata = None
+            
             return cls(
                 id=doc["id"],
                 blob_location=doc["blob_location"],
@@ -87,7 +84,7 @@ class DocumentResponse(BaseModel):
                 property_id=property_id,
                 unit_id=unit_id,
                 display_name=display_name,
-                document_metadata=metadata if metadata else None,
+                document_metadata=metadata,
                 uploaded_by_user_id=user_id,
                 created_at=doc["created_at"],
                 updated_at=doc["updated_at"],

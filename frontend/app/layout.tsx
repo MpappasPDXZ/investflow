@@ -6,6 +6,9 @@ import { VersionIndicator } from '@/components/VersionIndicator'
 export const metadata: Metadata = {
   title: 'InvestFlow - Rental Property Management',
   description: 'Manage your rental properties, expenses, and cash flow analysis',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({
