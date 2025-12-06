@@ -200,16 +200,27 @@ export default function ExpensesPage() {
 
   const exportToCSV = () => {
     if (!expenses?.items) return;
-    const headers = ['Property', 'Date', 'Description', 'Amount', 'Type', 'Vendor', 'Notes'];
+    
+    // Include ALL expense fields in the export
+    const headers = ['ID', 'Property', 'Unit ID', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Is Planned', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
+    
     const rows = expenses.items.map(e => [
+      e.id,
       getPropertyName(e.property_id || 'unassigned'),
+      e.unit_id || '',
       e.date,
       `"${e.description.replace(/"/g, '""')}"`,
       e.amount.toFixed(2),
-      e.expense_type,
       e.vendor || '',
+      e.expense_type,
+      e.expense_category || '',
+      e.is_planned ? 'Yes' : 'No',
       `"${(e.notes || '').replace(/"/g, '""')}"`,
+      e.document_storage_id ? 'Yes' : 'No',
+      e.created_at,
+      e.updated_at
     ]);
+    
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
