@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useExpenses, useExpenseSummary, useDeleteExpense } from '@/lib/hooks/use-expenses';
 import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
@@ -66,11 +66,35 @@ export default function ExpensesPage() {
   const [expandedProperties, setExpandedProperties] = useState<Set<string>>(new Set());
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set()); // "propertyId-year"
   const [showFilters, setShowFilters] = useState(false);
+  const [hasInitializedExpansion, setHasInitializedExpansion] = useState(false);
   
   const { data: properties } = usePropertiesHook();
   const { data: expenses, isLoading } = useExpenses(selectedPropertyId || undefined);
   const { data: summary } = useExpenseSummary(selectedPropertyId || undefined);
   const deleteExpense = useDeleteExpense();
+
+  // Auto-expand current year on initial load
+  useEffect(() => {
+    if (!hasInitializedExpansion && expenses?.items && expenses.items.length > 0) {
+      const currentYear = new Date().getFullYear();
+      const newExpandedYears = new Set<string>();
+      const newExpandedProperties = new Set<string>();
+      
+      // Find all properties that have expenses in the current year
+      expenses.items.forEach(expense => {
+        const expenseYear = new Date(expense.date).getFullYear();
+        if (expenseYear === currentYear) {
+          const propId = expense.property_id || 'unassigned';
+          newExpandedProperties.add(propId);
+          newExpandedYears.add(`${propId}-${currentYear}`);
+        }
+      });
+      
+      setExpandedProperties(newExpandedProperties);
+      setExpandedYears(newExpandedYears);
+      setHasInitializedExpansion(true);
+    }
+  }, [expenses, hasInitializedExpansion]);
 
   // Filter expenses
   const filteredExpenses = useMemo(() => {
