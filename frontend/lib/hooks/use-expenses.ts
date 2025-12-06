@@ -45,6 +45,8 @@ export function useCreateExpense() {
       amount: number;
       vendor?: string;
       expense_type: string;
+      expense_category?: string;
+      unit_id?: string;
       is_planned?: boolean;
       notes?: string;
     }) => apiClient.post<Expense>('/expenses', data),

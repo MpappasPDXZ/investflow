@@ -53,7 +53,8 @@ class ExpenseService:
             Created expense dictionary
         """
         try:
-            table = self._get_table()
+            # Get fresh table reference for writes to avoid lock issues
+            table = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
             
             expense_id = str(uuid.uuid4())
             now = datetime.utcnow()
@@ -83,6 +84,10 @@ class ExpenseService:
             table.append(arrow_table)
             
             logger.info(f"Created expense: {expense_id}")
+            
+            # Invalidate cache after write to ensure fresh table for next operation
+            self._table_cache = None
+            self._table_cache_time = None
             
             return record
             
@@ -354,8 +359,8 @@ class ExpenseService:
             if "amount" in existing and not isinstance(existing["amount"], Decimal):
                 existing["amount"] = Decimal(str(existing["amount"]))
             
-            # Delete old record and insert updated one
-            table = self._get_table()
+            # Get fresh table reference for writes to avoid lock issues
+            table = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
             
             table.delete(
                 And(
@@ -370,6 +375,10 @@ class ExpenseService:
             table.append(arrow_table)
             
             logger.info(f"Updated expense: {expense_id}")
+            
+            # Invalidate cache after write
+            self._table_cache = None
+            self._table_cache_time = None
             
             return existing
             
@@ -399,8 +408,8 @@ class ExpenseService:
             if not existing:
                 return False
             
-            # Delete the record
-            table = self._get_table()
+            # Get fresh table reference for writes to avoid lock issues
+            table = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
             
             table.delete(
                 And(
@@ -410,6 +419,10 @@ class ExpenseService:
             )
             
             logger.info(f"Deleted expense: {expense_id}")
+            
+            # Invalidate cache after write
+            self._table_cache = None
+            self._table_cache_time = None
             
             return True
             

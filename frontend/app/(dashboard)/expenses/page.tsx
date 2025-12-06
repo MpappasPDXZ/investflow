@@ -480,7 +480,6 @@ export default function ExpensesPage() {
                                   <ReceiptViewer
                                     documentId={expense.document_storage_id}
                                     fileName={expense.description}
-                                    fileType="image/jpeg"
                                     trigger={
                                       <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
                                         <Eye className="h-3 w-3" />

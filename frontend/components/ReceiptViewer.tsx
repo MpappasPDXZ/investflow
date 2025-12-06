@@ -33,7 +33,7 @@ export function ReceiptViewer({
   onOpenChange,
 }: ReceiptViewerProps) {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(propDownloadUrl || null);
-  const [loading, setLoading] = useState(!propDownloadUrl);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
@@ -45,6 +45,7 @@ export function ReceiptViewer({
   const [imageLoading, setImageLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // LAZY LOADING: Only fetch when dialog opens
   useEffect(() => {
     async function fetchReceipt() {
       if (propDownloadUrl) {
@@ -53,6 +54,15 @@ export function ReceiptViewer({
         return;
       }
 
+      if (!isOpen) {
+        return; // Don't fetch until user opens the dialog
+      }
+
+      if (downloadUrl) {
+        return; // Already fetched
+      }
+
+      setLoading(true);
       try {
         let response: { download_url: string };
         
@@ -76,10 +86,8 @@ export function ReceiptViewer({
       }
     }
 
-    if ((expenseId || documentId) && !propDownloadUrl) {
-      fetchReceipt();
-    }
-  }, [expenseId, documentId, propDownloadUrl]);
+    fetchReceipt();
+  }, [isOpen, expenseId, documentId, propDownloadUrl, downloadUrl]);
 
   // Reset zoom when dialog opens
   useEffect(() => {
@@ -97,14 +105,6 @@ export function ReceiptViewer({
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.25, 0.5));
   const handleResetZoom = () => setZoom(1);
-
-  if (loading) {
-    return <span className="text-gray-400 text-sm">Loading...</span>;
-  }
-
-  if (error || !downloadUrl) {
-    return <span className="text-red-500 text-sm">No receipt</span>;
-  }
 
   const displayName = fileName || 
     (isImage ? 'Image' : isPdf ? 'PDF' : 'Document');
@@ -200,7 +200,18 @@ export function ReceiptViewer({
             className="flex-1 overflow-auto bg-gray-100 flex items-start md:items-center justify-center p-2 md:p-4 touch-pan-x touch-pan-y"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
-            {isImage ? (
+            {loading ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-12">
+                <Loader2 className="h-12 w-12 animate-spin text-gray-400" />
+                <p className="text-gray-500">Loading document...</p>
+              </div>
+            ) : error || !downloadUrl ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-12">
+                <FileText className="h-16 w-16 text-red-400" />
+                <p className="text-red-500">Failed to load document</p>
+                <p className="text-sm text-gray-500">{error || 'No download URL available'}</p>
+              </div>
+            ) : isImage ? (
               <div 
                 className="transition-transform duration-200 ease-out w-full flex justify-center"
                 style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
