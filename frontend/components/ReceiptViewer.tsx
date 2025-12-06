@@ -174,17 +174,24 @@ export function ReceiptViewer({
                   </>
                 )}
                 <a
-                  href={downloadUrl || undefined}
+                  href={downloadUrl || '#'}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex shrink-0"
+                  className={`inline-flex shrink-0 ${!downloadUrl ? 'pointer-events-none opacity-50' : ''}`}
+                  onClick={(e) => !downloadUrl && e.preventDefault()}
                 >
-                  <Button variant="outline" size="sm" className="h-9 px-3">
+                  <Button variant="outline" size="sm" className="h-9 px-3" disabled={!downloadUrl}>
                     <ExternalLink className="h-4 w-4 md:mr-1" />
                     <span className="hidden md:inline">Open</span>
                   </Button>
                 </a>
-                <a href={downloadUrl || undefined} download className="inline-flex shrink-0">
+                <a 
+                  href={downloadUrl || '#'} 
+                  download 
+                  className={`inline-flex shrink-0 ${!downloadUrl ? 'pointer-events-none opacity-50' : ''}`}
+                  onClick={(e) => !downloadUrl && e.preventDefault()}
+                >
+                  <Button variant="outline" size="sm" className="h-9 px-3" disabled={!downloadUrl}>
                   <Button variant="outline" size="sm" className="h-9 px-3">
                     <Download className="h-4 w-4 md:mr-1" />
                     <span className="hidden md:inline">Download</span>
@@ -222,7 +229,7 @@ export function ReceiptViewer({
                   </div>
                 )}
                 <img
-                  src={downloadUrl || undefined}
+                  src={downloadUrl || ''}
                   alt={displayName}
                   className="max-w-full h-auto rounded-lg shadow-lg"
                   style={{ 
@@ -241,14 +248,25 @@ export function ReceiptViewer({
                   <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
                   <p className="text-gray-600 mb-4">PDF preview works best on desktop</p>
                   <div className="flex flex-col gap-3 items-center">
-                    <a href={downloadUrl || undefined} target="_blank" rel="noopener noreferrer">
-                      <Button className="min-h-[44px]">
+                    <a 
+                      href={downloadUrl || '#'} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className={!downloadUrl ? 'pointer-events-none opacity-50' : ''}
+                      onClick={(e) => !downloadUrl && e.preventDefault()}
+                    >
+                      <Button className="min-h-[44px]" disabled={!downloadUrl}>
                         <ExternalLink className="h-4 w-4 mr-2" />
                         Open in New Tab
                       </Button>
                     </a>
-                    <a href={downloadUrl || undefined} download>
-                      <Button variant="outline" className="min-h-[44px]">
+                    <a 
+                      href={downloadUrl || '#'} 
+                      download
+                      className={!downloadUrl ? 'pointer-events-none opacity-50' : ''}
+                      onClick={(e) => !downloadUrl && e.preventDefault()}
+                    >
+                      <Button variant="outline" className="min-h-[44px]" disabled={!downloadUrl}>
                         <Download className="h-4 w-4 mr-2" />
                         Download PDF
                       </Button>
@@ -257,7 +275,7 @@ export function ReceiptViewer({
                 </div>
                 {/* Desktop PDF viewer */}
                 <iframe
-                  src={downloadUrl ? `${downloadUrl}#view=FitH` : undefined}
+                  src={downloadUrl ? `${downloadUrl}#view=FitH` : ''}
                   className="hidden md:block w-full h-full rounded-lg shadow-lg bg-white"
                   title={displayName}
                 />
@@ -266,8 +284,13 @@ export function ReceiptViewer({
               <div className="text-center text-gray-500 py-8">
                 <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
                 <p className="mb-4">Preview not available for this file type</p>
-                <a href={downloadUrl || undefined} download>
-                  <Button className="min-h-[44px]">
+                <a 
+                  href={downloadUrl || '#'} 
+                  download
+                  className={!downloadUrl ? 'pointer-events-none opacity-50' : ''}
+                  onClick={(e) => !downloadUrl && e.preventDefault()}
+                >
+                  <Button className="min-h-[44px]" disabled={!downloadUrl}>
                     <Download className="h-4 w-4 mr-2" />
                     Download File
                   </Button>
