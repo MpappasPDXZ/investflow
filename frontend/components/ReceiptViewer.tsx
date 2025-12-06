@@ -192,7 +192,6 @@ export function ReceiptViewer({
                   onClick={(e) => !downloadUrl && e.preventDefault()}
                 >
                   <Button variant="outline" size="sm" className="h-9 px-3" disabled={!downloadUrl}>
-                  <Button variant="outline" size="sm" className="h-9 px-3">
                     <Download className="h-4 w-4 md:mr-1" />
                     <span className="hidden md:inline">Download</span>
                   </Button>
