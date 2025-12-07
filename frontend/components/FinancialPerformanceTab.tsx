@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TrendingUp, DollarSign, Calendar, TrendingDown, Percent } from 'lucide-react';
+import { DollarSign, Minus, Equal } from 'lucide-react';
 import { useFinancialPerformance } from '@/lib/hooks/use-financial-performance';
 
 interface Props {
@@ -23,7 +23,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
   if (isLoading) {
     return (
       <div className="p-8">
-        <div className="text-gray-500">Loading financial performance...</div>
+        <div className="text-gray-500 text-sm">Loading financial performance...</div>
       </div>
     );
   }
@@ -31,7 +31,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
   if (error) {
     return (
       <div className="p-8">
-        <div className="text-red-600">Error loading financial performance</div>
+        <div className="text-red-600 text-sm">Error loading financial performance</div>
       </div>
     );
   }
@@ -39,7 +39,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
   if (!performance) {
     return (
       <div className="p-8">
-        <div className="text-gray-500">No financial data available</div>
+        <div className="text-gray-500 text-sm">No financial data available</div>
       </div>
     );
   }
@@ -48,171 +48,271 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   };
 
   const formatPercent = (value: number | null) => {
-    if (value === null) return 'N/A';
+    if (value === null || value === undefined) return 'N/A';
     return `${value.toFixed(2)}%`;
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Unit Selector for Multi-Unit Properties */}
       {isMultiUnit && units && units.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-bold">Select Unit</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="All Units (Property Total)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">All Units (Property Total)</SelectItem>
-                {units.map((unit) => (
-                  <SelectItem key={unit.id} value={unit.id}>
-                    {unit.unit_number}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Select Unit</label>
+          <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
+            <SelectTrigger className="w-full max-w-md">
+              <SelectValue placeholder="All Units (Property Total)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Units (Property Total)</SelectItem>
+              {units.map((unit) => (
+                <SelectItem key={unit.id} value={unit.id}>
+                  {unit.unit_number}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       )}
 
-      {/* Year-to-Date Performance */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm font-bold">
-            <Calendar className="h-4 w-4" />
-            Year-to-Date Performance ({new Date().getFullYear()})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-              <div className="text-sm text-green-700 font-medium mb-1">Rent Collected</div>
-              <div className="text-2xl font-bold text-green-900">
-                {formatCurrency(performance.ytd_rent)}
-              </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Year-to-Date Card */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-bold">Year-to-Date ({new Date().getFullYear()})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {/* Rent Collected */}
+            <div className="flex justify-between items-center py-1.5 border-b">
+              <span className="text-xs text-gray-600">Rent Collected</span>
+              <span className="text-xs font-medium text-gray-900">{formatCurrency(performance.ytd_rent)}</span>
             </div>
             
-            <div className="p-4 bg-red-50 rounded-lg border border-red-200">
-              <div className="text-sm text-red-700 font-medium mb-1">Expenses (excl. Rehab)</div>
-              <div className="text-2xl font-bold text-red-900">
-                {formatCurrency(performance.ytd_expenses)}
-              </div>
+            {/* Minus label */}
+            <div className="flex items-center gap-1.5 py-0.5">
+              <Minus className="h-2.5 w-2.5 text-gray-400" />
+              <span className="text-[10px] text-gray-500 font-medium">Less: Expenses</span>
             </div>
             
-            <div className={`p-4 rounded-lg border ${
+            {/* PITI */}
+            {performance.ytd_piti > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">PITI</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_piti)})</span>
+              </div>
+            )}
+            
+            {/* Utilities */}
+            {performance.ytd_utilities > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Utilities</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_utilities)})</span>
+              </div>
+            )}
+            
+            {/* Maintenance */}
+            {performance.ytd_maintenance > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Maintenance</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_maintenance)})</span>
+              </div>
+            )}
+            
+            {/* CapEx */}
+            {performance.ytd_capex > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">CapEx</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_capex)})</span>
+              </div>
+            )}
+            
+            {/* Insurance */}
+            {performance.ytd_insurance > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Insurance</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_insurance)})</span>
+              </div>
+            )}
+            
+            {/* Property Management */}
+            {performance.ytd_property_management > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Property Mgmt</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_property_management)})</span>
+              </div>
+            )}
+            
+            {/* Other */}
+            {performance.ytd_other > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Other</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_other)})</span>
+              </div>
+            )}
+            
+            {/* Total Expenses */}
+            <div className="flex justify-between items-center py-1.5 border-t border-b font-medium">
+              <span className="text-xs text-gray-700">Total Expenses</span>
+              <span className="text-xs text-red-600">({formatCurrency(performance.ytd_expenses)})</span>
+            </div>
+            
+            {/* Equals label */}
+            <div className="flex items-center gap-1.5 py-0.5">
+              <Equal className="h-2.5 w-2.5 text-gray-400" />
+              <span className="text-[10px] text-gray-500 font-medium">Equals:</span>
+            </div>
+            
+            {/* Profit/Loss */}
+            <div className={`flex justify-between items-center p-2 rounded ${
               performance.ytd_profit_loss >= 0
-                ? 'bg-blue-50 border-blue-200'
-                : 'bg-orange-50 border-orange-200'
+                ? 'bg-green-50 border border-green-200'
+                : 'bg-red-50 border border-red-200'
             }`}>
-              <div className={`text-sm font-medium mb-1 flex items-center gap-1 ${
-                performance.ytd_profit_loss >= 0 ? 'text-blue-700' : 'text-orange-700'
+              <span className={`text-xs font-bold ${
+                performance.ytd_profit_loss >= 0 ? 'text-green-700' : 'text-red-700'
               }`}>
-                {performance.ytd_profit_loss >= 0 ? (
-                  <TrendingUp className="h-4 w-4" />
-                ) : (
-                  <TrendingDown className="h-4 w-4" />
-                )}
                 Profit / (Loss)
-              </div>
-              <div className={`text-2xl font-bold ${
-                performance.ytd_profit_loss >= 0 ? 'text-blue-900' : 'text-orange-900'
+              </span>
+              <span className={`text-base font-bold ${
+                performance.ytd_profit_loss >= 0 ? 'text-green-900' : 'text-red-900'
               }`}>
                 {formatCurrency(performance.ytd_profit_loss)}
-              </div>
+              </span>
             </div>
-          </div>
-          
-          <div className="mt-4 pt-4 border-t text-sm text-gray-600">
-            <strong>Note:</strong> Expenses exclude rehab costs, as those are included in P&I financing.
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* Cumulative (All-Time) Performance */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm font-bold">
-            <DollarSign className="h-4 w-4" />
-            Cumulative Performance (All-Time)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-              <div className="text-sm text-green-700 font-medium mb-1">Total Rent Collected</div>
-              <div className="text-2xl font-bold text-green-900">
-                {formatCurrency(performance.cumulative_rent)}
-              </div>
+        {/* Cumulative (All-Time) Card */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-bold">Cumulative (All-Time)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {/* Rent Collected */}
+            <div className="flex justify-between items-center py-1.5 border-b">
+              <span className="text-xs text-gray-600">Rent Collected</span>
+              <span className="text-xs font-medium text-gray-900">{formatCurrency(performance.cumulative_rent)}</span>
             </div>
             
-            <div className="p-4 bg-red-50 rounded-lg border border-red-200">
-              <div className="text-sm text-red-700 font-medium mb-1">Total Expenses</div>
-              <div className="text-2xl font-bold text-red-900">
-                {formatCurrency(performance.cumulative_expenses)}
-              </div>
+            {/* Minus label */}
+            <div className="flex items-center gap-1.5 py-0.5">
+              <Minus className="h-2.5 w-2.5 text-gray-400" />
+              <span className="text-[10px] text-gray-500 font-medium">Less: Expenses</span>
             </div>
             
-            <div className={`p-4 rounded-lg border ${
+            {/* PITI */}
+            {performance.cumulative_piti > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">PITI</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_piti)})</span>
+              </div>
+            )}
+            
+            {/* Utilities */}
+            {performance.cumulative_utilities > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Utilities</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_utilities)})</span>
+              </div>
+            )}
+            
+            {/* Maintenance */}
+            {performance.cumulative_maintenance > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Maintenance</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_maintenance)})</span>
+              </div>
+            )}
+            
+            {/* CapEx */}
+            {performance.cumulative_capex > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">CapEx</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_capex)})</span>
+              </div>
+            )}
+            
+            {/* Insurance */}
+            {performance.cumulative_insurance > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Insurance</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_insurance)})</span>
+              </div>
+            )}
+            
+            {/* Property Management */}
+            {performance.cumulative_property_management > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Property Mgmt</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_property_management)})</span>
+              </div>
+            )}
+            
+            {/* Other */}
+            {performance.cumulative_other > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Other</span>
+                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_other)})</span>
+              </div>
+            )}
+            
+            {/* Total Expenses */}
+            <div className="flex justify-between items-center py-1.5 border-t border-b font-medium">
+              <span className="text-xs text-gray-700">Total Expenses</span>
+              <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_expenses)})</span>
+            </div>
+            
+            {/* Equals label */}
+            <div className="flex items-center gap-1.5 py-0.5">
+              <Equal className="h-2.5 w-2.5 text-gray-400" />
+              <span className="text-[10px] text-gray-500 font-medium">Equals:</span>
+            </div>
+            
+            {/* Profit/Loss */}
+            <div className={`flex justify-between items-center p-2 rounded ${
               performance.cumulative_profit_loss >= 0
-                ? 'bg-blue-50 border-blue-200'
-                : 'bg-orange-50 border-orange-200'
+                ? 'bg-green-50 border border-green-200'
+                : 'bg-red-50 border border-red-200'
             }`}>
-              <div className={`text-sm font-medium mb-1 flex items-center gap-1 ${
-                performance.cumulative_profit_loss >= 0 ? 'text-blue-700' : 'text-orange-700'
+              <span className={`text-xs font-bold ${
+                performance.cumulative_profit_loss >= 0 ? 'text-green-700' : 'text-red-700'
               }`}>
-                {performance.cumulative_profit_loss >= 0 ? (
-                  <TrendingUp className="h-4 w-4" />
-                ) : (
-                  <TrendingDown className="h-4 w-4" />
-                )}
-                Total Profit / (Loss)
-              </div>
-              <div className={`text-2xl font-bold ${
-                performance.cumulative_profit_loss >= 0 ? 'text-blue-900' : 'text-orange-900'
+                Profit / (Loss)
+              </span>
+              <span className={`text-base font-bold ${
+                performance.cumulative_profit_loss >= 0 ? 'text-green-900' : 'text-red-900'
               }`}>
                 {formatCurrency(performance.cumulative_profit_loss)}
-              </div>
+              </span>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Cash on Cash Return */}
-      {performance.cash_on_cash !== null && (
+      {/* Cash on Cash Return - Full Width */}
+      {performance.cash_on_cash !== null && performance.cash_on_cash !== undefined && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm font-bold">
-              <Percent className="h-4 w-4" />
-              Cash on Cash Return
-            </CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-bold">Cash on Cash Return</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-              <div className="text-sm text-purple-700 font-medium mb-1">
-                (Current Market Value - Purchase Price) / Purchase Price
-              </div>
-              <div className="text-3xl font-bold text-purple-900">
-                {formatPercent(performance.cash_on_cash)}
-              </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-600">(Current Market Value - Purchase Price) / Purchase Price</span>
+              <span className="text-xl font-bold text-purple-900">{formatPercent(performance.cash_on_cash)}</span>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Last Calculated Timestamp */}
-      <div className="text-xs text-gray-500 text-right">
-        Last calculated: {new Date(performance.last_calculated_at).toLocaleDateString()}
+      {/* Note */}
+      <div className="text-[10px] text-gray-500 italic">
+        <strong>Note:</strong> Rehab expenses are excluded from this calculation as they are included in P&I financing.
       </div>
     </div>
   );
 }
-

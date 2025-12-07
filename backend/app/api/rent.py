@@ -23,10 +23,29 @@ logger = get_logger(__name__)
 
 
 def _invalidate_financial_performance_cache(property_id: UUID, unit_id: Optional[UUID] = None):
-    """Helper to invalidate financial performance cache after rent changes"""
+    """Helper to invalidate financial performance cache after rent changes (async, non-blocking)"""
     try:
+        import asyncio
         from app.services.financial_performance_service import financial_performance_service
-        financial_performance_service.invalidate_cache(property_id, unit_id)
+        # Fire and forget - don't block rent operations
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        financial_performance_service.invalidate_cache,
+                        property_id,
+                        unit_id
+                    )
+                )
+            else:
+                # If no loop is running, just run it synchronously but log warning
+                logger.warning("No running event loop, invalidating cache synchronously")
+                financial_performance_service.invalidate_cache(property_id, unit_id)
+        except RuntimeError:
+            # No event loop, fall back to synchronous
+            logger.warning("Could not create async task, invalidating cache synchronously")
+            financial_performance_service.invalidate_cache(property_id, unit_id)
     except Exception as e:
         logger.warning(f"Failed to invalidate financial performance cache: {e}")
 
