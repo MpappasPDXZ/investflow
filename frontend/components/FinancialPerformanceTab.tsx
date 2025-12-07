@@ -304,7 +304,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
           </CardHeader>
           <CardContent>
             <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-600">(Current Market Value - Purchase Price) / Purchase Price</span>
+              <span className="text-xs text-gray-600">(Annual Rent - Annual Expenses) / (Current Market Value - Purchase Price)</span>
               <span className="text-xl font-bold text-purple-900">{formatPercent(performance.cash_on_cash)}</span>
             </div>
           </CardContent>

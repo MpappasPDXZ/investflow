@@ -260,10 +260,23 @@ class FinancialPerformanceService:
         
         cumulative_profit_loss = cumulative_rent - cumulative_expenses
         
-        # Calculate cash on cash
+        # Calculate cash on cash return
+        # Formula: (Annual Net Income) / (Total Cash Invested)
+        # Annual Net Income = YTD Profit/Loss (annualized if mid-year)
+        # Total Cash Invested = Current Market Value - Purchase Price (equity gain)
         cash_on_cash = None
         if purchase_price and current_market_value and purchase_price > 0:
-            cash_on_cash = ((current_market_value - purchase_price) / purchase_price) * Decimal("100")
+            cash_invested = current_market_value - purchase_price
+            if cash_invested > 0:
+                # Annualized profit/loss
+                import datetime
+                days_ytd = (datetime.date.today() - ytd_start).days
+                if days_ytd > 0:
+                    annual_profit_loss = (ytd_profit_loss / Decimal(str(days_ytd))) * Decimal("365")
+                else:
+                    annual_profit_loss = ytd_profit_loss
+                
+                cash_on_cash = (annual_profit_loss / cash_invested) * Decimal("100")
         
         logger.info(f"[PERF] Property {property_id}: YTD P/L={ytd_profit_loss}, Cumulative P/L={cumulative_profit_loss}")
         
