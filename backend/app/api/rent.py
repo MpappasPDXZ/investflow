@@ -22,6 +22,15 @@ router = APIRouter(prefix="/rent", tags=["rent"])
 logger = get_logger(__name__)
 
 
+def _invalidate_financial_performance_cache(property_id: UUID, unit_id: Optional[UUID] = None):
+    """Helper to invalidate financial performance cache after rent changes"""
+    try:
+        from app.services.financial_performance_service import financial_performance_service
+        financial_performance_service.invalidate_cache(property_id, unit_id)
+    except Exception as e:
+        logger.warning(f"Failed to invalidate financial performance cache: {e}")
+
+
 def get_rent_period_dates(year: int, month: int) -> tuple[date, date]:
     """Get start and end dates for a rent period (month)"""
     start = date(year, month, 1)
@@ -97,6 +106,9 @@ async def create_rent_endpoint(
         append_data(NAMESPACE, TABLE_NAME, df)
         
         logger.info(f"Created rent payment {rent_id} for property {rent_data.property_id}")
+        
+        # Invalidate financial performance cache
+        _invalidate_financial_performance_cache(rent_data.property_id, rent_data.unit_id)
         
         return RentResponse(
             id=rent_id,
@@ -221,6 +233,11 @@ async def delete_rent_endpoint(
         if len(rent_rows) == 0:
             raise HTTPException(status_code=404, detail="Rent payment not found")
         
+        # Get property_id and unit_id before deletion for cache invalidation
+        rent_row = rent_rows.iloc[0]
+        property_id = UUID(rent_row['property_id'])
+        unit_id = UUID(rent_row['unit_id']) if pd.notna(rent_row.get('unit_id')) else None
+        
         # Filter out the rent to delete
         df = df[df["id"] != str(rent_id)]
         
@@ -229,6 +246,10 @@ async def delete_rent_endpoint(
         table.overwrite(df)
         
         logger.info(f"Deleted rent payment {rent_id}")
+        
+        # Invalidate financial performance cache
+        _invalidate_financial_performance_cache(property_id, unit_id)
+        
         return None
         
     except HTTPException:

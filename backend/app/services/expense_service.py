@@ -21,6 +21,15 @@ class ExpenseService:
         self._table_cache = None
         self._table_cache_time = None
         self._cache_ttl = 60  # Cache table reference for 60 seconds
+        # Import here to avoid circular dependency
+        self._financial_performance_service = None
+    
+    def _get_financial_performance_service(self):
+        """Lazy load financial performance service to avoid circular imports"""
+        if self._financial_performance_service is None:
+            from app.services.financial_performance_service import financial_performance_service
+            self._financial_performance_service = financial_performance_service
+        return self._financial_performance_service
     
     def _get_table(self):
         """Get the expenses table with caching"""
@@ -88,6 +97,16 @@ class ExpenseService:
             # Invalidate cache after write to ensure fresh table for next operation
             self._table_cache = None
             self._table_cache_time = None
+            
+            # Invalidate financial performance cache for this property
+            try:
+                fp_service = self._get_financial_performance_service()
+                fp_service.invalidate_cache(
+                    property_id=expense_data.property_id,
+                    unit_id=expense_data.unit_id
+                )
+            except Exception as cache_err:
+                logger.warning(f"Failed to invalidate financial performance cache: {cache_err}")
             
             return record
             
@@ -380,6 +399,16 @@ class ExpenseService:
             self._table_cache = None
             self._table_cache_time = None
             
+            # Invalidate financial performance cache for this property
+            try:
+                fp_service = self._get_financial_performance_service()
+                fp_service.invalidate_cache(
+                    property_id=uuid.UUID(existing['property_id']),
+                    unit_id=uuid.UUID(existing['unit_id']) if existing.get('unit_id') else None
+                )
+            except Exception as cache_err:
+                logger.warning(f"Failed to invalidate financial performance cache: {cache_err}")
+            
             return existing
             
         except Exception as e:
@@ -423,6 +452,16 @@ class ExpenseService:
             # Invalidate cache after write
             self._table_cache = None
             self._table_cache_time = None
+            
+            # Invalidate financial performance cache for this property
+            try:
+                fp_service = self._get_financial_performance_service()
+                fp_service.invalidate_cache(
+                    property_id=uuid.UUID(existing['property_id']),
+                    unit_id=uuid.UUID(existing['unit_id']) if existing.get('unit_id') else None
+                )
+            except Exception as cache_err:
+                logger.warning(f"Failed to invalidate financial performance cache: {cache_err}")
             
             return True
             

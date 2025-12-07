@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useProperty } from '@/lib/hooks/use-properties';
+import { useFinancialPerformance } from '@/lib/hooks/use-financial-performance';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +15,7 @@ import ScheduledFinancialsTab from '@/components/ScheduledFinancialsTab';
 import RentManagementTab from '@/components/RentManagementTab';
 import RentAnalysisTab from '@/components/RentAnalysisTab';
 import SetRentAnalysisTab from '@/components/SetRentAnalysisTab';
+import FinancialPerformanceTab from '@/components/FinancialPerformanceTab';
 
 interface Unit {
   id: string;
@@ -39,8 +41,11 @@ export default function PropertyDetailPage() {
   const [showAddUnit, setShowAddUnit] = useState(false);
   const [editingUnit, setEditingUnit] = useState<string | null>(null);
   const [deletingUnit, setDeletingUnit] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'details' | 'financials' | 'down-payment' | 'rent'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'performance' | 'financials' | 'down-payment' | 'rent'>('details');
   const [editingProperty, setEditingProperty] = useState(false);
+
+  // Fetch financial performance for YTD P/L display
+  const { data: financialPerformance } = useFinancialPerformance(id);
 
   // Form state for adding/editing units
   const [unitForm, setUnitForm] = useState({
@@ -315,6 +320,17 @@ export default function PropertyDetailPage() {
           >
             <FileText className="h-4 w-4 inline mr-2" />
             Details & Units
+          </button>
+          <button
+            onClick={() => setActiveTab('performance')}
+            className={`pb-3 px-4 text-sm transition-colors relative ${
+              activeTab === 'performance'
+                ? 'text-black border-b-2 border-black font-bold'
+                : 'text-gray-600 hover:text-gray-900 font-normal'
+            }`}
+          >
+            <TrendingUp className="h-4 w-4 inline mr-2" />
+            Financial Performance
           </button>
           <button
             onClick={() => setActiveTab('financials')}
@@ -712,6 +728,25 @@ export default function PropertyDetailPage() {
                     </div>
                   </div>
                 )}
+                
+                {/* YTD Profit/Loss */}
+                {financialPerformance && (
+                  <div className="col-span-2 pt-4 border-t mt-2">
+                    <div className="flex justify-between items-center">
+                      <div className="text-sm text-gray-600">YTD Profit / (Loss)</div>
+                      <div className={`text-lg font-bold ${
+                        financialPerformance.ytd_profit_loss >= 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        }).format(financialPerformance.ytd_profit_loss)}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1022,6 +1057,14 @@ export default function PropertyDetailPage() {
             </Card>
           )}
         </>
+      )}
+
+      {activeTab === 'performance' && (
+        <FinancialPerformanceTab 
+          propertyId={id}
+          units={units}
+          isMultiUnit={isMultiUnit}
+        />
       )}
 
       {activeTab === 'financials' && (
