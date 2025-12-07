@@ -78,4 +78,8 @@ class FinancialPerformanceSummary(BaseModel):
     units: Optional[list[dict]] = None
     
     last_calculated_at: date
-
+    
+    class Config:
+        json_encoders = {
+            Decimal: lambda v: float(v) if v is not None else None
+        }

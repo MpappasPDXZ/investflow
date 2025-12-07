@@ -55,7 +55,9 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
 
   const formatPercent = (value: number | null) => {
     if (value === null || value === undefined) return 'N/A';
-    return `${value.toFixed(2)}%`;
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(numValue)) return 'N/A';
+    return `${numValue.toFixed(2)}%`;
   };
 
   return (
