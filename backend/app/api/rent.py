@@ -22,7 +22,7 @@ router = APIRouter(prefix="/rent", tags=["rent"])
 logger = get_logger(__name__)
 
 
-def _invalidate_financial_performance_cache(property_id: UUID, unit_id: Optional[UUID] = None):
+def _invalidate_financial_performance_cache(property_id: UUID, user_id: str, unit_id: Optional[UUID] = None):
     """Helper to invalidate financial performance cache after rent changes (async, non-blocking)"""
     try:
         import asyncio
@@ -35,17 +35,18 @@ def _invalidate_financial_performance_cache(property_id: UUID, unit_id: Optional
                     asyncio.to_thread(
                         financial_performance_service.invalidate_cache,
                         property_id,
+                        UUID(user_id),  # Convert string to UUID
                         unit_id
                     )
                 )
             else:
                 # If no loop is running, just run it synchronously but log warning
                 logger.warning("No running event loop, invalidating cache synchronously")
-                financial_performance_service.invalidate_cache(property_id, unit_id)
+                financial_performance_service.invalidate_cache(property_id, UUID(user_id), unit_id)
         except RuntimeError:
             # No event loop, fall back to synchronous
             logger.warning("Could not create async task, invalidating cache synchronously")
-            financial_performance_service.invalidate_cache(property_id, unit_id)
+            financial_performance_service.invalidate_cache(property_id, UUID(user_id), unit_id)
     except Exception as e:
         logger.warning(f"Failed to invalidate financial performance cache: {e}")
 
@@ -127,7 +128,7 @@ async def create_rent_endpoint(
         logger.info(f"Created rent payment {rent_id} for property {rent_data.property_id}")
         
         # Invalidate financial performance cache
-        _invalidate_financial_performance_cache(rent_data.property_id, rent_data.unit_id)
+        _invalidate_financial_performance_cache(rent_data.property_id, user_id, rent_data.unit_id)
         
         return RentResponse(
             id=rent_id,
@@ -267,7 +268,7 @@ async def delete_rent_endpoint(
         logger.info(f"Deleted rent payment {rent_id}")
         
         # Invalidate financial performance cache
-        _invalidate_financial_performance_cache(property_id, unit_id)
+        _invalidate_financial_performance_cache(property_id, user_id, unit_id)
         
         return None
         

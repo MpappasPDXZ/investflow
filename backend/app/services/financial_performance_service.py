@@ -16,6 +16,18 @@ from app.services.expense_service import ExpenseService
 
 logger = logging.getLogger(__name__)
 
+# Import cache service (lazy to avoid circular imports)
+_fp_cache = None
+
+
+def get_fp_cache():
+    """Lazy load financial performance cache"""
+    global _fp_cache
+    if _fp_cache is None:
+        from app.services.financial_performance_cache_service import financial_performance_cache
+        _fp_cache = financial_performance_cache
+    return _fp_cache
+
 
 class FinancialPerformanceService:
     """Service for calculating and caching financial performance metrics"""
@@ -80,9 +92,51 @@ class FinancialPerformanceService:
         """
         Calculate financial performance for a property or unit
         
+        FAST PATH: Try to get from ADLS cache first (O(1) lookup)
+        SLOW PATH: Calculate from scratch if cache miss
+        
         Excludes 'rehab' expenses from calculations as those are included in P&I financing
         """
         logger.info(f"[PERF] Calculating financial performance for property {property_id}, unit {unit_id}")
+        
+        # Try fast path: check cache first
+        try:
+            fp_cache = get_fp_cache()
+            cached = fp_cache.get_performance(property_id, unit_id)
+            
+            if cached:
+                logger.info(f"[PERF] Cache HIT for property {property_id}")
+                # Return cached data
+                return FinancialPerformanceSummary(
+                    property_id=property_id,
+                    ytd_rent=Decimal(str(cached['ytd_rent'])),
+                    ytd_expenses=Decimal(str(cached['ytd_expenses'])),
+                    ytd_profit_loss=Decimal(str(cached['ytd_profit_loss'])),
+                    ytd_piti=Decimal(str(cached['ytd_piti'])),
+                    ytd_utilities=Decimal(str(cached['ytd_utilities'])),
+                    ytd_maintenance=Decimal(str(cached['ytd_maintenance'])),
+                    ytd_capex=Decimal(str(cached['ytd_capex'])),
+                    ytd_insurance=Decimal(str(cached['ytd_insurance'])),
+                    ytd_property_management=Decimal(str(cached['ytd_property_management'])),
+                    ytd_other=Decimal(str(cached['ytd_other'])),
+                    cumulative_rent=Decimal(str(cached['cumulative_rent'])),
+                    cumulative_expenses=Decimal(str(cached['cumulative_expenses'])),
+                    cumulative_profit_loss=Decimal(str(cached['cumulative_profit_loss'])),
+                    cumulative_piti=Decimal(str(cached['cumulative_piti'])),
+                    cumulative_utilities=Decimal(str(cached['cumulative_utilities'])),
+                    cumulative_maintenance=Decimal(str(cached['cumulative_maintenance'])),
+                    cumulative_capex=Decimal(str(cached['cumulative_capex'])),
+                    cumulative_insurance=Decimal(str(cached['cumulative_insurance'])),
+                    cumulative_property_management=Decimal(str(cached['cumulative_property_management'])),
+                    cumulative_other=Decimal(str(cached['cumulative_other'])),
+                    cash_on_cash=Decimal(str(cached['cash_on_cash'])) if cached.get('cash_on_cash') else None,
+                    last_calculated_at=date.today()
+                )
+        except Exception as cache_err:
+            logger.warning(f"Cache lookup failed, falling back to calculation: {cache_err}")
+        
+        # Slow path: calculate from scratch
+        logger.info(f"[PERF] Cache MISS for property {property_id}, calculating...")
         
         # Get current year for YTD calculation
         current_year = datetime.now().year
@@ -123,9 +177,18 @@ class FinancialPerformanceService:
                     'payment_date': row['payment_date']
                 })
         
-        # Calculate YTD
+        # Calculate YTD with breakdowns
         ytd_rent = Decimal("0")
         ytd_expenses = Decimal("0")
+        ytd_breakdown = {
+            'piti': Decimal("0"),
+            'utilities': Decimal("0"),
+            'maintenance': Decimal("0"),
+            'capex': Decimal("0"),
+            'insurance': Decimal("0"),
+            'property_management': Decimal("0"),
+            'other': Decimal("0")
+        }
         
         for rent in rent_payments:
             payment_date = rent['payment_date']
@@ -139,16 +202,62 @@ class FinancialPerformanceService:
             if isinstance(expense_date, str):
                 expense_date = datetime.fromisoformat(expense_date.split('T')[0]).date()
             if expense_date >= ytd_start and not expense.get('is_planned', False):
-                ytd_expenses += Decimal(str(expense['amount']))
+                amount = Decimal(str(expense['amount']))
+                ytd_expenses += amount
+                
+                # Categorize by expense_type
+                exp_type = expense.get('expense_type', 'other')
+                if exp_type == 'pandi':
+                    ytd_breakdown['piti'] += amount
+                elif exp_type == 'utilities':
+                    ytd_breakdown['utilities'] += amount
+                elif exp_type == 'maintenance':
+                    ytd_breakdown['maintenance'] += amount
+                elif exp_type == 'capex':
+                    ytd_breakdown['capex'] += amount
+                elif exp_type == 'insurance':
+                    ytd_breakdown['insurance'] += amount
+                elif exp_type == 'property_management':
+                    ytd_breakdown['property_management'] += amount
+                else:
+                    ytd_breakdown['other'] += amount
         
         ytd_profit_loss = ytd_rent - ytd_expenses
         
-        # Calculate cumulative (all-time)
+        # Calculate cumulative (all-time) with breakdowns
         cumulative_rent = sum(Decimal(str(r['amount'])) for r in rent_payments)
-        cumulative_expenses = sum(
-            Decimal(str(e['amount'])) for e in expenses 
-            if not e.get('is_planned', False)
-        )
+        cumulative_expenses = Decimal("0")
+        cumulative_breakdown = {
+            'piti': Decimal("0"),
+            'utilities': Decimal("0"),
+            'maintenance': Decimal("0"),
+            'capex': Decimal("0"),
+            'insurance': Decimal("0"),
+            'property_management': Decimal("0"),
+            'other': Decimal("0")
+        }
+        
+        for expense in expenses:
+            if not expense.get('is_planned', False):
+                amount = Decimal(str(expense['amount']))
+                cumulative_expenses += amount
+                
+                exp_type = expense.get('expense_type', 'other')
+                if exp_type == 'pandi':
+                    cumulative_breakdown['piti'] += amount
+                elif exp_type == 'utilities':
+                    cumulative_breakdown['utilities'] += amount
+                elif exp_type == 'maintenance':
+                    cumulative_breakdown['maintenance'] += amount
+                elif exp_type == 'capex':
+                    cumulative_breakdown['capex'] += amount
+                elif exp_type == 'insurance':
+                    cumulative_breakdown['insurance'] += amount
+                elif exp_type == 'property_management':
+                    cumulative_breakdown['property_management'] += amount
+                else:
+                    cumulative_breakdown['other'] += amount
+        
         cumulative_profit_loss = cumulative_rent - cumulative_expenses
         
         # Calculate cash on cash
@@ -163,37 +272,41 @@ class FinancialPerformanceService:
             ytd_rent=ytd_rent,
             ytd_expenses=ytd_expenses,
             ytd_profit_loss=ytd_profit_loss,
+            ytd_piti=ytd_breakdown['piti'],
+            ytd_utilities=ytd_breakdown['utilities'],
+            ytd_maintenance=ytd_breakdown['maintenance'],
+            ytd_capex=ytd_breakdown['capex'],
+            ytd_insurance=ytd_breakdown['insurance'],
+            ytd_property_management=ytd_breakdown['property_management'],
+            ytd_other=ytd_breakdown['other'],
             cumulative_rent=cumulative_rent,
             cumulative_expenses=cumulative_expenses,
             cumulative_profit_loss=cumulative_profit_loss,
+            cumulative_piti=cumulative_breakdown['piti'],
+            cumulative_utilities=cumulative_breakdown['utilities'],
+            cumulative_maintenance=cumulative_breakdown['maintenance'],
+            cumulative_capex=cumulative_breakdown['capex'],
+            cumulative_insurance=cumulative_breakdown['insurance'],
+            cumulative_property_management=cumulative_breakdown['property_management'],
+            cumulative_other=cumulative_breakdown['other'],
             cash_on_cash=cash_on_cash,
             last_calculated_at=date.today()
         )
     
-    def invalidate_cache(self, property_id: UUID, unit_id: Optional[UUID] = None):
+    def invalidate_cache(self, property_id: UUID, user_id: UUID, unit_id: Optional[UUID] = None):
         """
-        Invalidate (delete) cached financial performance for a property/unit
-        Called when expenses or rent are added/updated/deleted
+        Invalidate and recalculate cached financial performance for a property/unit.
+        Called when expenses or rent are added/updated/deleted.
+        
+        This triggers an ASYNC recalculation (non-blocking) that updates the ADLS parquet cache.
         """
         logger.info(f"[PERF] Invalidating cache for property {property_id}, unit {unit_id}")
         
         try:
-            table = self._get_table(force_refresh=True)
-            
-            # Delete existing records for this property/unit
-            if unit_id:
-                filter_expr = And(
-                    EqualTo("property_id", str(property_id)),
-                    EqualTo("unit_id", str(unit_id))
-                )
-            else:
-                filter_expr = EqualTo("property_id", str(property_id))
-            
-            table.delete(filter_expr)
-            logger.info(f"[PERF] Cache invalidated for property {property_id}")
-            
-            # Invalidate table cache
-            self._table_cache = None
+            # Trigger async recalculation in ADLS cache
+            fp_cache = get_fp_cache()
+            fp_cache.update_performance_async(property_id, user_id, unit_id)
+            logger.info(f"[PERF] Async recalculation queued for property {property_id}")
             
         except Exception as e:
             logger.error(f"[PERF] Error invalidating cache: {e}", exc_info=True)

@@ -98,15 +98,21 @@ class ExpenseService:
             self._table_cache = None
             self._table_cache_time = None
             
-            # Invalidate financial performance cache for this property
+            # Invalidate financial performance cache for this property (async, non-blocking)
             try:
+                import asyncio
                 fp_service = self._get_financial_performance_service()
-                fp_service.invalidate_cache(
-                    property_id=expense_data.property_id,
-                    unit_id=expense_data.unit_id
+                # Fire and forget - don't block expense creation
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        fp_service.invalidate_cache,
+                        expense_data.property_id,
+                        user_id,  # Pass user_id for recalculation
+                        expense_data.unit_id
+                    )
                 )
             except Exception as cache_err:
-                logger.warning(f"Failed to invalidate financial performance cache: {cache_err}")
+                logger.warning(f"Failed to queue financial performance cache invalidation: {cache_err}")
             
             return record
             
@@ -399,15 +405,21 @@ class ExpenseService:
             self._table_cache = None
             self._table_cache_time = None
             
-            # Invalidate financial performance cache for this property
+            # Invalidate financial performance cache for this property (async, non-blocking)
             try:
+                import asyncio
                 fp_service = self._get_financial_performance_service()
-                fp_service.invalidate_cache(
-                    property_id=uuid.UUID(existing['property_id']),
-                    unit_id=uuid.UUID(existing['unit_id']) if existing.get('unit_id') else None
+                # Fire and forget - don't block expense update
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        fp_service.invalidate_cache,
+                        uuid.UUID(existing['property_id']),
+                        user_id,  # Pass user_id for recalculation
+                        uuid.UUID(existing['unit_id']) if existing.get('unit_id') else None
+                    )
                 )
             except Exception as cache_err:
-                logger.warning(f"Failed to invalidate financial performance cache: {cache_err}")
+                logger.warning(f"Failed to queue financial performance cache invalidation: {cache_err}")
             
             return existing
             
@@ -458,6 +470,7 @@ class ExpenseService:
                 fp_service = self._get_financial_performance_service()
                 fp_service.invalidate_cache(
                     property_id=uuid.UUID(existing['property_id']),
+                    user_id=user_id,  # Pass user_id for recalculation
                     unit_id=uuid.UUID(existing['unit_id']) if existing.get('unit_id') else None
                 )
             except Exception as cache_err:

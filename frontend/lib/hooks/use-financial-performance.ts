@@ -6,9 +6,23 @@ export interface FinancialPerformance {
   ytd_rent: number;
   ytd_expenses: number;
   ytd_profit_loss: number;
+  ytd_piti: number;
+  ytd_utilities: number;
+  ytd_maintenance: number;
+  ytd_capex: number;
+  ytd_insurance: number;
+  ytd_property_management: number;
+  ytd_other: number;
   cumulative_rent: number;
   cumulative_expenses: number;
   cumulative_profit_loss: number;
+  cumulative_piti: number;
+  cumulative_utilities: number;
+  cumulative_maintenance: number;
+  cumulative_capex: number;
+  cumulative_insurance: number;
+  cumulative_property_management: number;
+  cumulative_other: number;
   cash_on_cash: number | null;
   units: Array<{
     unit_id: string;

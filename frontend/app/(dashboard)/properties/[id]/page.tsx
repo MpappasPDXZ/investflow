@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Building2, Plus, Edit2, Trash2, X, Check, FileText, DollarSign, Home, Eye, TrendingUp, Hammer, ListChecks, Tag, Archive, ShoppingCart } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, X, Check, FileText, DollarSign, Home, Eye, TrendingUp, Hammer, ListChecks, Tag, Archive, ShoppingCart, Calendar } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import ScheduledFinancialsTab from '@/components/ScheduledFinancialsTab';
@@ -329,7 +329,7 @@ export default function PropertyDetailPage() {
                 : 'text-gray-600 hover:text-gray-900 font-normal'
             }`}
           >
-            <TrendingUp className="h-4 w-4 inline mr-2" />
+            <DollarSign className="h-4 w-4 inline mr-2" />
             Financial Performance
           </button>
           <button
@@ -340,7 +340,7 @@ export default function PropertyDetailPage() {
                 : 'text-gray-600 hover:text-gray-900 font-normal'
             }`}
           >
-            <DollarSign className="h-4 w-4 inline mr-2" />
+            <Calendar className="h-4 w-4 inline mr-2" />
             Scheduled Financials
           </button>
           <button

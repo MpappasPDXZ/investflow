@@ -48,10 +48,28 @@ class FinancialPerformanceSummary(BaseModel):
     ytd_expenses: Decimal
     ytd_profit_loss: Decimal
     
+    # YTD expense breakdown by type
+    ytd_piti: Decimal = Decimal("0")  # Principal, Interest, Tax, Insurance
+    ytd_utilities: Decimal = Decimal("0")
+    ytd_maintenance: Decimal = Decimal("0")
+    ytd_capex: Decimal = Decimal("0")
+    ytd_insurance: Decimal = Decimal("0")
+    ytd_property_management: Decimal = Decimal("0")
+    ytd_other: Decimal = Decimal("0")
+    
     # Cumulative aggregates
     cumulative_rent: Decimal
     cumulative_expenses: Decimal
     cumulative_profit_loss: Decimal
+    
+    # Cumulative expense breakdown by type
+    cumulative_piti: Decimal = Decimal("0")
+    cumulative_utilities: Decimal = Decimal("0")
+    cumulative_maintenance: Decimal = Decimal("0")
+    cumulative_capex: Decimal = Decimal("0")
+    cumulative_insurance: Decimal = Decimal("0")
+    cumulative_property_management: Decimal = Decimal("0")
+    cumulative_other: Decimal = Decimal("0")
     
     # Cash on cash
     cash_on_cash: Optional[Decimal] = None
