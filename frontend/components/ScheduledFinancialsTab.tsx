@@ -118,6 +118,9 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
     value_added_amount: '',
   });
 
+  // State for template
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+
   // Fetch expenses and revenues on mount
   useEffect(() => {
     fetchExpenses();
@@ -358,8 +361,59 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
     });
   };
 
+  const handleApplyTemplate = async () => {
+    if (!confirm('Apply template from 316 S 50th Ave? This will add scaled scheduled expenses and revenue based on your property details.')) {
+      return;
+    }
+
+    try {
+      setApplyingTemplate(true);
+      const response = await apiClient.post<{
+        message: string;
+        property_id: string;
+        expenses_created: number;
+        revenue_created: number;
+        scaling_factors: any;
+      }>(`/scheduled-financials/apply-template/${propertyId}`);
+      console.log('✅ [TEMPLATE] Applied:', response);
+      alert(`Template applied successfully!\n${response.expenses_created} expenses and ${response.revenue_created} revenue items added.`);
+      // Refresh data
+      fetchExpenses();
+      fetchRevenues();
+    } catch (err) {
+      console.error('❌ [TEMPLATE] Error:', err);
+      alert(`Failed to apply template: ${(err as Error).message}`);
+    } finally {
+      setApplyingTemplate(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Auto-Apply Template Button */}
+      {expenses.length === 0 && revenues.length === 0 && (
+        <Card className="bg-blue-50 border-blue-200">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-blue-900 mb-1">Quick Start: Auto-Apply Template</h3>
+                <p className="text-xs text-blue-700">
+                  Automatically populate scheduled expenses and revenue based on 316 S 50th Ave, 
+                  scaled to your property's price, size, and bedrooms/bathrooms.
+                </p>
+              </div>
+              <Button
+                onClick={handleApplyTemplate}
+                disabled={applyingTemplate}
+                className="bg-blue-600 text-white hover:bg-blue-700 h-9 text-sm whitespace-nowrap ml-4"
+              >
+                {applyingTemplate ? 'Applying...' : '⚡ Auto-Apply Template'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* EXPENSES SECTION */}
       <Card>
         <CardHeader>

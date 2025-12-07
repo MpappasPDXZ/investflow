@@ -13,11 +13,11 @@ interface Props {
 }
 
 export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit }: Props) {
-  const [selectedUnitId, setSelectedUnitId] = useState<string>('');
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('all');
   
   const { data: performance, isLoading, error } = useFinancialPerformance(
     propertyId,
-    selectedUnitId || undefined
+    selectedUnitId !== 'all' ? selectedUnitId : undefined
   );
 
   if (isLoading) {
@@ -71,7 +71,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
               <SelectValue placeholder="All Units (Property Total)" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Units (Property Total)</SelectItem>
+              <SelectItem value="all">All Units (Property Total)</SelectItem>
               {units.map((unit) => (
                 <SelectItem key={unit.id} value={unit.id}>
                   {unit.unit_number}
