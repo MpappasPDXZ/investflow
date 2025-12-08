@@ -228,15 +228,17 @@ async def update_scheduled_expense(
         # Update fields
         update_data = expense_update.model_dump(exclude_unset=True)
         for field, value in update_data.items():
-            # Convert Decimal fields to float for pandas compatibility
-            # PyArrow will convert them to decimal128 during schema casting
-            if field in ['purchase_price', 'depreciation_rate', 'annual_cost', 'principal', 'interest_rate'] and value is not None:
-                expenses_df.loc[expense_idx[0], field] = float(value)
-            else:
-                expenses_df.loc[expense_idx[0], field] = value
+            expenses_df.loc[expense_idx[0], field] = value
         
         # Use timezone-naive UTC timestamp
         expenses_df.loc[expense_idx[0], 'updated_at'] = pd.Timestamp.now(tz=timezone.utc).tz_localize(None)
+        
+        # Convert decimal columns to float64 for PyArrow compatibility
+        decimal_cols = ['purchase_price', 'depreciation_rate', 'annual_cost', 'principal', 'interest_rate']
+        for col in decimal_cols:
+            if col in expenses_df.columns:
+                # Convert object/Decimal columns to float64
+                expenses_df[col] = pd.to_numeric(expenses_df[col], errors='coerce')
         
         # Convert timestamps to microseconds (ensure timezone-naive)
         for col in ['created_at', 'updated_at']:
@@ -481,15 +483,17 @@ async def update_scheduled_revenue(
         # Update fields
         update_data = revenue_update.model_dump(exclude_unset=True)
         for field, value in update_data.items():
-            # Convert Decimal fields to float for pandas compatibility
-            # PyArrow will convert them to decimal128 during schema casting
-            if field in ['annual_amount', 'appreciation_rate', 'property_value', 'value_added_amount'] and value is not None:
-                revenue_df.loc[revenue_idx[0], field] = float(value)
-            else:
-                revenue_df.loc[revenue_idx[0], field] = value
+            revenue_df.loc[revenue_idx[0], field] = value
         
         # Use timezone-naive UTC timestamp
         revenue_df.loc[revenue_idx[0], 'updated_at'] = pd.Timestamp.now(tz=timezone.utc).tz_localize(None)
+        
+        # Convert decimal columns to float64 for PyArrow compatibility
+        decimal_cols = ['annual_amount', 'appreciation_rate', 'property_value', 'value_added_amount']
+        for col in decimal_cols:
+            if col in revenue_df.columns:
+                # Convert object/Decimal columns to float64
+                revenue_df[col] = pd.to_numeric(revenue_df[col], errors='coerce')
         
         # Convert timestamps to microseconds (ensure timezone-naive)
         for col in ['created_at', 'updated_at']:
