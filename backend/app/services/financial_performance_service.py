@@ -92,65 +92,28 @@ class FinancialPerformanceService:
         """
         Calculate financial performance for a property or unit
         
-        FAST PATH: Try to get from ADLS cache first (O(1) lookup)
-        SLOW PATH: Calculate from scratch if cache miss
+        Calculates fresh from Iceberg tables (no caching)
         
         Excludes 'rehab' expenses from calculations as those are included in P&I financing
         """
         logger.info(f"[PERF] Calculating financial performance for property {property_id}, unit {unit_id}")
         
-        # Try fast path: check cache first
-        try:
-            fp_cache = get_fp_cache()
-            cached = fp_cache.get_performance(property_id, unit_id)
-            
-            if cached:
-                logger.info(f"[PERF] Cache HIT for property {property_id}")
-                # Return cached data
-                return FinancialPerformanceSummary(
-                    property_id=property_id,
-                    ytd_rent=Decimal(str(cached['ytd_rent'])),
-                    ytd_expenses=Decimal(str(cached['ytd_expenses'])),
-                    ytd_profit_loss=Decimal(str(cached['ytd_profit_loss'])),
-                    ytd_piti=Decimal(str(cached['ytd_piti'])),
-                    ytd_utilities=Decimal(str(cached['ytd_utilities'])),
-                    ytd_maintenance=Decimal(str(cached['ytd_maintenance'])),
-                    ytd_capex=Decimal(str(cached['ytd_capex'])),
-                    ytd_insurance=Decimal(str(cached['ytd_insurance'])),
-                    ytd_property_management=Decimal(str(cached['ytd_property_management'])),
-                    ytd_other=Decimal(str(cached['ytd_other'])),
-                    cumulative_rent=Decimal(str(cached['cumulative_rent'])),
-                    cumulative_expenses=Decimal(str(cached['cumulative_expenses'])),
-                    cumulative_profit_loss=Decimal(str(cached['cumulative_profit_loss'])),
-                    cumulative_piti=Decimal(str(cached['cumulative_piti'])),
-                    cumulative_utilities=Decimal(str(cached['cumulative_utilities'])),
-                    cumulative_maintenance=Decimal(str(cached['cumulative_maintenance'])),
-                    cumulative_capex=Decimal(str(cached['cumulative_capex'])),
-                    cumulative_insurance=Decimal(str(cached['cumulative_insurance'])),
-                    cumulative_property_management=Decimal(str(cached['cumulative_property_management'])),
-                    cumulative_other=Decimal(str(cached['cumulative_other'])),
-                    cash_on_cash=Decimal(str(cached['cash_on_cash'])) if cached.get('cash_on_cash') else None,
-                    last_calculated_at=date.today()
-                )
-        except Exception as cache_err:
-            logger.warning(f"Cache lookup failed, falling back to calculation: {cache_err}")
-        
-        # Slow path: calculate from scratch
-        logger.info(f"[PERF] Cache MISS for property {property_id}, calculating...")
+        # DISABLED: Cache check removed for real-time accuracy
+        # Always calculate fresh from Iceberg tables
         
         # Get current year for YTD calculation
         current_year = datetime.now().year
         ytd_start = date(current_year, 1, 1)
         
         # Fetch all expenses for this property (excluding rehab)
-        all_expenses = self.expense_service.list_expenses(
+        all_expenses, _ = self.expense_service.list_expenses(
             user_id=user_id,
             property_id=str(property_id),
             limit=10000  # Get all
         )
         
         # Filter out rehab expenses
-        expenses = [e for e in all_expenses['items'] if e.get('expense_type') != 'rehab']
+        expenses = [e for e in all_expenses if e.get('expense_type') != 'rehab']
         
         # Filter by unit if specified
         if unit_id:
@@ -201,12 +164,13 @@ class FinancialPerformanceService:
             expense_date = expense['date']
             if isinstance(expense_date, str):
                 expense_date = datetime.fromisoformat(expense_date.split('T')[0]).date()
-            if expense_date >= ytd_start and not expense.get('is_planned', False):
+            # Exclude rehab expenses and planned expenses from YTD
+            exp_type = expense.get('expense_type', 'other')
+            if expense_date >= ytd_start and not expense.get('is_planned', False) and exp_type != 'rehab':
                 amount = Decimal(str(expense['amount']))
                 ytd_expenses += amount
                 
                 # Categorize by expense_type
-                exp_type = expense.get('expense_type', 'other')
                 if exp_type == 'pandi':
                     ytd_breakdown['piti'] += amount
                 elif exp_type == 'utilities':
@@ -238,11 +202,12 @@ class FinancialPerformanceService:
         }
         
         for expense in expenses:
-            if not expense.get('is_planned', False):
+            exp_type = expense.get('expense_type', 'other')
+            # Exclude rehab expenses and planned expenses from cumulative
+            if not expense.get('is_planned', False) and exp_type != 'rehab':
                 amount = Decimal(str(expense['amount']))
                 cumulative_expenses += amount
                 
-                exp_type = expense.get('expense_type', 'other')
                 if exp_type == 'pandi':
                     cumulative_breakdown['piti'] += amount
                 elif exp_type == 'utilities':
@@ -269,8 +234,7 @@ class FinancialPerformanceService:
             cash_invested = current_market_value - purchase_price
             if cash_invested > 0:
                 # Annualized profit/loss
-                import datetime
-                days_ytd = (datetime.date.today() - ytd_start).days
+                days_ytd = (date.today() - ytd_start).days
                 if days_ytd > 0:
                     annual_profit_loss = (ytd_profit_loss / Decimal(str(days_ytd))) * Decimal("365")
                 else:

@@ -153,7 +153,7 @@ async def list_properties_endpoint(
                 "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
                 "property_status": row.get("property_status", "evaluating"),
                 "vacancy_rate": Decimal(str(row["vacancy_rate"])) if pd.notna(row.get("vacancy_rate")) else Decimal("0.07"),
-                "monthly_rent_to_income_ratio": Decimal(str(row["monthly_rent_to_income_ratio"])) if pd.notna(row.get("monthly_rent_to_income_ratio")) else None,
+                "monthly_rent_to_income_ratio": Decimal(str(row["monthly_rent_to_income_ratio"])) if pd.notna(row.get("monthly_rent_to_income_ratio")) else Decimal("2.75"),
                 "address_line1": row.get("address_line1"),
                 "address_line2": row.get("address_line2"),
                 "city": row.get("city"),

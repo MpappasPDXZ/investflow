@@ -150,10 +150,25 @@ def append_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame)
         
         for field in current_schema.fields:
             if field.name in df.columns and isinstance(field.field_type, DecimalType):
-                # Convert numeric values to Decimal
-                df[field.name] = df[field.name].apply(
-                    lambda x: PythonDecimal(str(x)) if pd.notna(x) and x is not None else None
-                )
+                # Get precision from schema
+                precision = field.field_type.precision
+                scale = field.field_type.scale
+                
+                # Round to the scale (decimal places) to prevent data loss
+                # Convert all values to Decimal, handling various numeric types
+                def to_decimal(x):
+                    if pd.isna(x) or x is None:
+                        return None
+                    # Handle string, int, float, or Decimal
+                    try:
+                        if isinstance(x, PythonDecimal):
+                            return PythonDecimal(str(round(float(x), scale)))
+                        else:
+                            return PythonDecimal(str(round(float(x), scale)))
+                    except (ValueError, TypeError):
+                        return None
+                
+                df[field.name] = df[field.name].apply(to_decimal)
         
         # Reorder DataFrame columns to match table schema
         schema_column_order = [field.name for field in current_schema.fields]

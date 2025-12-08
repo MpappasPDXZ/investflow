@@ -30,9 +30,9 @@ RUN uv pip install --system --no-binary pyiceberg -e .
 COPY app/ ./app/
 
 # Copy migration scripts
-COPY migrate_user_cache.py ./
-COPY migrate_financial_performance.py ./
-COPY migrate_populate_financial_performance_cache.py ./
+#COPY migrate_user_cache.py ./
+#COPY migrate_financial_performance.py ./
+#COPY migrate_populate_financial_performance_cache.py ./
 
 # Expose port
 EXPOSE 8000

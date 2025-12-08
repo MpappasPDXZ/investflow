@@ -1,27 +1,64 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useExpenses } from '@/lib/hooks/use-expenses';
 import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileDown } from 'lucide-react';
 import { format } from 'date-fns';
+import { apiClient } from '@/lib/api-client';
+
+interface Unit {
+  id: string;
+  property_id: string;
+  unit_number: string;
+  is_active: boolean;
+}
 
 export default function ExportExpensesPage() {
   const { data: properties } = usePropertiesHook();
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
   const [year, setYear] = useState<string>(new Date().getFullYear().toString());
   const [exportType, setExportType] = useState<'fy' | 'all'>('fy');
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [loadingUnits, setLoadingUnits] = useState(true);
   
   const { data: expenses } = useExpenses(selectedPropertyId || undefined);
 
-  const handleExport = () => {
-    console.log('📤 [EXPORT] Exporting expenses');
-    console.log('📝 [EXPORT] Property:', selectedPropertyId || 'All');
-    console.log('📝 [EXPORT] Type:', exportType);
-    console.log('📝 [EXPORT] Year:', year);
+  // Fetch all units for all properties
+  useEffect(() => {
+    const fetchAllUnits = async () => {
+      if (!properties?.items) return;
+      
+      setLoadingUnits(true);
+      try {
+        const allUnits: Unit[] = [];
+        for (const property of properties.items) {
+          const response = await apiClient.get<{ items: Unit[] }>(`/units?property_id=${property.id}`);
+          allUnits.push(...response.items);
+        }
+        setUnits(allUnits);
+      } catch (err) {
+        console.error('Error fetching units:', err);
+      } finally {
+        setLoadingUnits(false);
+      }
+    };
+    
+    fetchAllUnits();
+  }, [properties]);
 
+  // Helper function to get unit description (property + unit number)
+  const getUnitDescription = (propertyId: string, unitId: string | undefined) => {
+    if (!unitId) return '';
+    const property = properties?.items.find(p => p.id === propertyId);
+    const unit = units.find(u => u.id === unitId);
+    if (!property || !unit) return '';
+    return `${property.display_name || 'Property'} - Unit ${unit.unit_number}`;
+  };
+
+  const handleExport = () => {
     if (!expenses?.items.length) {
       alert('No expenses to export');
       return;
@@ -39,24 +76,27 @@ export default function ExportExpensesPage() {
       });
     }
 
-    // Convert to CSV - match the columns from the main expenses page
-    const headers = ['ID', 'Property', 'Unit ID', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Is Planned', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
-    const rows = filteredExpenses.map(exp => [
-      exp.id,
-      properties?.items.find(p => p.id === exp.property_id)?.display_name || '',
-      exp.unit_id || '',
-      exp.date,
-      `"${exp.description.replace(/"/g, '""')}"`,
-      Number(exp.amount).toFixed(2),
-      exp.vendor || '',
-      exp.expense_type,
-      exp.expense_category || '',
-      exp.is_planned ? 'Yes' : 'No',
-      `"${(exp.notes || '').replace(/"/g, '""')}"`,
-      exp.document_storage_id ? 'Yes' : 'No',
-      exp.created_at,
-      exp.updated_at
-    ]);
+    // Convert to CSV - removed 'Is Planned' column
+    const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
+    const rows = filteredExpenses.map(exp => {
+      const unitDesc = getUnitDescription(exp.property_id, exp.unit_id);
+      
+      return [
+        exp.id,
+        properties?.items.find(p => p.id === exp.property_id)?.display_name || '',
+        unitDesc,
+        exp.date,
+        `"${exp.description.replace(/"/g, '""')}"`,
+        Number(exp.amount).toFixed(2),
+        exp.vendor || '',
+        exp.expense_type,
+        exp.expense_category || '',
+        `"${(exp.notes || '').replace(/"/g, '""')}"`,
+        exp.document_storage_id ? 'Yes' : 'No',
+        exp.created_at,
+        exp.updated_at
+      ];
+    });
 
     const csv = [
       headers.join(','),
@@ -73,30 +113,32 @@ export default function ExportExpensesPage() {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
-
-    console.log('✅ [EXPORT] CSV exported:', filteredExpenses.length, 'expenses');
   };
 
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Export Expenses</h1>
-        <p className="text-gray-600 mt-1">Export expenses to CSV for accounting</p>
+        <div className="text-xs text-gray-500 mb-1">Export:</div>
+        <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+          <FileDown className="h-5 w-5" />
+          Export Expenses
+        </h1>
+        <p className="text-sm text-gray-600 mt-1">Export expenses to CSV for accounting</p>
       </div>
 
       <Card className="max-w-2xl">
         <CardHeader>
-          <CardTitle>Export Options</CardTitle>
+          <CardTitle className="text-sm font-bold">Export Options</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
               Property
             </label>
             <select
               value={selectedPropertyId}
               onChange={(e) => setSelectedPropertyId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-xs bg-white text-gray-900 h-8"
             >
               <option value="">All Properties</option>
               {properties?.items.map((prop) => (
@@ -108,13 +150,13 @@ export default function ExportExpensesPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
               Export Type
             </label>
             <select
               value={exportType}
               onChange={(e) => setExportType(e.target.value as 'fy' | 'all')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-xs bg-white text-gray-900 h-8"
             >
               <option value="fy">Fiscal Year</option>
               <option value="all">All Time</option>
@@ -123,7 +165,7 @@ export default function ExportExpensesPage() {
 
           {exportType === 'fy' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
                 Year
               </label>
               <input
@@ -132,17 +174,18 @@ export default function ExportExpensesPage() {
                 onChange={(e) => setYear(e.target.value)}
                 min="2000"
                 max={new Date().getFullYear() + 1}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-xs bg-white text-gray-900 h-8"
               />
             </div>
           )}
 
           <Button
             onClick={handleExport}
-            className="bg-black text-white hover:bg-gray-800"
+            disabled={loadingUnits || !expenses?.items.length}
+            className="bg-black text-white hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed h-8 text-xs mt-4"
           >
-            <FileDown className="h-4 w-4 mr-2" />
-            Export to CSV
+            <FileDown className="h-3 w-3 mr-1.5" />
+            {loadingUnits ? 'Loading units...' : 'Export to CSV'}
           </Button>
         </CardContent>
       </Card>

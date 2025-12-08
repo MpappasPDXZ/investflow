@@ -124,6 +124,23 @@ async def startup_event():
             logger.warning("Auth cache initialization failed, will use Iceberg fallback on first request")
     except Exception as e:
         logger.warning(f"Could not initialize auth cache: {e}")
+    
+    # Initialize scheduled financials template cache (ADLS parquet cache for auto-scaling templates)
+    try:
+        from app.services.scheduled_financials_template_service import scheduled_financials_template
+        if scheduled_financials_template.initialize():
+            metadata = scheduled_financials_template._template_metadata
+            if metadata:
+                logger.info(
+                    f"✅ Scheduled financials template loaded: "
+                    f"{len(scheduled_financials_template._expenses_template)} expenses, "
+                    f"{len(scheduled_financials_template._revenue_template)} revenue items "
+                    f"(template property: {metadata.get('template_property_id')})"
+                )
+        else:
+            logger.info("ℹ️ No scheduled financials template found - use '/scheduled-financials/save-template' to create one")
+    except Exception as e:
+        logger.warning(f"Could not initialize scheduled financials template: {e}")
 
 
 # Include routers

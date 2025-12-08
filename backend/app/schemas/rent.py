@@ -79,3 +79,6 @@ class RentListResponse(BaseModel):
 
 
 
+
+
+

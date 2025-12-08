@@ -91,7 +91,7 @@ class DocumentService:
                 "file_type": blob_metadata["file_type"],
                 "file_size": blob_metadata["file_size"],
                 "document_type": document_type,
-                "document_metadata": document_metadata or {},
+                "document_metadata": None,  # Table schema expects list<list<string>>, pass None for now
                 "display_name": display_name,  # Direct column, not nested in metadata
                 "uploaded_at": now,
                 "expires_at": None,

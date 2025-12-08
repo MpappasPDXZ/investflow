@@ -1,8 +1,10 @@
 """API routes for expense management"""
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from typing import List, Optional
 from uuid import UUID
 from datetime import date
+import io
 
 from app.core.dependencies import get_current_user
 from app.schemas.expense import (
@@ -10,6 +12,7 @@ from app.schemas.expense import (
     ExpenseCategory
 )
 from app.services import expense_service, document_service
+from app.services.adls_service import adls_service
 from app.core.logging import get_logger
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
@@ -246,5 +249,51 @@ async def get_expense_receipt(
         raise
     except Exception as e:
         logger.error(f"Error getting expense receipt: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{expense_id}/receipt/proxy")
+async def proxy_expense_receipt_download(
+    expense_id: UUID,
+    current_user: dict = Depends(get_current_user)
+):
+    """Proxy download for expense receipt (forces actual download instead of opening in browser)"""
+    try:
+        user_id = UUID(current_user["sub"])
+        expense_dict = expense_service.get_expense(expense_id, user_id)
+        
+        if not expense_dict:
+            raise HTTPException(status_code=404, detail="Expense not found")
+        
+        if not expense_dict.get("document_storage_id"):
+            raise HTTPException(status_code=404, detail="No receipt attached to this expense")
+        
+        # Get document metadata
+        document = document_service.get_document(
+            UUID(expense_dict["document_storage_id"]),
+            user_id
+        )
+        
+        if not document:
+            raise HTTPException(status_code=404, detail="Receipt not found")
+        
+        # Download blob content
+        blob_content, content_type, filename = adls_service.download_blob(document["blob_name"])
+        
+        # Use display_name if available, otherwise use original filename
+        download_filename = document.get("display_name") or document.get("file_name") or filename
+        
+        # Return as streaming response with Content-Disposition header to force download
+        return StreamingResponse(
+            io.BytesIO(blob_content),
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{download_filename}"'
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proxying expense receipt download: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 

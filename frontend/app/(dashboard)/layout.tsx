@@ -60,7 +60,6 @@ export default function DashboardLayout({
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle menu</span>
             </SidebarTrigger>
-            <h1 className="font-semibold text-lg">InvestFlow</h1>
           </header>
           
           <main className="flex-1 p-4 md:p-6 overflow-auto">

@@ -1,11 +1,14 @@
 """API routes for document management"""
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from uuid import UUID
+import io
 
 from app.core.dependencies import get_current_user
 from app.schemas.document import DocumentResponse, DocumentUploadResponse, DocumentListResponse, DocumentUpdateRequest
 from app.services import document_service
+from app.services.adls_service import adls_service
 from app.core.logging import get_logger
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -197,6 +200,41 @@ async def download_document_endpoint(
         raise
     except Exception as e:
         logger.error(f"Error getting document download URL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/proxy")
+async def proxy_document_download(
+    document_id: UUID,
+    current_user: dict = Depends(get_current_user)
+):
+    """Proxy download for a document (forces actual download instead of opening in browser)"""
+    try:
+        user_id = UUID(current_user["sub"])
+        
+        # Get document metadata
+        document = document_service.get_document(document_id, user_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Download blob content
+        blob_content, content_type, filename = adls_service.download_blob(document["blob_name"])
+        
+        # Use display_name if available, otherwise use original filename
+        download_filename = document.get("display_name") or document.get("file_name") or filename
+        
+        # Return as streaming response with Content-Disposition header to force download
+        return StreamingResponse(
+            io.BytesIO(blob_content),
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{download_filename}"'
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proxying document download: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

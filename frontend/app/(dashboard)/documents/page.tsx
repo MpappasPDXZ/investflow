@@ -80,7 +80,7 @@ const DOCUMENT_TYPES = [
 
 // Photo types vs Document types for filtering
 const PHOTO_TYPES = ["photo", "inspection"];
-const DOCUMENT_TYPES_FILTER = ["lease", "background_check", "contract", "invoice", "other"];
+const DOCUMENT_TYPES_FILTER = ["receipt", "lease", "background_check", "contract", "invoice", "other"];
 
 export default function DocumentsPage() {
   const searchParams = useSearchParams();
@@ -238,9 +238,9 @@ export default function DocumentsPage() {
   };
 
   const getFileIcon = (fileType: string) => {
-    if (fileType?.startsWith("image/")) return <Image className="h-4 w-4" />;
-    if (fileType?.includes("pdf")) return <FileText className="h-4 w-4" />;
-    return <FileIcon className="h-4 w-4" />;
+    if (fileType?.startsWith("image/")) return <Image className="h-3.5 w-3.5" />;
+    if (fileType?.includes("pdf")) return <FileText className="h-3.5 w-3.5" />;
+    return <FileIcon className="h-3.5 w-3.5" />;
   };
 
   const getDocTypeBadge = (docType: string) => {
@@ -302,20 +302,27 @@ export default function DocumentsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header - Responsive */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="p-8">
+      {/* Header - Compact */}
+      <div className="mb-6 flex justify-between items-start">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold">
-            {typeFilter === "photo" ? "Photos" : typeFilter === "document" ? "Documents" : "Vault"}
+          <div className="text-xs text-gray-500 mb-1">Viewing:</div>
+          <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            {typeFilter === "photo" ? (
+              <><Image className="h-5 w-5" /> Photos</>
+            ) : typeFilter === "document" ? (
+              <><FileText className="h-5 w-5" /> Documents</>
+            ) : (
+              <><FileText className="h-5 w-5" /> Vault</>
+            )}
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-gray-600 mt-1">
             {filteredDocs.length} {typeFilter === "photo" ? "photos" : typeFilter === "document" ? "documents" : "files"} across {properties.length} properties
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="flex items-center gap-2">
           <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-            <SelectTrigger className="w-full sm:w-[200px] min-h-[44px]">
+            <SelectTrigger className="w-[200px] h-8 text-xs">
               <SelectValue placeholder="Filter by property" />
             </SelectTrigger>
             <SelectContent>
@@ -329,8 +336,8 @@ export default function DocumentsPage() {
             </SelectContent>
           </Select>
           <Link href="/documents/add">
-            <Button className="min-h-[44px]">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button className="bg-black text-white hover:bg-gray-800 h-8 text-xs">
+              <Plus className="h-3 w-3 mr-1.5" />
               Add Document
             </Button>
           </Link>
@@ -351,45 +358,45 @@ export default function DocumentsPage() {
         ) : (
           Object.entries(photosByProperty).map(([propertyId, docs]) => (
             <Card key={propertyId} className="overflow-hidden">
-              <CardHeader className="py-3 px-4 bg-muted/50">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  {propertyId === "unassigned"
-                    ? "Unassigned Photos"
-                    : getPropertyName(propertyId)}
-                  <Badge variant="secondary" className="ml-auto">
-                    {docs.length}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
+            <CardHeader className="py-3 px-4 bg-muted/50">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                {propertyId === "unassigned"
+                  ? "Unassigned Photos"
+                  : getPropertyName(propertyId)}
+                <Badge variant="secondary" className="ml-auto text-xs">
+                  {docs.length}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
               
               {/* Desktop Table View */}
               <div className="hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow className="text-xs">
-                      <TableHead className="w-[35%]">Name</TableHead>
-                      <TableHead className="w-[15%]">Type</TableHead>
-                      <TableHead className="w-[12%]">Date</TableHead>
-                      <TableHead className="w-[38%] text-right">Actions</TableHead>
+                      <TableHead className="w-[35%] text-xs">Name</TableHead>
+                      <TableHead className="w-[15%] text-xs">Type</TableHead>
+                      <TableHead className="w-[12%] text-xs">Date</TableHead>
+                      <TableHead className="w-[38%] text-right text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {docs.map((doc) => (
-                      <TableRow key={doc.id} className="text-sm">
+                      <TableRow key={doc.id} className="text-xs">
                         <TableCell className="py-2">
                           <div className="flex items-center gap-2">
-                            <Image className="h-4 w-4 text-muted-foreground" />
+                            <Image className="h-3.5 w-3.5 text-muted-foreground" />
                             <div className="flex flex-col">
                               <span
-                                className="truncate max-w-[220px] font-medium"
+                                className="truncate max-w-[220px] font-medium text-xs"
                                 title={getDisplayName(doc)}
                               >
                                 {getDisplayName(doc)}
                               </span>
                               {doc.display_name && (
                                 <span
-                                  className="text-xs text-muted-foreground truncate max-w-[220px]"
+                                  className="text-[10px] text-muted-foreground truncate max-w-[220px]"
                                   title={doc.file_name}
                                 >
                                   {doc.file_name}
@@ -401,12 +408,12 @@ export default function DocumentsPage() {
                         <TableCell className="py-2">
                           <Badge
                             variant="outline"
-                            className={`text-xs ${getDocTypeBadge(doc.document_type)}`}
+                            className={`text-[10px] ${getDocTypeBadge(doc.document_type)}`}
                           >
                             {doc.document_type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="py-2 text-muted-foreground">
+                        <TableCell className="py-2 text-muted-foreground text-xs">
                           {formatDate(doc.created_at || doc.uploaded_at)}
                         </TableCell>
                         <TableCell className="py-2 text-right">
@@ -554,12 +561,12 @@ export default function DocumentsPage() {
         Object.entries(groupedByProperty).map(([propertyId, docs]) => (
           <Card key={propertyId} className="overflow-hidden">
             <CardHeader className="py-3 px-4 bg-muted/50">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 {propertyId === "unassigned"
                   ? "Unassigned Documents"
                   : getPropertyName(propertyId)}
-                <Badge variant="secondary" className="ml-auto">
+                <Badge variant="secondary" className="ml-auto text-xs">
                   {docs.length}
                 </Badge>
               </CardTitle>
@@ -570,29 +577,29 @@ export default function DocumentsPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="text-xs">
-                    <TableHead className="w-[35%]">Name</TableHead>
-                    <TableHead className="w-[12%]">Type</TableHead>
-                    <TableHead className="w-[10%]">Size</TableHead>
-                    <TableHead className="w-[12%]">Date</TableHead>
-                    <TableHead className="w-[31%] text-right">Actions</TableHead>
+                    <TableHead className="w-[35%] text-xs">Name</TableHead>
+                    <TableHead className="w-[12%] text-xs">Type</TableHead>
+                    <TableHead className="w-[10%] text-xs">Size</TableHead>
+                    <TableHead className="w-[12%] text-xs">Date</TableHead>
+                    <TableHead className="w-[31%] text-right text-xs">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {docs.map((doc) => (
-                    <TableRow key={doc.id} className="text-sm">
+                    <TableRow key={doc.id} className="text-xs">
                       <TableCell className="py-2">
                         <div className="flex items-center gap-2">
                           {getFileIcon(doc.file_type)}
                           <div className="flex flex-col">
                             <span
-                              className="truncate max-w-[220px] font-medium"
+                              className="truncate max-w-[220px] font-medium text-xs"
                               title={getDisplayName(doc)}
                             >
                               {getDisplayName(doc)}
                             </span>
                             {doc.display_name && (
                               <span
-                                className="text-xs text-muted-foreground truncate max-w-[220px]"
+                                className="text-[10px] text-muted-foreground truncate max-w-[220px]"
                                 title={doc.file_name}
                               >
                                 {doc.file_name}
@@ -604,15 +611,15 @@ export default function DocumentsPage() {
                       <TableCell className="py-2">
                         <Badge
                           variant="outline"
-                          className={`text-xs ${getDocTypeBadge(doc.document_type)}`}
+                          className={`text-[10px] ${getDocTypeBadge(doc.document_type)}`}
                         >
                           {doc.document_type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="py-2 text-muted-foreground">
+                      <TableCell className="py-2 text-muted-foreground text-xs">
                         {formatFileSize(doc.file_size)}
                       </TableCell>
-                      <TableCell className="py-2 text-muted-foreground">
+                      <TableCell className="py-2 text-muted-foreground text-xs">
                         {formatDate(doc.created_at || doc.uploaded_at)}
                       </TableCell>
                       <TableCell className="py-2 text-right">

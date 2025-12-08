@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Edit2, Trash2, Check, X, ChevronDown, ChevronRight, DollarSign, TrendingUp } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Plus, Edit2, Trash2, Check, X, ChevronDown, ChevronRight, DollarSign, TrendingUp, Zap } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface ScheduledExpense {
@@ -120,6 +122,15 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
 
   // State for template
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templatePreview, setTemplatePreview] = useState<{
+    expenses: any[];
+    revenue: any[];
+    scaling_factors: any;
+  } | null>(null);
+  const [loadingTemplate, setLoadingTemplate] = useState(false);
+  const [selectedExpenses, setSelectedExpenses] = useState<Set<number>>(new Set());
+  const [selectedRevenue, setSelectedRevenue] = useState<Set<number>>(new Set());
 
   // Fetch expenses and revenues on mount
   useEffect(() => {
@@ -361,25 +372,88 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
     });
   };
 
-  const handleApplyTemplate = async () => {
-    if (!confirm('Apply template from 316 S 50th Ave? This will add scaled scheduled expenses and revenue based on your property details.')) {
-      return;
+  const loadTemplatePreview = async () => {
+    try {
+      setLoadingTemplate(true);
+      // Get the template preview (we'll create a new endpoint for this)
+      const response = await apiClient.get<{
+        expenses: any[];
+        revenue: any[];
+        scaling_factors: any;
+      }>(`/scheduled-financials/preview-template/${propertyId}`);
+      
+      setTemplatePreview(response);
+      // Select all items by default
+      setSelectedExpenses(new Set(response.expenses.map((_, idx) => idx)));
+      setSelectedRevenue(new Set(response.revenue.map((_, idx) => idx)));
+    } catch (err) {
+      console.error('❌ [TEMPLATE] Error loading preview:', err);
+      alert(`Failed to load template preview: ${(err as Error).message}`);
+    } finally {
+      setLoadingTemplate(false);
     }
+  };
+
+  const handleOpenTemplateModal = () => {
+    setShowTemplateModal(true);
+    loadTemplatePreview();
+  };
+
+  const toggleExpense = (index: number) => {
+    setSelectedExpenses(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const toggleRevenue = (index: number) => {
+    setSelectedRevenue(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const handleApplyTemplate = async () => {
+    if (!templatePreview) return;
 
     try {
       setApplyingTemplate(true);
+      
+      // Filter selected items
+      const selectedExpenseItems = templatePreview.expenses.filter((_, idx) => selectedExpenses.has(idx));
+      const selectedRevenueItems = templatePreview.revenue.filter((_, idx) => selectedRevenue.has(idx));
+      
+      // Apply template with selected items
       const response = await apiClient.post<{
         message: string;
         property_id: string;
         expenses_created: number;
         revenue_created: number;
-        scaling_factors: any;
-      }>(`/scheduled-financials/apply-template/${propertyId}`);
+      }>(`/scheduled-financials/apply-template/${propertyId}`, {
+        expenses: selectedExpenseItems,
+        revenue: selectedRevenueItems
+      });
+      
       console.log('✅ [TEMPLATE] Applied:', response);
       alert(`Template applied successfully!\n${response.expenses_created} expenses and ${response.revenue_created} revenue items added.`);
+      
       // Refresh data
       fetchExpenses();
       fetchRevenues();
+      
+      // Close modal and reset
+      setShowTemplateModal(false);
+      setTemplatePreview(null);
     } catch (err) {
       console.error('❌ [TEMPLATE] Error:', err);
       alert(`Failed to apply template: ${(err as Error).message}`);
@@ -390,29 +464,21 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
 
   return (
     <div className="space-y-6">
-      {/* Auto-Apply Template Button */}
-      {expenses.length === 0 && revenues.length === 0 && (
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-blue-900 mb-1">Quick Start: Auto-Apply Template</h3>
-                <p className="text-xs text-blue-700">
-                  Automatically populate scheduled expenses and revenue based on 316 S 50th Ave, 
-                  scaled to your property's price, size, and bedrooms/bathrooms.
-                </p>
-              </div>
-              <Button
-                onClick={handleApplyTemplate}
-                disabled={applyingTemplate}
-                className="bg-blue-600 text-white hover:bg-blue-700 h-9 text-sm whitespace-nowrap ml-4"
-              >
-                {applyingTemplate ? 'Applying...' : '⚡ Auto-Apply Template'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Header with Auto Apply */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-base font-bold text-gray-900">Scheduled Financials</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Manage recurring expenses and revenue projections</p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={handleOpenTemplateModal}
+          className="h-8 text-xs border-blue-600 text-blue-600 hover:bg-blue-50"
+        >
+          <Zap className="h-3 w-3 mr-1.5" />
+          Auto-Apply Template
+        </Button>
+      </div>
 
       {/* EXPENSES SECTION */}
       <Card>
@@ -1107,6 +1173,182 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
           </CardContent>
         </Card>
       )}
+
+      {/* Template Modal */}
+      <Dialog open={showTemplateModal} onOpenChange={setShowTemplateModal}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Auto-Apply Template</DialogTitle>
+            <p className="text-xs text-gray-600 mt-1">
+              Select which items to add from <strong>316 S 50th Ave</strong> template (scaled to your property)
+            </p>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto space-y-4 py-4">
+            {loadingTemplate ? (
+              <div className="text-center py-8 text-gray-500">Loading template...</div>
+            ) : templatePreview ? (
+              <>
+                {/* Expenses Checklist */}
+                {templatePreview.expenses.length > 0 && (
+                  <div className="border rounded-lg">
+                    <div className="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
+                      <h4 className="text-sm font-semibold text-gray-900">
+                        Scheduled Expenses ({selectedExpenses.size}/{templatePreview.expenses.length} selected)
+                      </h4>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => setSelectedExpenses(new Set(templatePreview.expenses.map((_, idx) => idx)))}
+                        >
+                          Select All
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => setSelectedExpenses(new Set())}
+                        >
+                          Deselect All
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="divide-y max-h-64 overflow-y-auto">
+                      {templatePreview.expenses.map((expense, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-3 hover:bg-gray-50">
+                          <Checkbox
+                            checked={selectedExpenses.has(idx)}
+                            onCheckedChange={() => toggleExpense(idx)}
+                            className="mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-900">{expense.item_name}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded uppercase">
+                                {expense.expense_type}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-gray-500 mt-0.5">
+                              {expense.expense_type === 'capex' && expense.purchase_price && (
+                                <>Purchase: ${expense.purchase_price.toFixed(2)} | Depreciation: {(expense.depreciation_rate || 0) * 100}%/yr</>
+                              )}
+                              {expense.expense_type === 'maintenance' && expense.annual_cost && (
+                                <>Annual Cost: ${expense.annual_cost.toFixed(2)}</>
+                              )}
+                              {expense.expense_type === 'pti' && expense.annual_cost && (
+                                <>Annual Cost: ${expense.annual_cost.toFixed(2)}</>
+                              )}
+                              {expense.expense_type === 'pi' && expense.principal && (
+                                <>Principal: ${expense.principal.toFixed(2)} | Rate: {(expense.interest_rate || 0) * 100}%</>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Revenue Checklist */}
+                {templatePreview.revenue.length > 0 && (
+                  <div className="border rounded-lg">
+                    <div className="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
+                      <h4 className="text-sm font-semibold text-gray-900">
+                        Scheduled Revenue ({selectedRevenue.size}/{templatePreview.revenue.length} selected)
+                      </h4>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => setSelectedRevenue(new Set(templatePreview.revenue.map((_, idx) => idx)))}
+                        >
+                          Select All
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => setSelectedRevenue(new Set())}
+                        >
+                          Deselect All
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="divide-y">
+                      {templatePreview.revenue.map((rev, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-3 hover:bg-gray-50">
+                          <Checkbox
+                            checked={selectedRevenue.has(idx)}
+                            onCheckedChange={() => toggleRevenue(idx)}
+                            className="mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-900">{rev.item_name}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded uppercase">
+                                {rev.revenue_type}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-gray-500 mt-0.5">
+                              {rev.revenue_type === 'appreciation' && rev.property_value && (
+                                <>Property Value: ${rev.property_value.toFixed(2)} | Rate: {(rev.appreciation_rate || 0) * 100}%/yr</>
+                              )}
+                              {rev.revenue_type === 'principal_paydown' && rev.annual_amount && (
+                                <>Annual Amount: ${rev.annual_amount.toFixed(2)}</>
+                              )}
+                              {rev.revenue_type === 'value_added' && rev.value_added_amount && (
+                                <>Value Added: ${rev.value_added_amount.toFixed(2)}</>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Scaling Info */}
+                {templatePreview.scaling_factors && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <h4 className="text-xs font-semibold text-blue-900 mb-1">Scaling Factors:</h4>
+                    <div className="text-[10px] text-blue-800 grid grid-cols-4 gap-2">
+                      <div>Price: {templatePreview.scaling_factors.price_ratio?.toFixed(2)}x</div>
+                      <div>Beds: {templatePreview.scaling_factors.beds_ratio?.toFixed(2)}x</div>
+                      <div>Baths: {templatePreview.scaling_factors.baths_ratio?.toFixed(2)}x</div>
+                      <div>Sq Ft: {templatePreview.scaling_factors.sqft_ratio?.toFixed(2)}x</div>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
+          
+          <DialogFooter className="border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowTemplateModal(false);
+                setTemplatePreview(null);
+              }}
+              disabled={applyingTemplate}
+              className="h-8 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApplyTemplate}
+              disabled={applyingTemplate || !templatePreview || (selectedExpenses.size === 0 && selectedRevenue.size === 0)}
+              className="bg-blue-600 text-white hover:bg-blue-700 h-8 text-xs"
+            >
+              <Zap className="h-3 w-3 mr-1.5" />
+              {applyingTemplate ? 'Applying...' : `Apply ${selectedExpenses.size + selectedRevenue.size} Items`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

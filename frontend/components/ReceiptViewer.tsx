@@ -105,6 +105,51 @@ export function ReceiptViewer({
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.25, 0.5));
   const handleResetZoom = () => setZoom(1);
+  
+  // Handle proxy download
+  const handleDownload = async () => {
+    try {
+      const endpoint = expenseId 
+        ? `/expenses/${expenseId}/receipt/proxy`
+        : `/documents/${documentId}/proxy`;
+      
+      // Get token from localStorage (same way apiClient does)
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1${endpoint}`, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Download failed');
+      }
+      
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = fileName || 'document';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Download error:', err);
+    }
+  };
 
   const displayName = fileName || 
     (isImage ? 'Image' : isPdf ? 'PDF' : 'Document');
@@ -129,50 +174,17 @@ export function ReceiptViewer({
         setIsOpen(open);
         onOpenChange?.(open);
       }}>
-        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] md:h-[85vh] flex flex-col p-0 gap-0">
-          {/* Header - Responsive */}
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] md:h-[85vh] flex flex-col p-0 gap-0 [&>button]:hidden">
+          {/* Header - Responsive with X button at far right */}
           <DialogHeader className="px-4 md:px-6 py-3 md:py-4 border-b bg-gray-50 shrink-0">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <DialogTitle className="flex items-center gap-2 text-base md:text-lg font-semibold truncate">
                 <FileText className="h-5 w-5 shrink-0" />
                 <span className="truncate">{displayName}</span>
               </DialogTitle>
               
-              {/* Action buttons - scrollable on mobile */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 -mx-1 px-1">
-                {isImage && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleZoomOut}
-                      disabled={zoom <= 0.5}
-                      className="h-9 w-9 p-0 shrink-0"
-                    >
-                      <ZoomOut className="h-4 w-4" />
-                    </Button>
-                    <span className="text-sm text-gray-600 min-w-[3rem] text-center shrink-0">
-                      {Math.round(zoom * 100)}%
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleZoomIn}
-                      disabled={zoom >= 3}
-                      className="h-9 w-9 p-0 shrink-0"
-                    >
-                      <ZoomIn className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleResetZoom}
-                      className="h-9 px-2 shrink-0"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
-                  </>
-                )}
+              {/* Action buttons inline with title and close button */}
+              <div className="flex items-center gap-2 shrink-0">
                 <a
                   href={downloadUrl || '#'}
                   target="_blank"
@@ -185,19 +197,63 @@ export function ReceiptViewer({
                     <span className="hidden md:inline">Open</span>
                   </Button>
                 </a>
-                <a 
-                  href={downloadUrl || '#'} 
-                  download 
-                  className={`inline-flex shrink-0 ${!downloadUrl ? 'pointer-events-none opacity-50' : ''}`}
-                  onClick={(e) => !downloadUrl && e.preventDefault()}
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-9 px-3 shrink-0" 
+                  disabled={!downloadUrl && !expenseId && !documentId}
+                  onClick={handleDownload}
                 >
-                  <Button variant="outline" size="sm" className="h-9 px-3" disabled={!downloadUrl}>
-                    <Download className="h-4 w-4 md:mr-1" />
-                    <span className="hidden md:inline">Download</span>
-                  </Button>
-                </a>
+                  <Download className="h-4 w-4 md:mr-1" />
+                  <span className="hidden md:inline">Download</span>
+                </Button>
+                
+                {/* Close button at far right with light red styling */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsOpen(false)}
+                  className="h-9 w-9 p-0 rounded-full shrink-0 text-red-400 border-red-200 hover:bg-red-50 hover:text-red-500 hover:border-red-300"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
             </div>
+            
+            {/* Zoom controls on second row for images */}
+            {isImage && (
+              <div className="flex items-center gap-2 mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleZoomOut}
+                  disabled={zoom <= 0.5}
+                  className="h-9 w-9 p-0 shrink-0"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-gray-600 min-w-[3rem] text-center shrink-0">
+                  {Math.round(zoom * 100)}%
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleZoomIn}
+                  disabled={zoom >= 3}
+                  className="h-9 w-9 p-0 shrink-0"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetZoom}
+                  className="h-9 px-2 shrink-0"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </DialogHeader>
 
           {/* Content - Touch-friendly with native scroll/zoom on mobile */}
@@ -259,17 +315,15 @@ export function ReceiptViewer({
                         Open in New Tab
                       </Button>
                     </a>
-                    <a 
-                      href={downloadUrl || '#'} 
-                      download
-                      className={!downloadUrl ? 'pointer-events-none opacity-50' : ''}
-                      onClick={(e) => !downloadUrl && e.preventDefault()}
+                    <Button 
+                      variant="outline" 
+                      className="min-h-[44px]"
+                      disabled={!downloadUrl && !expenseId && !documentId}
+                      onClick={handleDownload}
                     >
-                      <Button variant="outline" className="min-h-[44px]" disabled={!downloadUrl}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Download PDF
-                      </Button>
-                    </a>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download PDF
+                    </Button>
                   </div>
                 </div>
                 {/* Desktop PDF viewer */}
@@ -283,17 +337,14 @@ export function ReceiptViewer({
               <div className="text-center text-gray-500 py-8">
                 <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
                 <p className="mb-4">Preview not available for this file type</p>
-                <a 
-                  href={downloadUrl || '#'} 
-                  download
-                  className={!downloadUrl ? 'pointer-events-none opacity-50' : ''}
-                  onClick={(e) => !downloadUrl && e.preventDefault()}
+                <Button 
+                  className="min-h-[44px]"
+                  disabled={!downloadUrl && !expenseId && !documentId}
+                  onClick={handleDownload}
                 >
-                  <Button className="min-h-[44px]" disabled={!downloadUrl}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Download File
-                  </Button>
-                </a>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download File
+                </Button>
               </div>
             )}
           </div>

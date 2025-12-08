@@ -22,6 +22,14 @@ import {
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Expense } from '@/lib/types';
+import { apiClient } from '@/lib/api-client';
+
+interface Unit {
+  id: string;
+  property_id: string;
+  unit_number: string;
+  is_active: boolean;
+}
 
 // Expense type labels (for the main expense type dropdown)
 const EXPENSE_TYPE_LABELS: Record<string, string> = {
@@ -68,11 +76,45 @@ export default function ExpensesPage() {
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set()); // "propertyId-year"
   const [showFilters, setShowFilters] = useState(false);
   const [hasInitializedExpansion, setHasInitializedExpansion] = useState(false);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [loadingUnits, setLoadingUnits] = useState(true);
   
   const { data: properties } = usePropertiesHook();
   const { data: expenses, isLoading } = useExpenses(selectedPropertyId || undefined);
   const { data: summary } = useExpenseSummary(selectedPropertyId || undefined);
   const deleteExpense = useDeleteExpense();
+
+  // Fetch all units for all properties
+  useEffect(() => {
+    const fetchAllUnits = async () => {
+      if (!properties?.items) return;
+      
+      setLoadingUnits(true);
+      try {
+        const allUnits: Unit[] = [];
+        for (const property of properties.items) {
+          const response = await apiClient.get<{ items: Unit[] }>(`/units?property_id=${property.id}`);
+          allUnits.push(...response.items);
+        }
+        setUnits(allUnits);
+      } catch (err) {
+        console.error('Error fetching units:', err);
+      } finally {
+        setLoadingUnits(false);
+      }
+    };
+    
+    fetchAllUnits();
+  }, [properties]);
+
+  // Helper function to get unit description (property + unit number)
+  const getUnitDescription = (propertyId: string, unitId: string | undefined) => {
+    if (!unitId) return '';
+    const property = properties?.items.find(p => p.id === propertyId);
+    const unit = units.find(u => u.id === unitId);
+    if (!property || !unit) return '';
+    return `${property.display_name || 'Property'} - Unit ${unit.unit_number}`;
+  };
 
   // Auto-expand current year on initial load
   useEffect(() => {
@@ -201,25 +243,28 @@ export default function ExpensesPage() {
   const exportToCSV = () => {
     if (!expenses?.items) return;
     
-    // Include ALL expense fields in the export
-    const headers = ['ID', 'Property', 'Unit ID', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Is Planned', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
+    // Removed 'Is Planned' column and using full Unit description
+    const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
     
-    const rows = expenses.items.map(e => [
-      e.id,
-      getPropertyName(e.property_id || 'unassigned'),
-      e.unit_id || '',
-      e.date,
-      `"${e.description.replace(/"/g, '""')}"`,
-      Number(e.amount).toFixed(2),
-      e.vendor || '',
-      e.expense_type,
-      e.expense_category || '',
-      e.is_planned ? 'Yes' : 'No',
-      `"${(e.notes || '').replace(/"/g, '""')}"`,
-      e.document_storage_id ? 'Yes' : 'No',
-      e.created_at,
-      e.updated_at
-    ]);
+    const rows = expenses.items.map(e => {
+      const unitDesc = getUnitDescription(e.property_id, e.unit_id);
+      
+      return [
+        e.id,
+        getPropertyName(e.property_id || 'unassigned'),
+        unitDesc,
+        e.date,
+        `"${e.description.replace(/"/g, '""')}"`,
+        Number(e.amount).toFixed(2),
+        e.vendor || '',
+        e.expense_type,
+        e.expense_category || '',
+        `"${(e.notes || '').replace(/"/g, '""')}"`,
+        e.document_storage_id ? 'Yes' : 'No',
+        e.created_at,
+        e.updated_at
+      ];
+    });
     
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -255,7 +300,7 @@ export default function ExpensesPage() {
             variant="outline" 
             size="sm"
             onClick={exportToCSV}
-            disabled={!expenses?.items?.length}
+            disabled={loadingUnits || !expenses?.items?.length}
             className="h-7 text-xs px-2"
           >
             <Download className="h-3 w-3 mr-1" />

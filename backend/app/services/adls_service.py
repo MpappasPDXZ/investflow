@@ -150,6 +150,39 @@ class ADLSService:
             logger.error(f"Error generating download URL: {e}", exc_info=True)
             raise
     
+    def download_blob(self, blob_name: str) -> tuple[bytes, str, str]:
+        """
+        Download blob content
+        
+        Args:
+            blob_name: Name of the blob to download
+        
+        Returns:
+            Tuple of (blob_content, content_type, filename)
+        """
+        try:
+            blob_client = self.blob_service_client.get_blob_client(
+                container=self.container_name,
+                blob=blob_name
+            )
+            
+            # Download blob
+            download_stream = blob_client.download_blob()
+            blob_content = download_stream.readall()
+            
+            # Get metadata
+            properties = blob_client.get_blob_properties()
+            content_type = properties.content_settings.content_type or "application/octet-stream"
+            
+            # Extract filename from blob_name (last part after /)
+            filename = blob_name.split('/')[-1]
+            
+            return blob_content, content_type, filename
+            
+        except Exception as e:
+            logger.error(f"Error downloading blob: {e}", exc_info=True)
+            raise
+    
     def delete_blob(self, blob_name: str) -> bool:
         """
         Delete a blob from ADLS

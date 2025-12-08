@@ -328,11 +328,12 @@ class FinancialPerformanceCacheService:
                 expense_date = expense['date']
                 if isinstance(expense_date, str):
                     expense_date = datetime.fromisoformat(expense_date.split('T')[0]).date()
-                if expense_date >= ytd_start and not expense.get('is_planned', False):
+                exp_type = expense.get('expense_type', 'other')
+                # Exclude rehab expenses and planned expenses from YTD
+                if expense_date >= ytd_start and not expense.get('is_planned', False) and exp_type != 'rehab':
                     amount = Decimal(str(expense['amount']))
                     ytd_expenses += amount
                     
-                    exp_type = expense.get('expense_type', 'other')
                     if exp_type == 'pandi':
                         ytd_breakdown['piti'] += amount
                     elif exp_type == 'utilities':
@@ -364,11 +365,12 @@ class FinancialPerformanceCacheService:
             }
             
             for expense in expenses:
-                if not expense.get('is_planned', False):
+                exp_type = expense.get('expense_type', 'other')
+                # Exclude rehab expenses and planned expenses from cumulative
+                if not expense.get('is_planned', False) and exp_type != 'rehab':
                     amount = Decimal(str(expense['amount']))
                     cumulative_expenses += amount
                     
-                    exp_type = expense.get('expense_type', 'other')
                     if exp_type == 'pandi':
                         cumulative_breakdown['piti'] += amount
                     elif exp_type == 'utilities':

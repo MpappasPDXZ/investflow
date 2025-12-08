@@ -7,7 +7,8 @@ export const metadata: Metadata = {
   title: 'InvestFlow - Rental Property Management',
   description: 'Manage your rental properties, expenses, and cash flow analysis',
   icons: {
-    icon: '/favicon.svg',
+    icon: '/logo.png',
+    apple: '/logo.png',
   },
 }
 

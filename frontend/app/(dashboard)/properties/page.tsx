@@ -62,15 +62,19 @@ export default function PropertiesPage() {
   }
 
   return (
-    <div className="p-4 md:p-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <div className="p-8">
+      <div className="mb-6 flex justify-between items-start">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Properties</h1>
-          <p className="text-gray-600 mt-1">Manage your rental properties</p>
+          <div className="text-xs text-gray-500 mb-1">Viewing:</div>
+          <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            Properties
+          </h1>
+          <p className="text-sm text-gray-600 mt-1">Manage your rental properties</p>
         </div>
         <Link href="/properties/add">
-          <Button className="bg-black text-white hover:bg-gray-800 min-h-[44px] w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
+          <Button className="bg-black text-white hover:bg-gray-800 h-8 text-xs">
+            <Plus className="h-3 w-3 mr-1.5" />
             Add Property
           </Button>
         </Link>
@@ -78,11 +82,11 @@ export default function PropertiesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>All Properties</CardTitle>
+          <CardTitle className="text-sm font-bold">All Properties</CardTitle>
         </CardHeader>
         <CardContent>
           {data?.items.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-gray-500 text-sm">
               No properties found. <Link href="/properties/add" className="text-blue-600 hover:underline">Add your first property</Link>
             </div>
           ) : (
@@ -92,14 +96,14 @@ export default function PropertiesPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Address</TableHead>
-                      <TableHead>Purchase Price</TableHead>
-                      <TableHead>Down Payment</TableHead>
-                      <TableHead>Market Value</TableHead>
-                      <TableHead>Vacancy Rate</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">Address</TableHead>
+                      <TableHead className="text-xs">Purchase Price</TableHead>
+                      <TableHead className="text-xs">Down Payment</TableHead>
+                      <TableHead className="text-xs">Market Value</TableHead>
+                      <TableHead className="text-xs">Vacancy Rate</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -109,53 +113,51 @@ export default function PropertiesPage() {
                         className="cursor-pointer hover:bg-gray-50"
                         onClick={() => router.push(`/properties/${property.id}`)}
                       >
-                        <TableCell className="font-medium">
+                        <TableCell className="font-medium text-xs">
                           {property.display_name || 'Unnamed Property'}
                         </TableCell>
                         <TableCell>
                           {property.address_line1 && (
-                            <div className="text-sm">
+                            <div className="text-xs">
                               {property.address_line1}
                               {property.city && `, ${property.city}, ${property.state}`}
                             </div>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-xs">
                           ${Math.round(property.purchase_price / 1000).toLocaleString()}k
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-xs">
                           {property.down_payment 
                             ? `$${Math.round(property.down_payment / 1000).toLocaleString()}k`
                             : '-'}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-xs">
                           {property.current_market_value 
                             ? `$${Math.round(property.current_market_value / 1000).toLocaleString()}k`
                             : '-'}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-xs">
                           {property.vacancy_rate !== undefined && property.vacancy_rate !== null
                             ? `${(property.vacancy_rate * 100).toFixed(1)}%`
                             : '7.0%'}
                         </TableCell>
-                        <TableCell className="text-sm text-gray-600">
+                        <TableCell className="text-xs text-gray-600">
                           {property.property_type || '-'}
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <div className="flex gap-2">
+                          <div className="flex gap-1">
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-red-600 hover:bg-red-50"
+                              className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
                               onClick={() => handleDelete(property.id, property.display_name || 'this property')}
                               disabled={deleting === property.id}
                             >
                               {deleting === property.id ? (
-                                'Deleting...'
+                                '...'
                               ) : (
-                                <>
-                                  <Trash2 className="h-4 w-4" />
-                                </>
+                                <Trash2 className="h-3.5 w-3.5" />
                               )}
                             </Button>
                           </div>

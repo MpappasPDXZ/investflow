@@ -265,31 +265,105 @@ class ScheduledFinancialsTemplateService:
         
         logger.info(f"Scaling: price={price_ratio:.2f}x, beds={beds_ratio:.2f}x, baths={baths_ratio:.2f}x, sqft={sqft_ratio:.2f}x")
         
+        # Helper to clean numeric values (remove NaN, Infinity)
+        def clean_value(value):
+            if value is None:
+                return None
+            try:
+                val = float(value)
+                # Check for NaN or Infinity
+                if not (val != val or val == float('inf') or val == float('-inf')):
+                    return val
+            except (ValueError, TypeError):
+                pass
+            return None
+        
         # Scale expenses
         scaled_expenses = []
+        
+        # Items that should NOT be scaled (fixed costs)
+        NO_SCALE_ITEMS = {
+            'Lawn Care (30 mows x 60 per mow)',
+            'Sprinklers Turn Off',
+            'HVAC',
+            'Dryer',
+            'Washer',
+            'Microwave (Over Range)',
+            'Dishwasher',
+            'Electric Range',
+            'Refrigerator'
+        }
+        
+        # Items that should NOT be added automatically
+        EXCLUDE_ITEMS = {
+            'Line of Credit',
+            'Mortgage'
+        }
+        
+        # Items that scale with square footage
+        SQFT_SCALE_ITEMS = {
+            'Electricity',
+            'Natural Gas',
+            'Water',
+            'Blinds',
+            'Driveway',
+            'Doors',
+            'Windows',
+            'Floors',
+            'Floors (Refinishing Hardwoods)',  # Handle variations
+            'Insurance'
+        }
+        
         for exp in self._expenses_template:
+            item_name = exp.get("item_name", "")
+            
+            # Skip excluded items
+            if item_name in EXCLUDE_ITEMS:
+                continue
+            
             scaled = exp.copy()
             scaled["property_id"] = str(target_property_id)
-            scaled.pop("id", None)  # Remove old ID
+            scaled.pop("id", None)
             scaled.pop("created_at", None)
             scaled.pop("updated_at", None)
             scaled.pop("_cdc_timestamp", None)
             
             exp_type = exp.get("expense_type")
             
-            # Apply scaling based on expense type
-            if exp_type == "capex":
-                # CapEx scales with price and size
-                if exp.get("purchase_price"):
-                    scaled["purchase_price"] = float(exp["purchase_price"]) * price_ratio * sqft_ratio
-            elif exp_type in ["pti", "maintenance"]:
-                # PTI and maintenance scale with price and size
-                if exp.get("annual_cost"):
-                    scaled["annual_cost"] = float(exp["annual_cost"]) * price_ratio * sqft_ratio
-            elif exp_type == "pi":
-                # P&I scales with price (loan amount)
-                if exp.get("principal"):
-                    scaled["principal"] = float(exp["principal"]) * price_ratio
+            # Don't scale fixed-cost items
+            if item_name in NO_SCALE_ITEMS:
+                # Keep original values, no scaling
+                pass
+            
+            # Scale with square footage only
+            elif item_name in SQFT_SCALE_ITEMS or any(sqft_item in item_name for sqft_item in ['Floor', 'Insurance']):
+                if exp_type == "capex" and exp.get("purchase_price"):
+                    scaled["purchase_price"] = clean_value(float(exp["purchase_price"]) * sqft_ratio)
+                elif exp_type in ["pti", "maintenance", "vacancy"] and exp.get("annual_cost"):
+                    # Special handling for Roof - minimum $7000 x 4% per year
+                    if 'Roof' in item_name:
+                        base_cost = max(7000, float(exp.get("annual_cost", 7000 * 0.04) / 0.04))
+                        scaled["purchase_price"] = clean_value(base_cost * sqft_ratio)
+                        scaled["depreciation_rate"] = 0.04
+                    else:
+                        scaled["annual_cost"] = clean_value(float(exp["annual_cost"]) * sqft_ratio)
+            
+            # Default scaling (price * sqft) for other CapEx
+            elif exp_type == "capex" and exp.get("purchase_price"):
+                scaled["purchase_price"] = clean_value(float(exp["purchase_price"]) * price_ratio * sqft_ratio)
+            
+            # PTI and maintenance scale with price and size
+            elif exp_type in ["pti", "maintenance"] and exp.get("annual_cost"):
+                scaled["annual_cost"] = clean_value(float(exp["annual_cost"]) * price_ratio * sqft_ratio)
+            
+            # P&I scales with price (loan amount) - but we're excluding these
+            elif exp_type == "pi" and exp.get("principal"):
+                scaled["principal"] = clean_value(float(exp["principal"]) * price_ratio)
+            
+            # Clean all numeric fields
+            for key, value in scaled.items():
+                if isinstance(value, (int, float)) and key not in ['property_id', 'expense_type', 'item_name', 'notes']:
+                    scaled[key] = clean_value(value)
             
             scaled_expenses.append(scaled)
         
@@ -307,13 +381,18 @@ class ScheduledFinancialsTemplateService:
             
             if rev_type == "appreciation":
                 if rev.get("property_value"):
-                    scaled["property_value"] = target_price
+                    scaled["property_value"] = clean_value(target_price)
             elif rev_type == "principal_paydown":
                 if rev.get("annual_amount"):
-                    scaled["annual_amount"] = float(rev["annual_amount"]) * price_ratio
+                    scaled["annual_amount"] = clean_value(float(rev["annual_amount"]) * price_ratio)
             elif rev_type == "value_added":
                 if rev.get("value_added_amount"):
-                    scaled["value_added_amount"] = float(rev["value_added_amount"]) * price_ratio
+                    scaled["value_added_amount"] = clean_value(float(rev["value_added_amount"]) * price_ratio)
+            
+            # Clean all numeric fields
+            for key, value in scaled.items():
+                if isinstance(value, (int, float)) and key not in ['property_id', 'revenue_type', 'item_name', 'notes']:
+                    scaled[key] = clean_value(value)
             
             scaled_revenue.append(scaled)
         
@@ -331,4 +410,7 @@ class ScheduledFinancialsTemplateService:
 
 # Global singleton
 scheduled_financials_template = ScheduledFinancialsTemplateService()
+
+
+
 

@@ -158,20 +158,21 @@ export default function LogRentPage() {
         <Button
           variant="ghost"
           onClick={() => router.back()}
-          className="mb-4 -ml-2 text-gray-600 hover:text-gray-900"
+          className="mb-4 -ml-2 text-gray-600 hover:text-gray-900 h-8 text-xs"
         >
-          <ArrowLeft className="h-4 w-4 mr-1" />
+          <ArrowLeft className="h-3 w-3 mr-1.5" />
           Back
         </Button>
-        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-          <DollarSign className="h-5 w-5 text-green-600" />
+        <div className="text-xs text-gray-500 mb-1">Recording:</div>
+        <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+          <DollarSign className="h-5 w-5 text-blue-600" />
           Log Rent Payment
         </h1>
         <p className="text-sm text-gray-600 mt-1">Record a rent payment received from a tenant</p>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs">
           {error}
         </div>
       )}
@@ -184,7 +185,7 @@ export default function LogRentPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {/* Property Selection */}
             <div>
               <Label htmlFor="property_id" className="text-xs font-medium text-gray-700">
@@ -194,7 +195,7 @@ export default function LogRentPage() {
                 value={formData.property_id}
                 onValueChange={(value) => setFormData({ ...formData, property_id: value })}
               >
-                <SelectTrigger className="text-sm mt-1">
+                <SelectTrigger className="text-xs mt-1.5 h-8">
                   <SelectValue placeholder="Select property" />
                 </SelectTrigger>
                 <SelectContent>
@@ -217,7 +218,7 @@ export default function LogRentPage() {
                   value={formData.unit_id}
                   onValueChange={(value) => setFormData({ ...formData, unit_id: value })}
                 >
-                  <SelectTrigger className="text-sm mt-1">
+                  <SelectTrigger className="text-xs mt-1.5 h-8">
                     <SelectValue placeholder="Select unit" />
                   </SelectTrigger>
                   <SelectContent>
@@ -233,18 +234,18 @@ export default function LogRentPage() {
             )}
 
             {/* Rent Period (Month/Year) */}
-            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <Label className="text-xs font-medium text-gray-700 block mb-3">
+            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+              <Label className="text-xs font-medium text-gray-700 block mb-2">
                 Rent For Period <span className="text-red-500">*</span>
               </Label>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label htmlFor="rent_period_month" className="text-xs text-gray-500">Month</Label>
+                  <Label htmlFor="rent_period_month" className="text-[10px] text-gray-500">Month</Label>
                   <Select
                     value={String(formData.rent_period_month)}
                     onValueChange={(value) => setFormData({ ...formData, rent_period_month: parseInt(value) })}
                   >
-                    <SelectTrigger className="text-sm mt-1">
+                    <SelectTrigger className="text-xs mt-1 h-8">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -257,12 +258,12 @@ export default function LogRentPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="rent_period_year" className="text-xs text-gray-500">Year</Label>
+                  <Label htmlFor="rent_period_year" className="text-[10px] text-gray-500">Year</Label>
                   <Select
                     value={String(formData.rent_period_year)}
                     onValueChange={(value) => setFormData({ ...formData, rent_period_year: parseInt(value) })}
                   >
-                    <SelectTrigger className="text-sm mt-1">
+                    <SelectTrigger className="text-xs mt-1 h-8">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -275,19 +276,19 @@ export default function LogRentPage() {
                   </Select>
                 </div>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-[10px] text-gray-500 mt-2">
                 Recording rent for: <span className="font-medium">{getMonthLabel(formData.rent_period_month)} {formData.rent_period_year}</span>
               </p>
             </div>
 
             {/* Amount and Payment Date */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="amount" className="text-xs font-medium text-gray-700">
                   Amount <span className="text-red-500">*</span>
                 </Label>
-                <div className="relative mt-1">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                <div className="relative mt-1.5">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
                   <Input
                     id="amount"
                     type="number"
@@ -296,7 +297,7 @@ export default function LogRentPage() {
                     value={formData.amount}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                     required
-                    className="text-sm pl-7"
+                    className="text-xs pl-7 h-8"
                     placeholder={suggestedAmount ? suggestedAmount.toLocaleString() : '0.00'}
                   />
                 </div>
@@ -304,7 +305,7 @@ export default function LogRentPage() {
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, amount: String(suggestedAmount) })}
-                    className="text-xs text-blue-600 hover:text-blue-800 mt-1"
+                    className="text-[10px] text-blue-600 hover:text-blue-800 mt-1"
                   >
                     Use expected: ${suggestedAmount.toLocaleString()}
                   </button>
@@ -321,13 +322,13 @@ export default function LogRentPage() {
                   value={formData.payment_date}
                   onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
                   required
-                  className="text-sm mt-1"
+                  className="text-xs mt-1.5 h-8"
                 />
               </div>
             </div>
 
             {/* Payment Method and Reference */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="payment_method" className="text-xs font-medium text-gray-700">
                   Payment Method
@@ -336,7 +337,7 @@ export default function LogRentPage() {
                   value={formData.payment_method}
                   onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
                 >
-                  <SelectTrigger className="text-sm mt-1">
+                  <SelectTrigger className="text-xs mt-1.5 h-8">
                     <SelectValue placeholder="Select method" />
                   </SelectTrigger>
                   <SelectContent>
@@ -357,23 +358,23 @@ export default function LogRentPage() {
                   id="transaction_reference"
                   value={formData.transaction_reference}
                   onChange={(e) => setFormData({ ...formData, transaction_reference: e.target.value })}
-                  className="text-sm mt-1"
+                  className="text-xs mt-1.5 h-8"
                   placeholder="e.g., Check #1234"
                 />
               </div>
             </div>
 
             {/* Late Payment Section */}
-            <div className="border border-orange-200 rounded-lg p-4 bg-orange-50/50">
-              <div className="flex items-center gap-3 mb-3">
+            <div className="border border-orange-200 rounded-lg p-3 bg-orange-50/50">
+              <div className="flex items-center gap-2 mb-2">
                 <input
                   type="checkbox"
                   id="is_late"
                   checked={formData.is_late}
                   onChange={(e) => setFormData({ ...formData, is_late: e.target.checked })}
-                  className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                 />
-                <Label htmlFor="is_late" className="text-sm font-medium text-gray-700 cursor-pointer">
+                <Label htmlFor="is_late" className="text-xs font-medium text-gray-700 cursor-pointer">
                   This payment was late
                 </Label>
               </div>
@@ -382,8 +383,8 @@ export default function LogRentPage() {
                   <Label htmlFor="late_fee" className="text-xs font-medium text-gray-700">
                     Late Fee Amount
                   </Label>
-                  <div className="relative mt-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                  <div className="relative mt-1.5">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
                     <Input
                       id="late_fee"
                       type="number"
@@ -391,7 +392,7 @@ export default function LogRentPage() {
                       min="0"
                       value={formData.late_fee}
                       onChange={(e) => setFormData({ ...formData, late_fee: e.target.value })}
-                      className="text-sm pl-7 max-w-[200px]"
+                      className="text-xs pl-7 max-w-[200px] h-8"
                       placeholder="0.00"
                     />
                   </div>
@@ -408,19 +409,19 @@ export default function LogRentPage() {
                 id="notes"
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="text-sm mt-1"
+                className="text-xs mt-1.5 h-8"
                 placeholder="Any additional notes..."
               />
             </div>
 
             {/* Submit Buttons */}
-            <div className="flex gap-3 pt-4 border-t border-gray-200">
+            <div className="flex gap-2 pt-3 border-t border-gray-200">
               <Button
                 type="submit"
                 disabled={createRent.isPending}
-                className="bg-green-600 text-white hover:bg-green-700 h-10 px-6"
+                className="bg-black text-white hover:bg-gray-800 h-8 text-xs px-4"
               >
-                <Save className="h-4 w-4 mr-2" />
+                <Save className="h-3 w-3 mr-1.5" />
                 {createRent.isPending ? 'Saving...' : 'Log Rent Payment'}
               </Button>
               <Button
@@ -428,7 +429,7 @@ export default function LogRentPage() {
                 variant="outline"
                 onClick={() => router.back()}
                 disabled={createRent.isPending}
-                className="h-10"
+                className="h-8 text-xs"
               >
                 Cancel
               </Button>
