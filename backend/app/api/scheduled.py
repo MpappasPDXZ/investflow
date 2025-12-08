@@ -228,10 +228,10 @@ async def update_scheduled_expense(
         # Update fields
         update_data = expense_update.model_dump(exclude_unset=True)
         for field, value in update_data.items():
-            # Convert Decimal fields to ensure proper precision
+            # Convert Decimal fields to float for pandas compatibility
+            # PyArrow will convert them to decimal128 during schema casting
             if field in ['purchase_price', 'depreciation_rate', 'annual_cost', 'principal', 'interest_rate'] and value is not None:
-                from decimal import Decimal
-                expenses_df.loc[expense_idx[0], field] = Decimal(str(value))
+                expenses_df.loc[expense_idx[0], field] = float(value)
             else:
                 expenses_df.loc[expense_idx[0], field] = value
         
@@ -481,10 +481,10 @@ async def update_scheduled_revenue(
         # Update fields
         update_data = revenue_update.model_dump(exclude_unset=True)
         for field, value in update_data.items():
-            # Convert Decimal fields to ensure proper precision
+            # Convert Decimal fields to float for pandas compatibility
+            # PyArrow will convert them to decimal128 during schema casting
             if field in ['annual_amount', 'appreciation_rate', 'property_value', 'value_added_amount'] and value is not None:
-                from decimal import Decimal
-                revenue_df.loc[revenue_idx[0], field] = Decimal(str(value))
+                revenue_df.loc[revenue_idx[0], field] = float(value)
             else:
                 revenue_df.loc[revenue_idx[0], field] = value
         
