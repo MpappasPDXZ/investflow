@@ -87,9 +87,9 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
     
     // For single-family or if no unit rents are set, use property's current_monthly_rent
     if (property?.current_monthly_rent != null) {
-      const rentValue: string | number = property.current_monthly_rent;
+      const rentValue = property.current_monthly_rent as string | number;
       const rent = typeof rentValue === 'string' 
-        ? parseFloat(rentValue.replace(/[$,]/g, ''))
+        ? parseFloat(String(rentValue).replace(/[$,]/g, ''))
         : Number(rentValue);
       
       if (!isNaN(rent) && rent > 0) {
@@ -104,9 +104,9 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
   // Initialize with current rent if available, otherwise default
   const getInitialRent = () => {
     if (property?.current_monthly_rent != null) {
-      const rentValue: string | number = property.current_monthly_rent;
+      const rentValue = property.current_monthly_rent as string | number;
       const rent = typeof rentValue === 'string' 
-        ? parseFloat(rentValue.replace(/[$,]/g, ''))
+        ? parseFloat(String(rentValue).replace(/[$,]/g, ''))
         : Number(rentValue);
       
       if (!isNaN(rent) && rent > 0) {
