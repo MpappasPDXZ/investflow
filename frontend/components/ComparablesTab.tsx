@@ -324,6 +324,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
               <th className="border border-gray-400 p-0.5 w-8">DOZ</th>
               <th className="border border-gray-400 p-0.5 w-8">INQ</th>
               <th className="border border-gray-400 p-0.5 w-8">$/SF</th>
+              <th className="border border-gray-400 p-0.5 w-8" title="Actual $/SF (last rented)">ACT</th>
               <th className="border border-gray-400 p-0.5 w-8">CR</th>
               <th className="border border-gray-400 p-0.5 w-6">R</th>
             </tr>
@@ -354,6 +355,9 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                 <td className="border border-gray-400 p-0.5 text-right font-medium">
                   {comp.price_per_sf ? comp.price_per_sf.toFixed(2) : '-'}
                 </td>
+                <td className="border border-gray-400 p-0.5 text-right font-medium text-blue-700">
+                  {comp.actual_price_per_sf ? comp.actual_price_per_sf.toFixed(2) : '-'}
+                </td>
                 <td className="border border-gray-400 p-0.5 text-right">
                   {comp.contact_rate ? comp.contact_rate.toFixed(2) : '-'}
                 </td>
@@ -365,7 +369,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
           </tbody>
         </table>
         <div className="mt-1 text-[8px] text-gray-500 print:text-black">
-          T=Type (H=House, D=Duplex, TH=Townhouse) | B=Beds | BA=Baths | G=Garage | DOZ=Days | INQ=Inquiries | CR=Inquiries/Day | R=Rented
+          T=Type (H=House, D=Duplex, TH=Townhouse) | B=Beds | BA=Baths | G=Garage | DOZ=Days | INQ=Inquiries | ACT=Actual $/SF (last rented) | CR=Inquiries/Day | R=Rented
         </div>
       </div>
     );
@@ -660,6 +664,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                 <th className="text-right p-1.5 font-semibold" title="Days on Zillow (calculated from list date)">DOZ</th>
                 <th className="text-right p-1.5 font-semibold" title="Inquiries / Contacts">INQ</th>
                 <th className="text-center p-1.5 font-semibold" title="Price per Square Foot">$/SF</th>
+                <th className="text-center p-1.5 font-semibold" title="Actual Price per SF (last rented price ÷ SF)">ACT $/SF</th>
                 <th className="text-center p-1.5 font-semibold" title="Contact Rate (Contacts ÷ Days on Zillow)">CR</th>
                 <th className="text-center p-1.5 font-semibold w-8" title="Rented Status">R</th>
                 <th className="text-center p-1.5 font-semibold" title="Rented">R</th>
@@ -719,6 +724,15 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                       {comp.price_per_sf ? (
                         <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full border border-purple-400 text-purple-700 font-medium">
                           ${comp.price_per_sf.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="text-center p-1.5">
+                      {comp.actual_price_per_sf ? (
+                        <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full border border-blue-400 text-blue-700 font-medium">
+                          ${comp.actual_price_per_sf.toFixed(2)}
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>
