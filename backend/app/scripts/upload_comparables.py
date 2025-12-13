@@ -311,6 +311,10 @@ def main():
             "notes": comp["notes"],
             "created_at": now,
             "updated_at": now,
+            # New columns added to schema
+            "is_furnished": False,
+            "is_rented": None,
+            "property_type": "House",
         }
         records.append(record)
     
