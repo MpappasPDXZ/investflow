@@ -51,7 +51,7 @@ def get_comparable_schema() -> pa.Schema:
         pa.field("has_ss_appliances", pa.bool_(), nullable=True),
         pa.field("has_shaker_cabinets", pa.bool_(), nullable=True),
         pa.field("has_washer_dryer", pa.bool_(), nullable=True),
-        pa.field("garage_spaces", pa.int32(), nullable=True),
+        pa.field("garage_spaces", pa.float32(), nullable=True),
         # Listing data
         pa.field("date_listed", pa.date32(), nullable=False),
         pa.field("contacts", pa.int32(), nullable=True),

@@ -35,7 +35,7 @@ class ComparableBase(BaseModel):
     has_ss_appliances: Optional[bool] = None   # Stainless steel appliances
     has_shaker_cabinets: Optional[bool] = None # White shaker cabinets
     has_washer_dryer: Optional[bool] = None    # W/D included
-    garage_spaces: Optional[int] = None
+    garage_spaces: Optional[float] = None
     
     # Zillow data
     date_listed: date
@@ -80,7 +80,7 @@ class ComparableUpdate(BaseModel):
     has_ss_appliances: Optional[bool] = None
     has_shaker_cabinets: Optional[bool] = None
     has_washer_dryer: Optional[bool] = None
-    garage_spaces: Optional[int] = None
+    garage_spaces: Optional[float] = None
     
     date_listed: Optional[date] = None
     contacts: Optional[int] = None
