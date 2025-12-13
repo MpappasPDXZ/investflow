@@ -641,11 +641,11 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
             <thead>
               <tr className="border-b-2 border-gray-300 bg-gray-100">
                 <th className="text-left p-1.5 font-semibold">Address</th>
-                <th className="text-center p-1.5 font-semibold w-8" title="Property Type">T</th>
-                <th className="text-center p-1.5 font-semibold w-8">BD</th>
-                <th className="text-center p-1.5 font-semibold w-8">BA</th>
-                <th className="text-right p-1.5 font-semibold">Price</th>
-                <th className="text-right p-1.5 font-semibold">SF</th>
+                <th className="text-center p-1.5 font-semibold w-8" title="Property Type (H=House, D=Duplex, TH=Townhouse)">T</th>
+                <th className="text-center p-1.5 font-semibold w-8" title="Bedrooms">BD</th>
+                <th className="text-center p-1.5 font-semibold w-8" title="Bathrooms">BA</th>
+                <th className="text-right p-1.5 font-semibold" title="Monthly Rent / Asking Price">Price</th>
+                <th className="text-right p-1.5 font-semibold" title="Square Feet">SF</th>
                 {showTableAmenities && (
                   <>
                     <th className="text-center p-1.5 font-semibold w-8" title="Fence">FNC</th>
@@ -656,11 +656,12 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                     <th className="text-center p-1.5 font-semibold w-8" title="Washer/Dryer">WD</th>
                   </>
                 )}
-                <th className="text-center p-1.5 font-semibold w-8">GAR</th>
-                <th className="text-right p-1.5 font-semibold">DOZ</th>
-                <th className="text-right p-1.5 font-semibold">INQ</th>
-                <th className="text-center p-1.5 font-semibold">$/SF</th>
-                <th className="text-center p-1.5 font-semibold">CR</th>
+                <th className="text-center p-1.5 font-semibold w-8" title="Garage Spaces">GAR</th>
+                <th className="text-right p-1.5 font-semibold" title="Days on Zillow (calculated from list date)">DOZ</th>
+                <th className="text-right p-1.5 font-semibold" title="Inquiries / Contacts">INQ</th>
+                <th className="text-center p-1.5 font-semibold" title="Price per Square Foot">$/SF</th>
+                <th className="text-center p-1.5 font-semibold" title="Contact Rate (Contacts ÷ Days on Zillow)">CR</th>
+                <th className="text-center p-1.5 font-semibold w-8" title="Rented Status">R</th>
                 <th className="text-center p-1.5 font-semibold" title="Rented">R</th>
                 <th className="w-16"></th>
               </tr>
