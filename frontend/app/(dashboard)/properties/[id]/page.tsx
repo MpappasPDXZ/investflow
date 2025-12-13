@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Building2, Plus, Edit2, Trash2, X, Check, FileText, DollarSign, Home, Eye, TrendingUp, Hammer, ListChecks, Tag, Archive, ShoppingCart, Calendar } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, X, Check, FileText, DollarSign, Home, Eye, TrendingUp, Hammer, ListChecks, Tag, Archive, ShoppingCart, Calendar, LayoutGrid } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import ScheduledFinancialsTab from '@/components/ScheduledFinancialsTab';
@@ -16,6 +16,7 @@ import RentManagementTab from '@/components/RentManagementTab';
 import RentAnalysisTab from '@/components/RentAnalysisTab';
 import SetRentAnalysisTab from '@/components/SetRentAnalysisTab';
 import FinancialPerformanceTab from '@/components/FinancialPerformanceTab';
+import ComparablesTab from '@/components/ComparablesTab';
 
 interface Unit {
   id: string;
@@ -41,7 +42,7 @@ export default function PropertyDetailPage() {
   const [showAddUnit, setShowAddUnit] = useState(false);
   const [editingUnit, setEditingUnit] = useState<string | null>(null);
   const [deletingUnit, setDeletingUnit] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'details' | 'performance' | 'financials' | 'down-payment' | 'rent'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'performance' | 'financials' | 'down-payment' | 'rent' | 'comps'>('details');
   const [editingProperty, setEditingProperty] = useState(false);
 
   // Fetch financial performance for YTD P/L display
@@ -364,6 +365,17 @@ export default function PropertyDetailPage() {
           >
             <Home className="h-4 w-4 inline mr-2" />
             Set Rent
+          </button>
+          <button
+            onClick={() => setActiveTab('comps')}
+            className={`pb-3 px-4 text-sm transition-colors relative ${
+              activeTab === 'comps'
+                ? 'text-black border-b-2 border-black font-bold'
+                : 'text-gray-600 hover:text-gray-900 font-normal'
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4 inline mr-2" />
+            Comps
           </button>
         </nav>
       </div>
@@ -1085,6 +1097,12 @@ export default function PropertyDetailPage() {
         <SetRentAnalysisTab 
           propertyId={id}
           property={property || {}}
+        />
+      )}
+
+      {activeTab === 'comps' && (
+        <ComparablesTab 
+          propertyId={id}
         />
       )}
     </div>
