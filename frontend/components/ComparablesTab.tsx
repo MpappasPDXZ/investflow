@@ -802,6 +802,31 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
           <span><span className="text-blue-500">✓</span> = Has Feature</span>
           <span><strong>CR</strong>: <span className="bg-blue-200 px-1 rounded">≥1</span> <span className="bg-blue-100 px-1 rounded">≥.5</span> <span className="bg-blue-50 px-1 rounded">≥.2</span></span>
         </div>
+
+        {/* Column Explanations */}
+        <div className="mt-4 border-t pt-3">
+          <h4 className="text-sm font-semibold text-gray-700 mb-2">Column Explanations</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-xs text-gray-600">
+            <div><strong>T:</strong> Property Type (H=House, D=Duplex, TH=Townhouse)</div>
+            <div><strong>BD:</strong> Number of Bedrooms</div>
+            <div><strong>BA:</strong> Number of Bathrooms</div>
+            <div><strong>Price:</strong> Monthly rent / asking price</div>
+            <div><strong>SF:</strong> Square feet</div>
+            <div><strong>FNC:</strong> Has Fence</div>
+            <div><strong>FLR:</strong> Has LVP/Hardwood Flooring</div>
+            <div><strong>CTR:</strong> Has Quartz/Granite Counters</div>
+            <div><strong>APP:</strong> Has Stainless Steel Appliances</div>
+            <div><strong>CAB:</strong> Has Shaker Cabinets</div>
+            <div><strong>WD:</strong> Has Washer/Dryer included</div>
+            <div><strong>GAR:</strong> Number of Garage Spaces</div>
+            <div><strong>DOZ:</strong> Days on Zillow (calculated from list date)</div>
+            <div><strong>INQ:</strong> Number of Inquiries/Contacts on Zillow</div>
+            <div><strong>$/SF:</strong> Price per square foot (Price ÷ SF)</div>
+            <div><strong>ACT $/SF:</strong> Actual price per SF (last rented price ÷ SF)</div>
+            <div><strong>CR:</strong> Contact Rate (Inquiries ÷ Days on Zillow) - higher = more interest</div>
+            <div><strong>R:</strong> Rented Status (✓ = rented, ✗ = not rented)</div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

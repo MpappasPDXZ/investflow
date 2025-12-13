@@ -167,9 +167,7 @@ async def list_comparables(
         if not include_inactive:
             df = df[df['is_active'] == True]
         
-        # Sort by is_subject_property (your property first), then by days_on_zillow
-        df = df.sort_values(by=['is_subject_property', 'date_listed'], ascending=[False, False])
-        
+        # Calculate computed fields first (need actual_price_per_sf for sorting)
         items = []
         for _, row in df.iterrows():
             row_dict = row.to_dict()
@@ -177,9 +175,34 @@ async def list_comparables(
             row_dict = {k: (None if pd.isna(v) else v) for k, v in row_dict.items()}
             # Calculate computed fields
             row_dict = calculate_computed_fields(row_dict)
-            items.append(ComparableResponse(**row_dict))
+            items.append(row_dict)
         
-        return ComparableListResponse(items=items, total=len(items))
+        # Sort by:
+        # 1. Subject property first (True sorts before False with descending)
+        # 2. Highest actual_price_per_sf (if available)
+        # 3. Highest price_per_sf
+        # 4. Least amenities to most (ascending amenity count)
+        def sort_key(item):
+            # Count amenities (True = 1, False/None = 0)
+            amenity_count = sum([
+                1 if item.get('has_fence') else 0,
+                1 if item.get('has_solid_flooring') else 0,
+                1 if item.get('has_quartz_granite') else 0,
+                1 if item.get('has_ss_appliances') else 0,
+                1 if item.get('has_shaker_cabinets') else 0,
+                1 if item.get('has_washer_dryer') else 0,
+            ])
+            
+            return (
+                0 if item.get('is_subject_property') else 1,  # Subject first
+                -(item.get('actual_price_per_sf') or -999),     # Highest actual $/SF (negative for descending)
+                -(item.get('price_per_sf') or -999),            # Highest $/SF
+                amenity_count,                                   # Least amenities first (ascending)
+            )
+        
+        items.sort(key=sort_key)
+        
+        return ComparableListResponse(items=[ComparableResponse(**item) for item in items], total=len(items))
         
     except HTTPException:
         raise
