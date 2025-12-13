@@ -100,6 +100,43 @@ cd /Users/matt/code/property/backend
 docker-compose down
 docker-compose up --build -d
 
+## Deployment
+
+### Quick Deploy (Update Existing Containers)
+
+If you've already pushed images to Azure Container Registry and just need to update the running containers without rebuilding:
+
+```bash
+# Update frontend only
+az containerapp update --name investflow-frontend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-frontend:latest
+
+# Update backend only
+az containerapp update --name investflow-backend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-backend:latest
+
+# Update both
+az containerapp update --name investflow-frontend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-frontend:latest && \
+az containerapp update --name investflow-backend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-backend:latest
+```
+
+**Note**: This assumes you've already built and pushed the latest images to Azure Container Registry. To build and push:
+
+```bash
+# Build and push frontend
+cd frontend
+docker build --platform linux/amd64 -t investflowregistry.azurecr.io/investflow-frontend:latest .
+az acr login --name investflowregistry
+docker push investflowregistry.azurecr.io/investflow-frontend:latest
+
+# Build and push backend
+cd ../backend
+docker build --platform linux/amd64 -t investflowregistry.azurecr.io/investflow-backend:latest .
+docker push investflowregistry.azurecr.io/investflow-backend:latest
+```
+
+### Full Deployment
+
+For a complete deployment including building images, use `./deploy.sh` (requires ~5-10GB free disk space)
+
 ### POSTGRES SETUP
 POSTGRES_HOST=if-postgres.postgres.database.azure.com
 POSTGRES_PORT=5432
