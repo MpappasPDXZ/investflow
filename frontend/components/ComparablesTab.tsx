@@ -298,80 +298,96 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
   // PRINT VIEW - Most compact printable format
   if (viewMode === 'print') {
     return (
-      <div className="p-2 bg-white print:p-0">
-        <div className="flex justify-between items-center mb-2 print:hidden">
-          <h2 className="text-sm font-bold">Rental Comparables - Print View</h2>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => window.print()} className="h-7 text-xs">
-              <Printer className="h-3 w-3 mr-1" />
-              Print
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setViewMode('normal')} className="h-7 text-xs">
-              Back
-            </Button>
+      <>
+        <style>{`
+          @media print {
+            @page {
+              size: landscape;
+              margin: 0.5cm;
+            }
+            body {
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
+            }
+            .print-table {
+              font-size: 8pt !important;
+            }
+            .print-table th,
+            .print-table td {
+              padding: 2px !important;
+            }
+          }
+        `}</style>
+        <div className="p-2 bg-white print:p-0">
+          <div className="flex justify-between items-center mb-2 print:hidden">
+            <h2 className="text-sm font-bold">Rental Comparables - Print View</h2>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => window.print()} className="h-7 text-xs">
+                <Printer className="h-3 w-3 mr-1" />
+                Print
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setViewMode('normal')} className="h-7 text-xs">
+                Back
+              </Button>
+            </div>
+          </div>
+          <table className="print-table w-full text-[9px] border-collapse border border-gray-800 print:text-[8pt]">
+            <thead>
+              <tr className="bg-gray-200 print:bg-gray-300">
+                <th className="border border-gray-800 p-1 text-left font-bold">Address</th>
+                <th className="border border-gray-800 p-1 w-8 font-bold">T</th>
+                <th className="border border-gray-800 p-1 w-8 font-bold">B</th>
+                <th className="border border-gray-800 p-1 w-8 font-bold">BA</th>
+                <th className="border border-gray-800 p-1 w-16 font-bold">$</th>
+                <th className="border border-gray-800 p-1 w-14 font-bold">SF</th>
+                <th className="border border-gray-800 p-1 w-8 font-bold">G</th>
+                <th className="border border-gray-800 p-1 w-10 font-bold">DOZ</th>
+                <th className="border border-gray-800 p-1 w-10 font-bold">INQ</th>
+                <th className="border border-gray-800 p-1 w-12 font-bold">$/SF</th>
+                <th className="border border-gray-800 p-1 w-12 font-bold">ACT</th>
+                <th className="border border-gray-800 p-1 w-10 font-bold">CR</th>
+                <th className="border border-gray-800 p-1 w-8 font-bold">R</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparables.map((comp) => (
+                <tr 
+                  key={comp.id} 
+                  className={comp.is_subject_property ? 'bg-blue-100 print:bg-blue-200 font-bold' : ''}
+                >
+                  <td className="border border-gray-800 p-1">
+                    {comp.is_subject_property && '★ '}
+                    {comp.address}
+                  </td>
+                  <td className="border border-gray-800 p-1 text-center">{getTypeAbbrev(comp.property_type)}</td>
+                  <td className="border border-gray-800 p-1 text-center">{comp.bedrooms}</td>
+                  <td className="border border-gray-800 p-1 text-center">{formatDecimal(comp.bathrooms)}</td>
+                  <td className="border border-gray-800 p-1 text-right">{comp.asking_price.toLocaleString()}</td>
+                  <td className="border border-gray-800 p-1 text-right">{comp.square_feet.toLocaleString()}</td>
+                  <td className="border border-gray-800 p-1 text-center">{formatDecimal(comp.garage_spaces)}</td>
+                  <td className="border border-gray-800 p-1 text-right">{comp.days_on_zillow || '-'}</td>
+                  <td className="border border-gray-800 p-1 text-right">{comp.contacts ?? '-'}</td>
+                  <td className="border border-gray-800 p-1 text-right font-semibold">
+                    {comp.price_per_sf ? comp.price_per_sf.toFixed(2) : '-'}
+                  </td>
+                  <td className="border border-gray-800 p-1 text-right font-semibold">
+                    {comp.actual_price_per_sf ? comp.actual_price_per_sf.toFixed(2) : '-'}
+                  </td>
+                  <td className="border border-gray-800 p-1 text-right">
+                    {comp.contact_rate ? comp.contact_rate.toFixed(2) : '-'}
+                  </td>
+                  <td className="border border-gray-800 p-1 text-center">
+                    {comp.is_rented === true ? '✓' : comp.is_rented === false ? '✗' : '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-2 text-[10px] text-gray-600 print:text-[7pt] print:text-black print:mt-1">
+            <strong>Legend:</strong> T=Type (H=House, D=Duplex, TH=Townhouse) | B=Beds | BA=Baths | G=Garage | DOZ=Days on Zillow | INQ=Inquiries | $/SF=Price per SF | ACT=Actual $/SF (last rented) | CR=Contact Rate | R=Rented (✓=Yes, ✗=No)
           </div>
         </div>
-        <table className="w-full text-[10px] border-collapse border border-gray-400">
-          <thead>
-            <tr className="bg-gray-200">
-              <th className="border border-gray-400 p-0.5 text-left">Address</th>
-              <th className="border border-gray-400 p-0.5 w-6">T</th>
-              <th className="border border-gray-400 p-0.5 w-6">B</th>
-              <th className="border border-gray-400 p-0.5 w-6">BA</th>
-              <th className="border border-gray-400 p-0.5 w-12">$</th>
-              <th className="border border-gray-400 p-0.5 w-10">SF</th>
-              <th className="border border-gray-400 p-0.5 w-6">G</th>
-              <th className="border border-gray-400 p-0.5 w-8">DOZ</th>
-              <th className="border border-gray-400 p-0.5 w-8">INQ</th>
-              <th className="border border-gray-400 p-0.5 w-8">$/SF</th>
-              <th className="border border-gray-400 p-0.5 w-8" title="Actual $/SF (last rented)">ACT</th>
-              <th className="border border-gray-400 p-0.5 w-8">CR</th>
-              <th className="border border-gray-400 p-0.5 w-6">R</th>
-            </tr>
-          </thead>
-          <tbody>
-            {comparables.map((comp) => (
-              <tr 
-                key={comp.id} 
-                className={comp.is_subject_property ? 'bg-blue-100 font-bold' : ''}
-              >
-                <td className="border border-gray-400 p-0.5">
-                  {comp.is_subject_property && '★ '}
-                  <button
-                    onClick={() => searchZillow(comp)}
-                    className="hover:text-blue-600 hover:underline text-left"
-                  >
-                    {comp.address}
-                  </button>
-                </td>
-                <td className="border border-gray-400 p-0.5 text-center">{getTypeAbbrev(comp.property_type)}</td>
-                <td className="border border-gray-400 p-0.5 text-center">{comp.bedrooms}</td>
-                <td className="border border-gray-400 p-0.5 text-center">{formatDecimal(comp.bathrooms)}</td>
-                <td className="border border-gray-400 p-0.5 text-right">{comp.asking_price.toLocaleString()}</td>
-                <td className="border border-gray-400 p-0.5 text-right">{comp.square_feet.toLocaleString()}</td>
-                <td className="border border-gray-400 p-0.5 text-center">{formatDecimal(comp.garage_spaces)}</td>
-                <td className="border border-gray-400 p-0.5 text-right">{comp.days_on_zillow || '-'}</td>
-                <td className="border border-gray-400 p-0.5 text-right">{comp.contacts ?? '-'}</td>
-                <td className="border border-gray-400 p-0.5 text-right font-medium">
-                  {comp.price_per_sf ? comp.price_per_sf.toFixed(2) : '-'}
-                </td>
-                <td className="border border-gray-400 p-0.5 text-right font-medium text-blue-700">
-                  {comp.actual_price_per_sf ? comp.actual_price_per_sf.toFixed(2) : '-'}
-                </td>
-                <td className="border border-gray-400 p-0.5 text-right">
-                  {comp.contact_rate ? comp.contact_rate.toFixed(2) : '-'}
-                </td>
-                <td className="border border-gray-400 p-0.5 text-center">
-                  {comp.is_rented === true ? '✓' : comp.is_rented === false ? '✗' : '-'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="mt-1 text-[8px] text-gray-500 print:text-black">
-          T=Type (H=House, D=Duplex, TH=Townhouse) | B=Beds | BA=Baths | G=Garage | DOZ=Days | INQ=Inquiries | ACT=Actual $/SF (last rented) | CR=Inquiries/Day | R=Rented
-        </div>
-      </div>
+      </>
     );
   }
 
