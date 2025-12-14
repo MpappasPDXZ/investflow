@@ -80,11 +80,11 @@ export interface Lease extends LeaseCreate {
 export function useLeases() {
   const { token } = useAuth();
 
-  const createLease = async (leaseData: LeaseCreate) => {
+  const createLease = async (leaseData: LeaseCreate): Promise<Lease> => {
     const response = await apiClient.post('/leases', leaseData, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    return response;
+    return response as Lease;
   };
 
   const listLeases = async (filters: {
