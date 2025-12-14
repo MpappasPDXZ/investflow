@@ -77,6 +77,11 @@ export interface Lease extends LeaseCreate {
   latex_url?: string;
 }
 
+export interface LeaseListResponse {
+  leases: Lease[];
+  total: number;
+}
+
 export function useLeases() {
   const { token } = useAuth();
 
@@ -92,24 +97,24 @@ export function useLeases() {
     status?: string;
     state?: string;
     active_only?: boolean;
-  } = {}) => {
+  } = {}): Promise<LeaseListResponse> => {
     const params = new URLSearchParams();
     if (filters.property_id) params.append('property_id', filters.property_id);
-    if (filters.status) params.append('status', filters.status);
-    if (filters.state) params.append('state', filters.state);
+    if (filters.status && filters.status !== 'all') params.append('status', filters.status);
+    if (filters.state && filters.state !== 'all') params.append('state', filters.state);
     if (filters.active_only) params.append('active_only', 'true');
     
     const response = await apiClient.get(`/leases?${params}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    return response;
+    return response as LeaseListResponse;
   };
 
-  const getLease = async (id: string) => {
+  const getLease = async (id: string): Promise<Lease> => {
     const response = await apiClient.get(`/leases/${id}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    return response;
+    return response as Lease;
   };
 
   const generatePDF = async (id: string, regenerate = false): Promise<{ pdf_url: string; latex_url: string }> => {
