@@ -1,12 +1,20 @@
 """
 Compare generated lease PDF to NE_res_agreement.tex template
 Validates that all sections and key terms match
+All files are stored in and retrieved from ADLS
 """
 import re
 import sys
 from pathlib import Path
 from typing import List, Tuple
 import subprocess
+import tempfile
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from app.services.adls_service import adls_service
+from app.core.iceberg import get_catalog
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
@@ -91,6 +99,29 @@ def compare_sections(tex_sections: List[str], pdf_sections: List[str]) -> Tuple[
     return list(matching), list(missing_in_pdf), list(extra_in_pdf)
 
 
+def get_most_recent_lease_from_adls() -> str:
+    """Get the most recent lease PDF from ADLS"""
+    try:
+        # List blobs in the leases/generated folder
+        container_client = adls_service.blob_service_client.get_container_client(
+            adls_service.container_name
+        )
+        
+        blobs = container_client.list_blobs(name_starts_with="leases/generated/")
+        pdf_blobs = [b for b in blobs if b.name.endswith('.pdf')]
+        
+        if not pdf_blobs:
+            return None
+        
+        # Get most recent by last_modified
+        most_recent = max(pdf_blobs, key=lambda b: b.last_modified)
+        return most_recent.name
+        
+    except Exception as e:
+        print(f"Error finding lease in ADLS: {e}")
+        return None
+
+
 def main():
     """Main comparison"""
     print("="*80)
@@ -100,18 +131,28 @@ def main():
     # Paths
     tex_path = Path("/Users/matt/code/property/NE_res_agreement.tex")
     
-    # Find most recent generated PDF
-    import glob
-    pdf_files = glob.glob("/tmp/lease_316_s_50th_*.pdf")
-    if not pdf_files:
-        print("\n✗ No generated PDF found in /tmp/")
+    # Find most recent generated PDF from ADLS
+    print("\nSearching for most recent lease PDF in ADLS...")
+    pdf_blob_name = get_most_recent_lease_from_adls()
+    
+    if not pdf_blob_name:
+        print("\n✗ No generated PDF found in ADLS")
         print("  Run upload_316_lease.py first to generate a PDF")
         sys.exit(1)
     
-    pdf_path = max(pdf_files, key=lambda x: Path(x).stat().st_mtime)
+    print(f"\nFound: {pdf_blob_name}")
+    
+    # Download PDF from ADLS to temporary file for comparison
+    print("Downloading PDF from ADLS...")
+    pdf_bytes, content_type, filename = adls_service.download_blob(pdf_blob_name)
+    
+    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
+        tmp_pdf.write(pdf_bytes)
+        pdf_path = tmp_pdf.name
+    
     print(f"\nComparing:")
     print(f"  Template: {tex_path}")
-    print(f"  Generated: {pdf_path}")
+    print(f"  Generated (from ADLS): {pdf_blob_name}")
     
     # Extract sections from LaTeX
     print("\n" + "-"*80)
@@ -227,9 +268,17 @@ def main():
         print("  This may be expected due to text extraction limitations")
         print("  Review the PDF manually to confirm all content is present")
     
-    print("\nGenerated PDF location:")
-    print(f"  {pdf_path}")
+    print("\nGenerated PDF location (ADLS):")
+    print(f"  {pdf_blob_name}")
+    print("\nAll lease files stored in Azure Data Lake Storage")
+    print("Both local and production environments share the same ADLS account")
     print("\n" + "="*80)
+    
+    # Cleanup temp file
+    try:
+        Path(pdf_path).unlink()
+    except:
+        pass
 
 
 if __name__ == "__main__":

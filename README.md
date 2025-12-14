@@ -71,6 +71,169 @@ investflow/
 └── make_app.txt     # Complete application specification
 ```
 
+## Lease Generation System
+
+InvestFlow includes a comprehensive lease generation system for creating state-compliant residential lease agreements. All files are stored in ADLS, ensuring consistency between local and production environments.
+
+### Architecture
+
+```
+User Form Data
+    ↓
+Backend API → Apply State Defaults (NE/MO)
+    ↓
+Store in Iceberg Tables → investflow.leases + investflow.lease_tenants
+    ↓
+Generate LaTeX Document → Template-based with dynamic data
+    ↓
+Compile to PDF (TinyTeX) → Local /tmp/ compilation only
+    ↓
+Save to ADLS → documents/leases/generated/{user_id}/{lease_id}/
+    ↓
+Return Signed URL → Frontend displays/downloads PDF
+```
+
+### Database Schema
+
+#### `investflow.leases` Table
+Stores complete lease terms with 90+ fields covering:
+- **Financial Terms**: rent, security deposit, late fees, NSF fees
+- **Dates**: commencement, termination, lease date
+- **Occupancy**: max occupants, adults, children allowed
+- **Pets**: allowed, fees, max count
+- **Utilities**: tenant-paid vs landlord-paid
+- **Property Features**: parking, keys, shared driveway, garage, attic, basement
+- **State-Specific**: deposit return days, disclosure requirements
+- **Move-out Costs**: JSON array of dynamic cleaning/repair fees
+- **Documents**: generated PDF blob name, template version
+
+#### `investflow.lease_tenants` Table
+Stores tenant information for each lease:
+- Multiple tenants per lease (joint and several liability)
+- Tenant order, names, contact info
+- Signature dates
+
+### ADLS Storage Structure
+
+```
+documents/  (ADLS container)
+├── leases/
+│   └── generated/
+│       └── {user_id}/
+│           └── {lease_id}/
+│               ├── lease_316_S_50th_Ave_20251214_084830.pdf
+│               └── lease_316_S_50th_Ave_20251214_084830.tex
+├── expenses/
+│   └── {user_id}/  # Receipt uploads
+└── user_documents/
+    └── {user_id}/  # Other document uploads
+```
+
+**Why ADLS for Everything?**
+- Local and production share the same ADLS account
+- Files created locally are immediately available in production
+- No sync issues or deployment steps for documents
+- Automatic backup and geo-redundancy
+- Audit trail via blob metadata
+
+### State-Specific Rules
+
+| Feature | Nebraska (NE) | Missouri (MO) |
+|---------|---------------|---------------|
+| **Max Security Deposit** | 1 month's rent | 2 months' rent |
+| **Deposit Return** | 14 days | 30 days |
+| **Late Fee Structure** | Progressive: $75→$150→$225 | Must be "reasonable" |
+| **Methamphetamine Disclosure** | Not required | **Required** |
+| **Move-out Inspection Rights** | Not required | **Required** |
+| **Military Termination** | Not specified | 30 days notice |
+
+### PDF Generation Process
+
+1. **Template Engine**: LaTeX-based for professional formatting
+2. **TinyTeX**: Lightweight TeX distribution installed in Docker container
+3. **Dynamic Content**: Property details, tenant names, financial terms
+4. **Compilation**: Runs in local `/tmp/` (auto-cleaned after compilation)
+5. **Final Storage**: PDF + LaTeX source saved to ADLS with metadata
+
+### Key Services
+
+#### `lease_defaults.py`
+- Centralized default values for all lease fields
+- State-specific overrides (NE vs MO)
+- Default move-out cost schedules
+- Early termination fee calculations
+
+#### `lease_generator_service.py`
+- Builds LaTeX document from lease data
+- Compiles PDF using `pdflatex`
+- Saves both PDF and LaTeX source to ADLS
+- Returns blob names for database storage
+
+#### `adls_service.py`
+- Upload/download blobs to ADLS
+- Generate time-limited SAS URLs for secure downloads
+- Manage blob metadata and access control
+
+### Template Structure
+
+Leases follow the `NE_res_agreement.tex` template with 39 sections:
+
+1. Premises (property description)
+2. Lease Term (dates)
+3. Rent (amount, due dates, prorated)
+4. Late Charges (progressive fees)
+5. Insufficient Funds (NSF fee)
+6. Security Deposit (amount, return period)
+7-13. Standard clauses (defaults, possession, use, occupancy, etc.)
+14. Dangerous Materials
+15. Utilities (tenant vs landlord responsibilities)
+16. Pets (fees, restrictions)
+17-18. Alterations and damage
+19. Maintenance and Repair (including shared driveway, snow removal)
+20-32. Standard legal clauses (inspection, abandonment, insurance, governing law, etc.)
+33. Parking (spaces, vehicle size limits)
+34. Keys (quantity, replacement fees)
+35-37. Liquid furniture, indemnification, legal fees
+38. Additional Terms (appliances, attic, lead paint, early termination, garage)
+39. Move-out Cost Schedule (dynamic JSON array)
+
+### Docker Configuration
+
+Backend Dockerfile includes TinyTeX for PDF generation:
+
+```dockerfile
+RUN apt-get update && apt-get install -y \
+    gcc g++ wget perl curl \
+    && wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh \
+    && /root/bin/tlmgr install enumitem titlesec fancyhdr tabularx
+
+ENV PATH="/root/bin:$PATH"
+```
+
+### Testing
+
+**Upload Sample Lease (316 S 50th Ave):**
+```bash
+cd backend
+uv run app/scripts/upload_316_lease.py
+```
+
+**Compare Generated Output to Template:**
+```bash
+uv run app/scripts/compare_lease_output.py
+```
+
+### Future Enhancements
+
+- [ ] Frontend lease form with multi-step wizard
+- [ ] Digital signature capture and storage
+- [ ] Email PDF directly to tenants
+- [ ] Lease renewal workflow
+- [ ] Template library for different property types
+- [ ] Version history and amendments
+
+For detailed ADLS storage architecture, see `LEASE_GENERATION_ADLS.md`.
+
 ## Quick Start
 admin login to the application:
 email: "matt.pappasemail@kiewit.com"

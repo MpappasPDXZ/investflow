@@ -1,48 +1,71 @@
 """
 Lease Generator Service
 Generates PDF lease agreements from templates using LaTeX.
+All temporary and final files are stored in ADLS.
 """
 import json
 import subprocess
 import tempfile
-from datetime import date
+import uuid
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
+
+from app.services.adls_service import adls_service
 
 
 class LeaseGeneratorService:
     """Service for generating PDF lease agreements from data"""
     
     def __init__(self):
-        self.temp_dir = Path("/tmp/lease_generation")
-        self.temp_dir.mkdir(exist_ok=True)
+        self.adls = adls_service
+        self.temp_folder = "leases/temp"  # ADLS folder for temporary files
+        self.final_folder = "leases/generated"  # ADLS folder for final PDFs
     
     def generate_lease_pdf(
         self, 
         lease_data: Dict[str, Any],
         tenants: List[Dict[str, Any]],
-        property_data: Dict[str, Any]
-    ) -> bytes:
+        property_data: Dict[str, Any],
+        user_id: str
+    ) -> Tuple[bytes, str, str]:
         """
-        Generate PDF lease from lease data.
+        Generate PDF lease from lease data and store in ADLS.
         
         Args:
             lease_data: Dictionary with lease terms
             tenants: List of tenant dictionaries
             property_data: Property information
+            user_id: User ID for ADLS folder organization
         
         Returns:
-            PDF file content as bytes
+            Tuple of (pdf_bytes, pdf_blob_name, latex_blob_name)
         """
         # Generate LaTeX content
         latex_content = self._build_latex_document(lease_data, tenants, property_data)
         
+        # Save LaTeX to ADLS
+        latex_blob_name = self._save_latex_to_adls(
+            latex_content, 
+            lease_data, 
+            property_data, 
+            user_id
+        )
+        
         # Compile to PDF
         pdf_bytes = self._compile_pdf(latex_content)
         
-        return pdf_bytes
+        # Save PDF to ADLS
+        pdf_blob_name = self._save_pdf_to_adls(
+            pdf_bytes, 
+            lease_data, 
+            property_data, 
+            user_id
+        )
+        
+        return pdf_bytes, pdf_blob_name, latex_blob_name
     
     def _build_latex_document(
         self,
@@ -380,7 +403,10 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
         return latex
     
     def _compile_pdf(self, latex_content: str) -> bytes:
-        """Compile LaTeX to PDF using pdflatex"""
+        """
+        Compile LaTeX to PDF using pdflatex.
+        Uses local temp directory for compilation, but final files stored in ADLS.
+        """
         
         # Create temporary directory for this compilation
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -415,6 +441,74 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
                 raise Exception("PDF file was not generated")
             
             return pdf_file.read_bytes()
+    
+    def _save_latex_to_adls(
+        self,
+        latex_content: str,
+        lease_data: Dict[str, Any],
+        property_data: Dict[str, Any],
+        user_id: str
+    ) -> str:
+        """Save LaTeX source to ADLS"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        property_address = property_data.get("address", "unknown").replace(" ", "_").replace("/", "_")
+        filename = f"lease_{property_address}_{timestamp}.tex"
+        
+        # Upload to ADLS
+        blob_name = f"{self.final_folder}/{user_id}/{lease_data['id']}/{filename}"
+        blob_client = self.adls.blob_service_client.get_blob_client(
+            container=self.adls.container_name,
+            blob=blob_name
+        )
+        
+        blob_client.upload_blob(
+            latex_content.encode('utf-8'),
+            overwrite=True,
+            metadata={
+                "user_id": user_id,
+                "lease_id": lease_data['id'],
+                "property_id": lease_data['property_id'],
+                "generated_at": datetime.utcnow().isoformat(),
+                "document_type": "lease_latex"
+            }
+        )
+        
+        return blob_name
+    
+    def _save_pdf_to_adls(
+        self,
+        pdf_bytes: bytes,
+        lease_data: Dict[str, Any],
+        property_data: Dict[str, Any],
+        user_id: str
+    ) -> str:
+        """Save PDF to ADLS"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        property_address = property_data.get("address", "unknown").replace(" ", "_").replace("/", "_")
+        filename = f"lease_{property_address}_{timestamp}.pdf"
+        
+        # Upload to ADLS
+        blob_name = f"{self.final_folder}/{user_id}/{lease_data['id']}/{filename}"
+        blob_client = self.adls.blob_service_client.get_blob_client(
+            container=self.adls.container_name,
+            blob=blob_name
+        )
+        
+        from azure.storage.blob import ContentSettings
+        blob_client.upload_blob(
+            pdf_bytes,
+            overwrite=True,
+            content_settings=ContentSettings(content_type="application/pdf"),
+            metadata={
+                "user_id": user_id,
+                "lease_id": lease_data['id'],
+                "property_id": lease_data['property_id'],
+                "generated_at": datetime.utcnow().isoformat(),
+                "document_type": "lease_pdf"
+            }
+        )
+        
+        return blob_name
     
     @staticmethod
     def _format_currency(amount: Decimal) -> str:

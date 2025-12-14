@@ -278,48 +278,39 @@ def upload_lease_to_iceberg(lease_data: dict, tenants: list):
     print(f"✓ {len(tenants)} tenants uploaded")
 
 
-def generate_lease_pdf(lease_data: dict, tenants: list, property_data: dict, output_path: str = None):
-    """Generate PDF from lease data"""
+def generate_lease_pdf(lease_data: dict, tenants: list, property_data: dict, user_id: str):
+    """Generate PDF from lease data and store in ADLS"""
     print("\n" + "="*60)
     print("GENERATING LEASE PDF")
     print("="*60)
     
     generator = LeaseGeneratorService()
     
-    # Generate LaTeX content
-    latex_content = generator._build_latex_document(lease_data, tenants, property_data)
-    
-    # Save LaTeX file first
-    tex_output = f"/tmp/lease_316_s_50th_{datetime.now().strftime('%Y%m%d_%H%M%S')}.tex"
-    Path(tex_output).write_text(latex_content, encoding='utf-8')
-    print(f"\n✓ LaTeX file generated!")
-    print(f"  Location: {tex_output}")
-    
     try:
-        pdf_bytes = generator._compile_pdf(latex_content)
-        
-        # Save PDF
-        if output_path is None:
-            output_path = f"/tmp/lease_316_s_50th_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        
-        output_file = Path(output_path)
-        output_file.write_bytes(pdf_bytes)
+        pdf_bytes, pdf_blob_name, latex_blob_name = generator.generate_lease_pdf(
+            lease_data, 
+            tenants, 
+            property_data,
+            user_id
+        )
         
         print(f"\n✓ PDF generated successfully!")
-        print(f"  Location: {output_file}")
+        print(f"  PDF ADLS Location: {pdf_blob_name}")
+        print(f"  LaTeX ADLS Location: {latex_blob_name}")
         print(f"  Size: {len(pdf_bytes):,} bytes")
         
-        return str(output_file)
+        return pdf_blob_name, latex_blob_name
         
     except FileNotFoundError as e:
         print(f"\n⚠ PDF compilation skipped: pdflatex not found locally")
-        print(f"  LaTeX file saved to: {tex_output}")
-        print(f"  To generate PDF, install LaTeX or build in Docker")
-        return tex_output
+        print(f"  LaTeX will be generated when running in Docker with TinyTeX")
+        print(f"  Error: {e}")
+        return None, None
     except Exception as e:
         print(f"\n✗ PDF generation failed: {e}")
-        print(f"  LaTeX file saved to: {tex_output}")
-        return tex_output
+        import traceback
+        traceback.print_exc()
+        return None, None
 
 
 def main():
@@ -362,9 +353,14 @@ def main():
         print(f"Warning: Upload to Iceberg failed: {e}")
         print("Continuing with PDF generation...")
     
-    # Step 6: Generate PDF
-    print("\nStep 6: Generating PDF...")
-    pdf_path = generate_lease_pdf(lease_data, tenants, property_data)
+    # Step 6: Generate PDF and save to ADLS
+    print("\nStep 6: Generating PDF and saving to ADLS...")
+    pdf_blob, latex_blob = generate_lease_pdf(
+        lease_data, 
+        tenants, 
+        property_data,
+        lease_data['user_id']
+    )
     
     # Summary
     print("\n" + "="*60)
@@ -373,8 +369,14 @@ def main():
     print(f"✓ Lease created for: {property_data['address']}")
     print(f"✓ Lease ID: {lease_data['id']}")
     print(f"✓ Tenants: {len(tenants)}")
-    print(f"✓ PDF saved to: {pdf_path}")
-    print("\nNext step: Compare generated PDF to NE_res_agreement.tex")
+    if pdf_blob:
+        print(f"✓ PDF saved to ADLS: {pdf_blob}")
+        print(f"✓ LaTeX saved to ADLS: {latex_blob}")
+    else:
+        print(f"⚠ PDF generation skipped (pdflatex not available locally)")
+        print(f"  Will work in Docker container with TinyTeX")
+    print("\nAll lease data stored in ADLS (Azure Data Lake Storage)")
+    print("Both local and production environments share the same ADLS account")
     print("="*60)
 
 
