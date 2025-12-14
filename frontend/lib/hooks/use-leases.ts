@@ -112,12 +112,12 @@ export function useLeases() {
     return response;
   };
 
-  const generatePDF = async (id: string, regenerate = false) => {
+  const generatePDF = async (id: string, regenerate = false): Promise<{ pdf_url: string; latex_url: string }> => {
     const response = await apiClient.post(`/leases/${id}/generate-pdf`, 
       { regenerate },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    return response;
+    return response as { pdf_url: string; latex_url: string };
   };
 
   const deleteLease = async (id: string) => {
