@@ -211,9 +211,9 @@ export default function LeaseCreationDashboard() {
   };
   
   return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="mb-6 flex justify-between items-start">
+    <div className="p-6">
+      {/* Header - compact like property details */}
+      <div className="mb-4 flex justify-between items-start">
         <div>
           <div className="text-xs text-gray-500 mb-1">Creating:</div>
           <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -234,10 +234,10 @@ export default function LeaseCreationDashboard() {
       </div>
       
       {/* Split-screen layout: 75% left (preview) + 25% right (form) */}
-      <div className="grid grid-cols-[1fr_25%] gap-6">
+      <div className="grid grid-cols-[1fr_25%] gap-4">
         {/* Left: Document Preview (75%) */}
         <div className="space-y-4">
-          <Card className="h-[calc(100vh-200px)]">
+          <Card className="h-[calc(100vh-160px)]">
             <CardHeader className="border-b bg-gray-50 pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-bold">Document Preview</CardTitle>
@@ -270,7 +270,7 @@ export default function LeaseCreationDashboard() {
         </div>
         
         {/* Right: Parameters (25%) - Compact & Scrollable */}
-        <div className="space-y-3 overflow-y-auto h-[calc(100vh-200px)] pr-2">
+        <div className="space-y-3 overflow-y-auto h-[calc(100vh-160px)] pr-2">
           {/* Property Selection */}
           <Card>
             <CardHeader className="pb-2">
@@ -670,48 +670,44 @@ export default function LeaseCreationDashboard() {
             </Card>
           )}
           
-          {/* Action Buttons - Sticky at bottom */}
-          <Card className="sticky bottom-0 bg-white border-2 border-gray-900 shadow-lg">
-            <CardContent className="pt-4">
-              <div className="space-y-2">
-                <Button
-                  onClick={handleSaveDraft}
-                  disabled={saving || !formData.property_id || !formData.commencement_date || !formData.termination_date || !formData.monthly_rent}
-                  className="w-full bg-gray-600 hover:bg-gray-700 text-white h-9 text-sm font-medium"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Draft
-                    </>
-                  )}
-                </Button>
-                
-                <Button
-                  onClick={handleGeneratePDF}
-                  disabled={generating || !formData.property_id || !formData.commencement_date || !formData.termination_date || !formData.monthly_rent}
-                  className="w-full bg-black hover:bg-gray-800 text-white h-9 text-sm font-medium"
-                >
-                  {generating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <FileCheck className="h-4 w-4 mr-2" />
-                      Generate PDF
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Action Buttons - Compact like property details */}
+          <div className="sticky bottom-2 space-y-2">
+            <Button
+              onClick={handleSaveDraft}
+              disabled={saving || !formData.property_id || !formData.commencement_date || !formData.termination_date || !formData.monthly_rent}
+              className="w-full bg-gray-600 hover:bg-gray-700 text-white h-8 text-xs"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-3 w-3 mr-1.5" />
+                  Save Draft
+                </>
+              )}
+            </Button>
+            
+            <Button
+              onClick={handleGeneratePDF}
+              disabled={generating || !formData.property_id || !formData.commencement_date || !formData.termination_date || !formData.monthly_rent}
+              className="w-full bg-black hover:bg-gray-800 text-white h-8 text-xs"
+            >
+              {generating ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <FileCheck className="h-3 w-3 mr-1.5" />
+                  Generate PDF
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
