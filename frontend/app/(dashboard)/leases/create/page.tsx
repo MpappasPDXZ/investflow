@@ -18,7 +18,7 @@ export default function LeaseCreationDashboard() {
   const searchParams = useSearchParams();
   const propertyId = searchParams.get('property_id');
   
-  const { data: properties } = useProperties();
+  const { data: propertiesData } = useProperties();
   const { createLease, generatePDF } = useLeases();
   
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
@@ -26,6 +26,9 @@ export default function LeaseCreationDashboard() {
   const [saving, setSaving] = useState(false);
   const [leaseId, setLeaseId] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  
+  // Extract properties array from response (PropertyListResponse has 'items' field)
+  const properties = propertiesData?.items || [];
   
   // Form state
   const [formData, setFormData] = useState({
@@ -82,8 +85,8 @@ export default function LeaseCreationDashboard() {
   
   // Load property when selected
   useEffect(() => {
-    if (formData.property_id && properties?.properties) {
-      const prop = properties.properties.find((p: any) => p.id === formData.property_id);
+    if (formData.property_id && properties.length > 0) {
+      const prop = properties.find((p: any) => p.id === formData.property_id);
       setSelectedProperty(prop);
       
       if (prop) {
@@ -282,7 +285,7 @@ export default function LeaseCreationDashboard() {
                   <SelectValue placeholder="Select property" />
                 </SelectTrigger>
                 <SelectContent>
-                  {properties?.properties.map((p: any) => (
+                  {properties.map((p: any) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.display_name}
                     </SelectItem>
