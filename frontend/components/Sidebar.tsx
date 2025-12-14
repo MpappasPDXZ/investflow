@@ -98,30 +98,6 @@ export function Sidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
 
-                  {/* Leases Section */}
-                  <SidebarMenuItem>
-                    <SidebarGroupLabel className="text-[14px] font-bold text-gray-700">
-                      <FileSignature className="h-3.5 w-3.5 inline mr-1" />
-                      Leases
-                    </SidebarGroupLabel>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild className="text-[11px]">
-                      <Link href="/leases/create">
-                        <Plus className="h-3.5 w-3.5" />
-                        <span>Create Lease</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild className="text-[11px]">
-                      <Link href="/leases">
-                        <List className="h-3.5 w-3.5" />
-                        <span>View Leases</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-
                   {/* Rent Section */}
                   <SidebarMenuItem>
                     <SidebarGroupLabel className="text-[14px] font-bold text-gray-700">

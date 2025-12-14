@@ -165,3 +165,4 @@ def apply_lease_defaults(lease_data: Dict[str, Any], state: str) -> Dict[str, An
     
     return lease_data
 
+

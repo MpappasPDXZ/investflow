@@ -1,5 +1,6 @@
 import { useAuth } from './use-auth';
 import { apiClient } from '../api-client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export interface Tenant {
   id?: string;
@@ -125,4 +126,37 @@ export function useLeases() {
     generatePDF, 
     deleteLease 
   };
+}
+
+// React Query hooks for leases
+export function useLease(leaseId: string) {
+  return useQuery<Lease>({
+    queryKey: ['lease', leaseId],
+    queryFn: () => {
+      console.log(`📤 [LEASE] GET /api/v1/leases/${leaseId} - Request`);
+      return apiClient.get<Lease>(`/leases/${leaseId}`);
+    },
+    enabled: !!leaseId,
+  });
+}
+
+export function useLeasesList(filters: {
+  property_id?: string;
+  status?: string;
+  state?: string;
+  active_only?: boolean;
+} = {}) {
+  return useQuery<LeaseListResponse>({
+    queryKey: ['leases', filters],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (filters.property_id) params.append('property_id', filters.property_id);
+      if (filters.status && filters.status !== 'all') params.append('status', filters.status);
+      if (filters.state && filters.state !== 'all') params.append('state', filters.state);
+      if (filters.active_only) params.append('active_only', 'true');
+      
+      console.log(`📤 [LEASES] GET /api/v1/leases?${params} - Request`);
+      return apiClient.get<LeaseListResponse>(`/leases?${params}`);
+    },
+  });
 }

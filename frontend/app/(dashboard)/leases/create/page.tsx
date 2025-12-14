@@ -17,14 +17,16 @@ export default function LeaseCreationDashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const propertyId = searchParams.get('property_id');
+  const existingLeaseId = searchParams.get('lease_id');
   
   const { data: propertiesData } = useProperties();
-  const { createLease, generatePDF } = useLeases();
+  const { createLease, generatePDF, getLease } = useLeases();
   
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [leaseId, setLeaseId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [leaseId, setLeaseId] = useState<string | null>(existingLeaseId);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   
   // Extract properties array from response (PropertyListResponse has 'items' field)
@@ -96,6 +98,83 @@ export default function LeaseCreationDashboard() {
     moveout_inspection_rights: false,
     notes: '',
   });
+  
+  // Load existing lease if lease_id is provided
+  useEffect(() => {
+    const loadExistingLease = async () => {
+      if (existingLeaseId) {
+        setLoading(true);
+        try {
+          const lease = await getLease(existingLeaseId);
+          
+          // Populate form with lease data
+          setFormData({
+            property_id: lease.property_id,
+            state: lease.state,
+            commencement_date: lease.commencement_date,
+            termination_date: lease.termination_date,
+            auto_convert_month_to_month: lease.auto_convert_month_to_month || false,
+            monthly_rent: lease.monthly_rent?.toString() || '',
+            security_deposit: lease.security_deposit?.toString() || '',
+            payment_method: lease.payment_method || '',
+            tenants: lease.tenants || [],
+            max_occupants: lease.max_occupants || 3,
+            max_adults: lease.max_adults || 2,
+            max_children: lease.max_children !== undefined ? lease.max_children : true,
+            pets_allowed: lease.pets_allowed !== undefined ? lease.pets_allowed : false,
+            pet_fee_one: lease.pet_fee_one?.toString() || '',
+            pet_fee_two: lease.pet_fee_two?.toString() || '',
+            max_pets: lease.max_pets || 0,
+            utilities_tenant: lease.utilities_tenant || '',
+            utilities_landlord: lease.utilities_landlord || '',
+            parking_spaces: lease.parking_spaces || 0,
+            parking_small_vehicles: lease.parking_small_vehicles || 0,
+            parking_large_trucks: lease.parking_large_trucks || 0,
+            front_door_keys: lease.front_door_keys || 0,
+            back_door_keys: lease.back_door_keys || 0,
+            key_replacement_fee: lease.key_replacement_fee?.toString() || '',
+            has_shared_driveway: lease.has_shared_driveway || false,
+            shared_driveway_with: lease.shared_driveway_with || '',
+            has_garage: lease.has_garage || false,
+            garage_outlets_prohibited: lease.garage_outlets_prohibited || false,
+            has_attic: lease.has_attic || false,
+            attic_usage: lease.attic_usage || '',
+            has_basement: lease.has_basement || false,
+            appliances_provided: lease.appliances_provided || '',
+            snow_removal_responsibility: lease.snow_removal_responsibility || 'tenant',
+            lead_paint_disclosure: lease.lead_paint_disclosure !== undefined ? lease.lead_paint_disclosure : false,
+            lead_paint_year_built: lease.lead_paint_year_built?.toString() || '',
+            early_termination_allowed: lease.early_termination_allowed !== undefined ? lease.early_termination_allowed : false,
+            early_termination_notice_days: lease.early_termination_notice_days || 0,
+            early_termination_fee_months: lease.early_termination_fee_months || 0,
+            moveout_costs: lease.moveout_costs || [],
+            methamphetamine_disclosure: lease.methamphetamine_disclosure || false,
+            owner_name: lease.owner_name || '',
+            owner_address: lease.owner_address || '',
+            moveout_inspection_rights: lease.moveout_inspection_rights || false,
+            notes: lease.notes || '',
+          });
+          
+          // Set PDF URL if exists
+          if (lease.pdf_url) {
+            setPdfUrl(lease.pdf_url);
+          } else {
+            // Auto-generate PDF if not exists
+            console.log('No PDF found, auto-generating...');
+            const result = await generatePDF(existingLeaseId, false) as { pdf_url: string; latex_url: string };
+            setPdfUrl(result.pdf_url);
+          }
+        } catch (err) {
+          console.error('Error loading lease:', err);
+          alert('Failed to load lease');
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    
+    loadExistingLease();
+  }, [existingLeaseId]);
   
   // Load property when selected
   useEffect(() => {
@@ -220,7 +299,7 @@ export default function LeaseCreationDashboard() {
       }
       
       // Generate PDF
-      const response = await generatePDF(currentLeaseId, false);
+      const response = await generatePDF(currentLeaseId, false) as { pdf_url: string; latex_url: string };
       setPdfUrl(response.pdf_url);
       alert('PDF generated successfully! View in preview on the left.');
     } catch (err) {
@@ -233,8 +312,17 @@ export default function LeaseCreationDashboard() {
   
   return (
     <div className="p-6">
-      {/* Header - compact like property details */}
-      <div className="mb-4 flex justify-between items-center">
+      {loading ? (
+        <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 animate-spin text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600">Loading lease...</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Header - compact like property details */}
+          <div className="mb-4 flex justify-between items-center">
         <div>
           <div className="text-xs text-gray-500 mb-1">Creating:</div>
           <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -294,43 +382,9 @@ export default function LeaseCreationDashboard() {
         </div>
       </div>
       
-      {/* Split-screen layout: 75% left (preview) + 25% right (form) */}
-      <div className="grid grid-cols-[1fr_25%] gap-4">
-        {/* Left: Document Preview (75%) */}
-        <div className="space-y-4">
-          <Card className="h-[calc(100vh-160px)]">
-            <CardHeader className="border-b bg-gray-50 pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-bold">Document Preview</CardTitle>
-                {pdfUrl && (
-                  <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
-                    <Button variant="outline" size="sm" className="h-8 text-xs">
-                      <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                      Open in New Tab
-                    </Button>
-                  </a>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 h-[calc(100%-60px)]">
-              {pdfUrl ? (
-                <iframe
-                  src={`${pdfUrl}#view=FitH`}
-                  className="w-full h-full"
-                  title="Lease Preview"
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                  <FileText className="h-16 w-16 mb-4 text-gray-300" />
-                  <p className="text-sm">Fill out the form and generate PDF to preview</p>
-                  <p className="text-xs text-gray-400 mt-2">Document will appear here</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-        
-        {/* Right: Parameters (25%) - Compact & Scrollable */}
+      {/* Split-screen layout: 25% left (form) + 75% right (PDF viewer) */}
+      <div className="grid grid-cols-[25%_1fr] gap-4">
+        {/* Left: Compact Form (25%) - Scrollable */}
         <div className="space-y-3 overflow-y-auto h-[calc(100vh-160px)] pr-2">
           {/* Property Selection */}
           <Card>
@@ -731,7 +785,43 @@ export default function LeaseCreationDashboard() {
             </Card>
           )}
         </div>
+        
+        {/* Right: PDF Viewer (75%) - Only shows after generation */}
+        {pdfUrl && (
+          <div className="space-y-4">
+            <Card className="h-[calc(100vh-160px)]">
+              <CardHeader className="border-b bg-gray-50 pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-bold">Document Preview</CardTitle>
+                  <div className="flex gap-2">
+                    <a href={pdfUrl} download>
+                      <Button variant="outline" size="sm" className="h-8 text-xs">
+                        <FileText className="h-3.5 w-3.5 mr-1.5" />
+                        Download
+                      </Button>
+                    </a>
+                    <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
+                      <Button variant="outline" size="sm" className="h-8 text-xs">
+                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                        Open in New Tab
+                      </Button>
+                    </a>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0 h-[calc(100%-60px)]">
+                <iframe
+                  src={`${pdfUrl}#view=FitH`}
+                  className="w-full h-full"
+                  title="Lease Preview"
+                />
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
+        </>
+      )}
     </div>
   );
 }

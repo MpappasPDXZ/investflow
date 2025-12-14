@@ -235,19 +235,19 @@ async def list_leases(
             try:
                 # Get property summary
                 property_summary = _get_property_summary(lease["property_id"])
-            
-            # Get tenants for this lease
-            lease_tenants = tenants_df[tenants_df["lease_id"] == lease["id"]]
-            tenant_list = [
-                {"first_name": t["first_name"], "last_name": t["last_name"]}
-                for _, t in lease_tenants.iterrows()
-            ]
-            
-            # Get PDF URL if exists
-            pdf_url = None
-            if lease["generated_pdf_document_id"]:
-                pdf_url = adls_service.get_blob_download_url(lease["generated_pdf_document_id"])
-            
+                
+                # Get tenants for this lease
+                lease_tenants = tenants_df[tenants_df["lease_id"] == lease["id"]]
+                tenant_list = [
+                    {"first_name": t["first_name"], "last_name": t["last_name"]}
+                    for _, t in lease_tenants.iterrows()
+                ]
+                
+                # Get PDF URL if exists
+                pdf_url = None
+                if lease["generated_pdf_document_id"]:
+                    pdf_url = adls_service.get_blob_download_url(lease["generated_pdf_document_id"])
+                
                 lease_items.append(LeaseListItem(
                     id=UUID(lease["id"]),
                     property=PropertySummary(**property_summary),
@@ -457,6 +457,66 @@ async def generate_lease_pdf(
     except Exception as e:
         logger.error(f"Error generating PDF: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generating PDF: {str(e)}")
+
+
+@router.delete("/{lease_id}/pdf", status_code=204)
+async def delete_lease_pdf(
+    lease_id: UUID,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete generated PDF and LaTeX files for a lease"""
+    try:
+        user_id = current_user["sub"]
+        
+        # Get lease
+        leases_df = read_table(NAMESPACE, LEASES_TABLE)
+        lease_row = leases_df[leases_df["id"] == str(lease_id)]
+        
+        if len(lease_row) == 0:
+            raise HTTPException(status_code=404, detail="Lease not found")
+        
+        lease = lease_row.iloc[0]
+        
+        # Verify ownership
+        if lease["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        
+        # Get PDF blob name
+        pdf_blob_name = lease.get("generated_pdf_document_id")
+        if not pdf_blob_name:
+            raise HTTPException(status_code=404, detail="No PDF found for this lease")
+        
+        # Delete PDF from ADLS
+        try:
+            adls_service.delete_blob(pdf_blob_name)
+            logger.info(f"Deleted PDF: {pdf_blob_name}")
+        except Exception as e:
+            logger.warning(f"Failed to delete PDF blob: {e}")
+        
+        # Delete LaTeX source from ADLS
+        latex_blob_name = pdf_blob_name.replace('.pdf', '.tex')
+        try:
+            adls_service.delete_blob(latex_blob_name)
+            logger.info(f"Deleted LaTeX: {latex_blob_name}")
+        except Exception as e:
+            logger.warning(f"Failed to delete LaTeX blob: {e}")
+        
+        # Update lease record to clear PDF reference
+        update_dict = lease.to_dict()
+        update_dict["generated_pdf_document_id"] = None
+        update_dict["status"] = "draft"  # Reset to draft
+        update_dict["updated_at"] = pd.Timestamp.now()
+        
+        df = pd.DataFrame([update_dict])
+        append_data(NAMESPACE, LEASES_TABLE, df)
+        
+        return None
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting lease PDF: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error deleting lease PDF: {str(e)}")
 
 
 @router.delete("/{lease_id}", status_code=204)

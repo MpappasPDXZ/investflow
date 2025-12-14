@@ -263,26 +263,36 @@ cd /Users/matt/code/property/backend
 docker-compose down
 docker-compose up --build -d
 
-## Deployment
+## Development Workflow
 
-### Quick Deploy (Update Existing Containers)
+### Local Testing with Docker Compose
 
-If you've already pushed images to Azure Container Registry and just need to update the running containers without rebuilding:
+**Always test locally before deploying:**
 
 ```bash
-# Update frontend only
-az containerapp update --name investflow-frontend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-frontend:latest
-
-# Update backend only
-az containerapp update --name investflow-backend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-backend:latest
-
-# Update both
-az containerapp update --name investflow-frontend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-frontend:latest && \
-az containerapp update --name investflow-backend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-backend:latest
+cd backend
+docker-compose down
+docker-compose up --build -d
 ```
 
-**Note**: This assumes you've already built and pushed the latest images to Azure Container Registry. To build and push:
+This starts all services locally:
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000
+- Lakekeeper: http://localhost:8181
 
+**Workflow:**
+1. Make code changes
+2. Test locally using `docker-compose`
+3. When ready, push to git
+4. Deploy to Azure (see Deployment section below)
+
+## Deployment
+
+### Standard Deployment Process
+
+**When you have new code changes to deploy:**
+
+1. **Build and push new images to Azure Container Registry:**
 ```bash
 # Build and push frontend
 cd frontend
@@ -296,9 +306,31 @@ docker build --platform linux/amd64 -t investflowregistry.azurecr.io/investflow-
 docker push investflowregistry.azurecr.io/investflow-backend:latest
 ```
 
-### Full Deployment
+2. **Update Azure Container Apps to use the new images:**
+```bash
+# Update frontend only
+az containerapp update --name investflow-frontend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-frontend:latest
 
-For a complete deployment including building images, use `./deploy.sh` (requires ~5-10GB free disk space)
+# Update backend only
+az containerapp update --name investflow-backend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-backend:latest
+
+# Update both
+az containerapp update --name investflow-frontend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-frontend:latest && \
+az containerapp update --name investflow-backend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-backend:latest
+```
+
+### deploy.sh (Limited Use Case)
+
+**⚠️ Important:** `deploy.sh` should **only** be used when container images are **NOT** being overwritten in Azure (e.g., initial setup, infrastructure changes, or when you want to deploy without building new images).
+
+For normal code deployments, use the standard process above (build/push manually, then update container apps).
+
+`deploy.sh` builds images and deploys everything, which is useful for:
+- Initial infrastructure setup
+- When you need to update container app configurations without code changes
+- Full stack redeployment scenarios
+
+**Not recommended for regular code deployments** - always test locally with `docker-compose` first, then use the manual build/push process.
 
 ### POSTGRES SETUP
 POSTGRES_HOST=if-postgres.postgres.database.azure.com

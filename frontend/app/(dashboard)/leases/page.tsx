@@ -194,12 +194,12 @@ export default function LeasesPage() {
                       </td>
                       <td className="py-3">
                         <div className="flex gap-1 justify-end">
-                          <Link href={`/leases/${lease.id}`}>
+                          <Link href={`/leases/create?lease_id=${lease.id}`}>
                             <Button
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0"
-                              title="View"
+                              title="View/Edit Lease"
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
