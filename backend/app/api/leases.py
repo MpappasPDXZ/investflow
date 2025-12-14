@@ -232,8 +232,9 @@ async def list_leases(
         # Build response
         lease_items = []
         for _, lease in leases_df.iterrows():
-            # Get property summary
-            property_summary = _get_property_summary(lease["id"])
+            try:
+                # Get property summary
+                property_summary = _get_property_summary(lease["property_id"])
             
             # Get tenants for this lease
             lease_tenants = tenants_df[tenants_df["lease_id"] == lease["id"]]
@@ -247,17 +248,21 @@ async def list_leases(
             if lease["generated_pdf_document_id"]:
                 pdf_url = adls_service.get_blob_download_url(lease["generated_pdf_document_id"])
             
-            lease_items.append(LeaseListItem(
-                id=UUID(lease["id"]),
-                property=PropertySummary(**property_summary),
-                tenants=tenant_list,
-                commencement_date=pd.Timestamp(lease["commencement_date"]).date(),
-                termination_date=pd.Timestamp(lease["termination_date"]).date(),
-                monthly_rent=Decimal(str(lease["monthly_rent"])),
-                status=lease["status"],
-                pdf_url=pdf_url,
-                created_at=pd.Timestamp(lease["created_at"]).to_pydatetime()
-            ))
+                lease_items.append(LeaseListItem(
+                    id=UUID(lease["id"]),
+                    property=PropertySummary(**property_summary),
+                    tenants=tenant_list,
+                    commencement_date=pd.Timestamp(lease["commencement_date"]).date(),
+                    termination_date=pd.Timestamp(lease["termination_date"]).date(),
+                    monthly_rent=Decimal(str(lease["monthly_rent"])),
+                    status=lease["status"],
+                    pdf_url=pdf_url,
+                    created_at=pd.Timestamp(lease["created_at"]).to_pydatetime()
+                ))
+            except Exception as e:
+                logger.error(f"Error building lease item {lease['id']}: {e}")
+                # Skip this lease if there's an error
+                continue
         
         return LeaseListResponse(leases=lease_items, total=len(lease_items))
         

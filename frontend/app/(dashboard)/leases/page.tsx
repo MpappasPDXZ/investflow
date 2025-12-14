@@ -16,8 +16,8 @@ export default function LeasesPage() {
   const [leases, setLeases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
-    status: '',
-    state: '',
+    status: 'all',
+    state: 'all',
   });
 
   useEffect(() => {
@@ -96,7 +96,7 @@ export default function LeasesPage() {
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All statuses</SelectItem>
+                  <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="pending_signature">Pending Signature</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
@@ -114,7 +114,7 @@ export default function LeasesPage() {
                   <SelectValue placeholder="All states" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All states</SelectItem>
+                  <SelectItem value="all">All states</SelectItem>
                   <SelectItem value="NE">Nebraska</SelectItem>
                   <SelectItem value="MO">Missouri</SelectItem>
                 </SelectContent>
