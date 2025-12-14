@@ -75,13 +75,13 @@ class LeaseGeneratorService:
     ) -> str:
         """Build complete LaTeX document from lease data"""
         
-        # Extract data
-        monthly_rent = self._format_currency(lease_data.get("monthly_rent", Decimal("0")))
-        security_deposit = self._format_currency(lease_data.get("security_deposit", Decimal("0")))
-        late_fee_1 = self._format_currency(lease_data.get("late_fee_day_1_10", Decimal("0")))
-        late_fee_2 = self._format_currency(lease_data.get("late_fee_day_11", Decimal("0")))
-        late_fee_3 = self._format_currency(lease_data.get("late_fee_day_16", Decimal("0")))
-        nsf_fee = self._format_currency(lease_data.get("nsf_fee", Decimal("0")))
+        # Extract data (handle None values with or)
+        monthly_rent = self._format_currency(lease_data.get("monthly_rent") or Decimal("0"))
+        security_deposit = self._format_currency(lease_data.get("security_deposit") or Decimal("0"))
+        late_fee_1 = self._format_currency(lease_data.get("late_fee_day_1_10") or Decimal("0"))
+        late_fee_2 = self._format_currency(lease_data.get("late_fee_day_11") or Decimal("0"))
+        late_fee_3 = self._format_currency(lease_data.get("late_fee_day_16") or Decimal("0"))
+        nsf_fee = self._format_currency(lease_data.get("nsf_fee") or Decimal("0"))
         
         # Tenant names
         tenant_names = ", ".join([f"{t.get('first_name', '')} {t.get('last_name', '')}" for t in tenants])
@@ -511,7 +511,9 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
         return blob_name
     
     @staticmethod
-    def _format_currency(amount: Decimal) -> str:
+    def _format_currency(amount: Decimal | None) -> str:
         """Format Decimal as currency string (no $)"""
+        if amount is None:
+            amount = Decimal("0")
         return f"{amount:,.2f}"
 

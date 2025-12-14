@@ -194,28 +194,35 @@ export default function LeaseCreationDashboard() {
       const response = await createLease(payload);
       setLeaseId(response.id);
       alert('Lease saved as draft');
+      return response.id; // Return the lease ID
     } catch (err) {
       console.error('Error saving draft:', err);
       alert('Failed to save draft');
+      return null;
     } finally {
       setSaving(false);
     }
   };
   
   const handleGeneratePDF = async () => {
-    let currentLeaseId = leaseId;
-    
-    if (!currentLeaseId) {
-      await handleSaveDraft();
-      // Wait for leaseId to be set
-      if (!leaseId) return;
-      currentLeaseId = leaseId;
-    }
-    
     setGenerating(true);
     try {
+      let currentLeaseId = leaseId;
+      
+      // If no lease exists yet, create it first
+      if (!currentLeaseId) {
+        const newLeaseId = await handleSaveDraft();
+        if (!newLeaseId) {
+          setGenerating(false);
+          return;
+        }
+        currentLeaseId = newLeaseId;
+      }
+      
+      // Generate PDF
       const response = await generatePDF(currentLeaseId, false);
       setPdfUrl(response.pdf_url);
+      alert('PDF generated successfully! View in preview on the left.');
     } catch (err) {
       console.error('Error generating PDF:', err);
       alert('Failed to generate PDF');
