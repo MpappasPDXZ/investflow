@@ -30,17 +30,31 @@ export default function LeaseCreationDashboard() {
   // Extract properties array from response (PropertyListResponse has 'items' field)
   const properties = propertiesData?.items || [];
   
-  // Form state
+  // Calculate default dates: today and 1 year from today
+  const getDefaultDates = () => {
+    const today = new Date();
+    const oneYearLater = new Date(today);
+    oneYearLater.setFullYear(today.getFullYear() + 1);
+    
+    return {
+      commencement_date: today.toISOString().split('T')[0],
+      termination_date: oneYearLater.toISOString().split('T')[0],
+    };
+  };
+  
+  const defaultDates = getDefaultDates();
+  
+  // Form state with defaults for quick testing
   const [formData, setFormData] = useState({
     property_id: propertyId || '',
     state: 'NE' as 'NE' | 'MO',
-    commencement_date: '',
-    termination_date: '',
+    commencement_date: defaultDates.commencement_date,
+    termination_date: defaultDates.termination_date,
     auto_convert_month_to_month: false,
-    monthly_rent: '',
-    security_deposit: '',
-    payment_method: '',
-    tenants: [{ first_name: '', last_name: '', email: '', phone: '' }] as Tenant[],
+    monthly_rent: '1500',
+    security_deposit: '1500',
+    payment_method: 'Check or Online Portal',
+    tenants: [{ first_name: 'John', last_name: 'Doe', email: 'john.doe@example.com', phone: '402-555-0100' }] as Tenant[],
     max_occupants: 3,
     max_adults: 2,
     max_children: true,
@@ -213,7 +227,7 @@ export default function LeaseCreationDashboard() {
   return (
     <div className="p-6">
       {/* Header - compact like property details */}
-      <div className="mb-4 flex justify-between items-start">
+      <div className="mb-4 flex justify-between items-center">
         <div>
           <div className="text-xs text-gray-500 mb-1">Creating:</div>
           <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -222,15 +236,55 @@ export default function LeaseCreationDashboard() {
             {selectedProperty && ` - ${selectedProperty.display_name}`}
           </h1>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => router.push('/leases')}
-          size="sm"
-          className="h-8 text-xs"
-        >
-          <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
-          Back to Leases
-        </Button>
+        
+        {/* Action buttons inline with header */}
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleSaveDraft}
+            disabled={saving || !formData.property_id}
+            className="bg-gray-600 hover:bg-gray-700 text-white h-8 text-xs px-3"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-3 w-3 mr-1.5" />
+                Save Draft
+              </>
+            )}
+          </Button>
+          
+          <Button
+            onClick={handleGeneratePDF}
+            disabled={generating || !formData.property_id}
+            className="bg-black hover:bg-gray-800 text-white h-8 text-xs px-3"
+          >
+            {generating ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <FileCheck className="h-3 w-3 mr-1.5" />
+                Generate PDF
+              </>
+            )}
+          </Button>
+          
+          <Button
+            variant="outline"
+            onClick={() => router.push('/leases')}
+            size="sm"
+            className="h-8 text-xs px-3"
+          >
+            <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
+            Back to Leases
+          </Button>
+        </div>
       </div>
       
       {/* Split-screen layout: 75% left (preview) + 25% right (form) */}
@@ -321,7 +375,7 @@ export default function LeaseCreationDashboard() {
                     type="date"
                     value={formData.commencement_date}
                     onChange={(e) => setFormData({ ...formData, commencement_date: e.target.value })}
-                    className="text-sm h-9"
+                    className="text-sm h-9 w-full"
                   />
                 </div>
                 <div>
@@ -330,7 +384,7 @@ export default function LeaseCreationDashboard() {
                     type="date"
                     value={formData.termination_date}
                     onChange={(e) => setFormData({ ...formData, termination_date: e.target.value })}
-                    className="text-sm h-9"
+                    className="text-sm h-9 w-full"
                   />
                 </div>
               </div>
@@ -669,45 +723,6 @@ export default function LeaseCreationDashboard() {
               </CardContent>
             </Card>
           )}
-          
-          {/* Action Buttons - Compact like property details */}
-          <div className="sticky bottom-2 space-y-2">
-            <Button
-              onClick={handleSaveDraft}
-              disabled={saving || !formData.property_id || !formData.commencement_date || !formData.termination_date || !formData.monthly_rent}
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white h-8 text-xs"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="h-3 w-3 mr-1.5" />
-                  Save Draft
-                </>
-              )}
-            </Button>
-            
-            <Button
-              onClick={handleGeneratePDF}
-              disabled={generating || !formData.property_id || !formData.commencement_date || !formData.termination_date || !formData.monthly_rent}
-              className="w-full bg-black hover:bg-gray-800 text-white h-8 text-xs"
-            >
-              {generating ? (
-                <>
-                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <FileCheck className="h-3 w-3 mr-1.5" />
-                  Generate PDF
-                </>
-              )}
-            </Button>
-          </div>
         </div>
       </div>
     </div>

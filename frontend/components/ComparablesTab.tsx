@@ -525,7 +525,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                   type="date"
                   value={form.date_listed}
                   onChange={(e) => setForm({ ...form, date_listed: e.target.value })}
-                  className="h-7 text-xs"
+                  className="h-7 text-xs w-full"
                 />
               </div>
               <div>
