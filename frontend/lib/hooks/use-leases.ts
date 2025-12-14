@@ -83,11 +83,12 @@ export interface LeaseListResponse {
 }
 
 export function useLeases() {
-  const { token } = useAuth();
+  const { isAuthenticated } = useAuth();
+  const getToken = () => localStorage.getItem('auth_token') || '';
 
   const createLease = async (leaseData: LeaseCreate): Promise<Lease> => {
     const response = await apiClient.post('/leases', leaseData, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${getToken()}` }
     });
     return response as Lease;
   };
@@ -105,14 +106,14 @@ export function useLeases() {
     if (filters.active_only) params.append('active_only', 'true');
     
     const response = await apiClient.get(`/leases?${params}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${getToken()}` }
     });
     return response as LeaseListResponse;
   };
 
   const getLease = async (id: string): Promise<Lease> => {
     const response = await apiClient.get(`/leases/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${getToken()}` }
     });
     return response as Lease;
   };
@@ -120,14 +121,14 @@ export function useLeases() {
   const generatePDF = async (id: string, regenerate = false): Promise<{ pdf_url: string; latex_url: string }> => {
     const response = await apiClient.post(`/leases/${id}/generate-pdf`, 
       { regenerate },
-      { headers: { Authorization: `Bearer ${token}` } }
+      { headers: { Authorization: `Bearer ${getToken()}` } }
     );
     return response as { pdf_url: string; latex_url: string };
   };
 
   const deleteLease = async (id: string) => {
     await apiClient.delete(`/leases/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${getToken()}` }
     });
   };
 
