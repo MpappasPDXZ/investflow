@@ -10,8 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     perl \
     curl \
+    fontconfig \
+    libfontconfig1 \
     && wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh \
-    && /root/bin/tlmgr install enumitem titlesec fancyhdr tabularx \
+    && /root/bin/tlmgr install enumitem titlesec fancyhdr tabularx || true \
     && rm -rf /var/lib/apt/lists/*
 
 # Add TinyTeX to PATH
