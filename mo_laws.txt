@@ -1,0 +1,46 @@
+Based on Missouri statutes (Chapters 441 and 535 RSMo), here is the comprehensive list of items that must or should be included in a residential lease agreement to be legally compliant and enforceable.
+I. Mandatory Statutory Disclosures
+These specific disclosures are required by state or federal law. Failure to include them can lead to fines, criminal liability, or the inability to evict.
+Methamphetamine Production Disclosure
+The Law: Mo. Rev. Stat. § 441.236 requires landlords to disclose in writing if they have knowledge that the property was used for methamphetamine production.
+Lease Clause: A statement confirming whether the landlord is aware of any prior methamphetamine production on the premises.
+Lead-Based Paint Disclosure (Federal)
+The Law: For any property built before 1978, federal law (42 U.S. Code § 4852d) requires this disclosure.
+Lease Attachment: You must attach the official EPA disclosure form and provide the "Protect Your Family from Lead in Your Home" pamphlet. The lease must include a signed acknowledgment that the tenant received these.
+Identification of Owner and Manager (Service of Process)
+The Law: Mo. Rev. Stat. § 535.185 mandates that the tenant be furnished with the name and address of the person authorized to manage the property AND the owner (or agent) authorized to receive legal notices ("service of process").
+Lease Clause: "The person authorized to manage the premises is [Name/Address]. The person authorized to receive service of process and legal notices is [Name/Address]."
+II. Financial Terms & Security Deposits
+Missouri has strict statutes regarding how you handle tenant money. Your lease must reflect these exact rules.
+Security Deposit Cap
+The Law: Mo. Rev. Stat. § 535.300 limits the security deposit to a maximum of two months' rent.
+"No Commingling" & Holding Requirement
+The Law: Mo. Rev. Stat. § 535.300(2) requires deposits be held in a bank, credit union, or depository institution insured by a federal agency.
+Lease Clause: Explicitly state that the security deposit will be held in a separate, federally insured account and will not be commingled with the landlord's personal or business funds.
+Deposit Return Timeline & Deductions
+The Law: You must return the deposit (or the balance with an itemized list of deductions) within 30 days of the lease termination.
+Lease Clause: List allowable deductions: unpaid rent, damages beyond normal wear and tear, and cleaning costs to restore the unit to its move-in condition.
+III. Critical Operational Clauses
+These clauses clarify rights where the law is either vague or defaults to the tenant's favor if not specified.
+Move-Out Inspection Rights
+The Law: Mo. Rev. Stat. § 535.300 gives the tenant the right to be present during the move-out inspection.
+Lease Clause: "Landlord will notify Tenant of the date and time of the move-out inspection, which will be held at a reasonable time. Tenant has the right to be present to verify damages."
+Military Personnel Clause (15-Day Notice)
+The Law: Mo. Rev. Stat. § 41.944 offers specific protections beyond federal law.
+Lease Clause: State that active duty military personnel may terminate the lease with 15 days' written notice (standard federal law is 30 days) upon receiving change of station or temporary duty orders for 90+ days.
+Illegal Activity & Expedited Eviction
+The Law: Mo. Rev. Stat. § 441.020 allows for expedited eviction for illegal activities (gambling, prostitution, controlled substances).
+Lease Clause: "Tenant or guests engaging in any illegal activity, including drug-related criminal activity, on or near the premises is a material breach of this lease and grounds for immediate termination of tenancy."
+Subletting and Assignment
+The Law: Mo. Rev. Stat. § 441.030 restricts assignment without consent, but a clear clause prevents ambiguity.
+Lease Clause: "Tenant shall not sublet the premises or assign this lease without the Landlord's prior written consent."
+Landlord Entry
+The Standard: Missouri law is silent on a specific notice period.
+Lease Clause: Establish a standard rule to avoid disputes: "Landlord will provide 24 hours' notice before entering for non-emergency maintenance or inspections."
+IV. Essential Basics
+Exact Identity: Full legal names of all adult tenants (makes them jointly and severally liable).
+Lease Term: Specific Start Date and End Date. (Leases >1 year must be written/signed to be valid per Mo. Rev. Stat. § 432.010).
+Occupancy Limit: "Two persons per bedroom" is the state standard for reasonableness (Mo. Rev. Stat. § 441.060).
+
+
+

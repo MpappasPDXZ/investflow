@@ -230,6 +230,141 @@ def create_scenarios_schema() -> pa.Schema:
     ])
 
 
+def create_leases_schema() -> pa.Schema:
+    """Create PyArrow schema for leases table - mapped to NE_res_agreement.tex"""
+    return pa.schema([
+        # Primary identifiers
+        pa.field("id", pa.string(), nullable=False),
+        pa.field("user_id", pa.string(), nullable=False),  # Landlord
+        pa.field("property_id", pa.string(), nullable=False),
+        pa.field("unit_id", pa.string(), nullable=True),
+        
+        # Status
+        pa.field("status", pa.string(), nullable=False),  # "draft", "pending_signature", "active", "expired", "terminated"
+        pa.field("lease_version", pa.int32(), nullable=False),
+        pa.field("state", pa.string(), nullable=False),  # "NE", "MO"
+        
+        # Dates (Line 28, Section 2)
+        pa.field("lease_date", pa.date32(), nullable=True),  # "entered into on"
+        pa.field("commencement_date", pa.date32(), nullable=False),
+        pa.field("termination_date", pa.date32(), nullable=False),
+        pa.field("auto_convert_month_to_month", pa.bool_(), nullable=True),
+        pa.field("signed_date", pa.date32(), nullable=True),
+        
+        # Financial Terms (Section 3)
+        pa.field("monthly_rent", pa.decimal128(10, 2), nullable=False),
+        pa.field("rent_due_day", pa.int32(), nullable=False),  # 1st day
+        pa.field("rent_due_by_day", pa.int32(), nullable=False),  # 5th
+        pa.field("rent_due_by_time", pa.string(), nullable=True),  # "6pm"
+        pa.field("payment_method", pa.string(), nullable=True),
+        pa.field("prorated_first_month_rent", pa.decimal128(10, 2), nullable=True),
+        
+        # Late Charges (Section 4)
+        pa.field("late_fee_day_1_10", pa.decimal128(10, 2), nullable=True),
+        pa.field("late_fee_day_11", pa.decimal128(10, 2), nullable=True),
+        pa.field("late_fee_day_16", pa.decimal128(10, 2), nullable=True),
+        pa.field("late_fee_day_21", pa.decimal128(10, 2), nullable=True),
+        
+        # Insufficient Funds (Section 5)
+        pa.field("nsf_fee", pa.decimal128(10, 2), nullable=True),
+        
+        # Security Deposit (Section 6)
+        pa.field("security_deposit", pa.decimal128(10, 2), nullable=False),
+        pa.field("deposit_return_days", pa.int32(), nullable=True),  # 14 (NE) or 30 (MO)
+        
+        # Occupants (Section 11)
+        pa.field("max_occupants", pa.int32(), nullable=True),
+        pa.field("max_adults", pa.int32(), nullable=True),
+        pa.field("max_children", pa.bool_(), nullable=True),
+        
+        # Utilities (Section 15)
+        pa.field("utilities_tenant", pa.string(), nullable=True),
+        pa.field("utilities_landlord", pa.string(), nullable=True),
+        
+        # Pets (Section 16)
+        pa.field("pets_allowed", pa.bool_(), nullable=True),
+        pa.field("pet_fee_one", pa.decimal128(10, 2), nullable=True),
+        pa.field("pet_fee_two", pa.decimal128(10, 2), nullable=True),
+        pa.field("max_pets", pa.int32(), nullable=True),
+        
+        # Parking (Section 33)
+        pa.field("parking_spaces", pa.int32(), nullable=True),
+        pa.field("parking_small_vehicles", pa.int32(), nullable=True),
+        pa.field("parking_large_trucks", pa.int32(), nullable=True),
+        
+        # Keys (Section 34)
+        pa.field("front_door_keys", pa.int32(), nullable=True),
+        pa.field("back_door_keys", pa.int32(), nullable=True),
+        pa.field("key_replacement_fee", pa.decimal128(10, 2), nullable=True),
+        
+        # Shared Driveway (Section 19)
+        pa.field("has_shared_driveway", pa.bool_(), nullable=True),
+        pa.field("shared_driveway_with", pa.string(), nullable=True),
+        pa.field("snow_removal_responsibility", pa.string(), nullable=True),
+        
+        # Garage (Section 38)
+        pa.field("has_garage", pa.bool_(), nullable=True),
+        pa.field("garage_outlets_prohibited", pa.bool_(), nullable=True),
+        
+        # Special Spaces (Section 38)
+        pa.field("has_attic", pa.bool_(), nullable=True),
+        pa.field("attic_usage", pa.string(), nullable=True),
+        pa.field("has_basement", pa.bool_(), nullable=True),
+        
+        # Appliances (Section 38)
+        pa.field("appliances_provided", pa.string(), nullable=True),
+        
+        # Lead Paint (Section 38)
+        pa.field("lead_paint_disclosure", pa.bool_(), nullable=True),
+        pa.field("lead_paint_year_built", pa.int32(), nullable=True),
+        
+        # Early Termination (Section 38)
+        pa.field("early_termination_allowed", pa.bool_(), nullable=True),
+        pa.field("early_termination_notice_days", pa.int32(), nullable=True),
+        pa.field("early_termination_fee_months", pa.int32(), nullable=True),
+        pa.field("early_termination_fee_amount", pa.decimal128(10, 2), nullable=True),
+        
+        # Move-Out Costs (Section 39) - JSON array
+        pa.field("moveout_costs", pa.string(), nullable=True),
+        
+        # Missouri-Specific
+        pa.field("methamphetamine_disclosure", pa.bool_(), nullable=True),
+        pa.field("owner_name", pa.string(), nullable=True),
+        pa.field("owner_address", pa.string(), nullable=True),
+        pa.field("manager_name", pa.string(), nullable=True),
+        pa.field("manager_address", pa.string(), nullable=True),
+        pa.field("deposit_account_info", pa.string(), nullable=True),
+        pa.field("moveout_inspection_rights", pa.bool_(), nullable=True),
+        pa.field("military_termination_days", pa.int32(), nullable=True),
+        
+        # Document References
+        pa.field("generated_pdf_document_id", pa.string(), nullable=True),
+        pa.field("template_used", pa.string(), nullable=True),
+        
+        # Metadata
+        pa.field("notes", pa.string(), nullable=True),
+        pa.field("created_at", pa.timestamp("us"), nullable=False),
+        pa.field("updated_at", pa.timestamp("us"), nullable=False),
+        pa.field("is_active", pa.bool_(), nullable=True),
+    ])
+
+
+def create_lease_tenants_schema() -> pa.Schema:
+    """Create PyArrow schema for lease_tenants table"""
+    return pa.schema([
+        pa.field("id", pa.string(), nullable=False),
+        pa.field("lease_id", pa.string(), nullable=False),
+        pa.field("tenant_order", pa.int32(), nullable=False),  # 1, 2, 3...
+        pa.field("first_name", pa.string(), nullable=False),
+        pa.field("last_name", pa.string(), nullable=False),
+        pa.field("email", pa.string(), nullable=True),
+        pa.field("phone", pa.string(), nullable=True),
+        pa.field("signed_date", pa.date32(), nullable=True),
+        pa.field("created_at", pa.timestamp("us"), nullable=False),
+        pa.field("updated_at", pa.timestamp("us"), nullable=False),
+    ])
+
+
 def create_sample_users() -> pd.DataFrame:
     """Create sample user data"""
     now = pd.Timestamp.now()

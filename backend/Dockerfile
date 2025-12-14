@@ -3,11 +3,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install build dependencies for compiling Cython extensions
+# Install build dependencies for compiling Cython extensions + LaTeX for lease generation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
+    wget \
+    perl \
+    curl \
+    && wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh \
+    && /root/bin/tlmgr install enumitem titlesec fancyhdr tabularx \
     && rm -rf /var/lib/apt/lists/*
+
+# Add TinyTeX to PATH
+ENV PATH="/root/bin:$PATH"
 
 # Install UV
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

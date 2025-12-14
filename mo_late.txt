@@ -1,0 +1,45 @@
+Feature 	Missouri (MO)	Nebraska (NE)
+Statutory Limit	No cap, but must be "reasonable".	No cap, but must be "reasonable".
+Grace Period	0 days required by law.	0 days required by law.
+Safe Harbor Definition	A fee of $20 or 20% of rent (whichever is greater) is legally deemed "reasonable".	No specific statutory "safe harbor" amount exists.
+Bounced Check (NSF)	Max $25 to $50 based on rent amount.	Max $10 plus actual bank charges.
+
+1. Missouri: The "20/20" Rule
+While Missouri does not have a strict universal cap for all residential leases, RSMo § 415.417 provides a strong legal benchmark that judges often apply to standard residential housing: 
+Deemed Reasonable: A late fee of $20 or 20% of the monthly rent (whichever is higher) is automatically considered reasonable and not a penalty.
+Higher Fees: If you charge more than 20%, you (the landlord) bear the burden of proof to show the fee is reasonable based on your actual administrative costs.
+Immediate Application: Unless your lease specifies a grace period, you can legally charge a late fee starting on the 2nd day of the month. 
+
+2. Nebraska: Contractual Reasonableness
+Nebraska law is more open-ended, which can be riskier for landlords if a tenant challenges the fee in court.
+Punitive vs. Compensatory: Nebraska courts generally view late fees as "liquidated damages." This means the fee must roughly equal the actual administrative cost of dealing with the late payment (e.g., staff time, notices). If a fee is too high (e.g., $200 for a $600 apartment), a judge may strike it down as an illegal "punitive penalty".
+Good Faith Duty: Nebraska recognizes an implied duty of good faith and fair dealing. Charging a high fee for rent that is only an hour late could be challenged as a violation of this duty.
+Standard Practice: To avoid court issues, Nebraska landlords typically stick to a 5% to 10% range. 
+
+3. How to Write the Clause (Both States)
+To make late fees stick in either state, the lease must explicitly state:
+Exactly when the fee applies (e.g., "If rent is not received by 5:00 PM on the 3rd...").
+Exactly how much the fee is (e.g., "A one-time fee of $50").
+Daily vs. Flat Fees: While daily fees are common, they are more likely to be ruled "punitive" if they accumulate to a significant portion of the rent. 
+Pro-Tip for Landlords: Avoid using the word "penalty" in your lease. Instead, refer to late fees as "additional rent" or "liquidated damages for administrative costs." Courts are much more likely to enforce fees described this way.
+
+In Missouri, late fee clauses must be explicitly included in the written lease to be legally collectible. While Missouri does not have a strict statutory cap for all residential leases, RSMo § 415.417 establishes a "safe harbor" benchmark: a fee of $20 or 20% of the monthly rent (whichever is greater) is legally deemed "reasonable" and not a penalty. 
+
+Example 1: Safe Harbor Clause (Recommended)
+This version uses the specific statutory language to minimize the risk of a judge throwing out the fee as a "punitive penalty."
+LATE FEES. Rent is due on the 1st of each month. If Rent is not received by the Landlord by the [Day, e.g., 5th] day of the month, Tenant shall pay a late fee as additional rent. In accordance with Missouri standards, a late fee of $20 or 20% of the monthly rent, whichever is greater, shall be deemed reasonable and not a penalty. This fee is intended to compensate the Landlord for administrative costs associated with processing late payments. 
+
+2. Standard Flat Fee Clause
+Commonly used for moderate-priced rentals where 20% might seem excessive to a tenant but a flat fee is easier to manage.
+LATE CHARGES. Tenant acknowledges that late payment of rent will cause Landlord to incur unanticipated costs that are difficult to ascertain. Accordingly, if any installment of rent is not received within [Number] days of the due date, Tenant shall pay a flat late charge of $[Amount]. Acceptance of this late charge does not constitute a waiver of Landlord's right to pursue other remedies for default. 
+3. Tiered Late Fee Clause This structure encourages payment within the first few days of the month but adds pressure if the delay persists. DELINQUENT RENT. Rent is due in full on the 1st. If rent is not paid by the [Number, e.g., 3rd] of the month, an initial late fee of \([Amount]**shallbeapplied.Ifrentremainsunpaidafterthe[Number,e.g.,10th]dayofthemonth,anadditionallatefeeof**\)[Amount] per day shall accrue until the balance is paid in full. The total of all late fees for a single month shall not exceed [Amount or 20% of Rent]. 3. Tiered Late Fee Clause This structure encourages payment within the first few days of the month but adds pressure if the delay persists. DELINQUENT RENT. Rent is due in full on the 1st. If rent is not paid by the [Number, e.g., 3rd] of the month, an initial late fee of \([Amount]**shallbeapplied.Ifrentremainsunpaidafterthe[Number,e.g.,10th]dayofthemonth,anadditionallatefeeof**\)[Amount] per day shall accrue until the balance is paid in full. The total of all late fees for a single month shall not exceed [Amount or 20% of Rent]. 
+
+4. NSF / Bounced Check Clause
+Missouri law specifies maximum fees for returned checks based on the check amount. 
+RETURNED CHECKS. In the event any check intended as rent is dishonored, it shall be considered late rent. In addition to any applicable late fees, Tenant shall pay a fee of $25 (for checks under $100) or $50 (for checks between $100 and $250) in accordance with MRS § 570.120. 
+
+Crucial Legal Reminders for Missouri
+No Grace Period Required: Unless your lease specifically grants one (e.g., "Late on the 5th"), you can legally charge a late fee on the 2nd day of the month.
+"Additional Rent" Language: Always state that late fees are "deemed additional rent." This allows you to include those fees in an eviction filing (Rent & Possession) rather than having to sue separately for them.
+Burden of Proof: If you charge a fee higher than 20%, you bear the legal burden of proving in court that the higher fee is a reasonable reflection of your actual costs. 
+Would you like to see a 3-day "Demand for Rent" notice template to use if a tenant misses the payment deadline?
