@@ -270,6 +270,8 @@ class FinancialPerformanceCacheService:
             property_dict = property_df.iloc[0].to_dict()
             purchase_price = property_dict.get('purchase_price')
             current_market_value = property_dict.get('current_market_value')
+            cash_invested = property_dict.get('cash_invested')  # Manual entry preferred
+            down_payment = property_dict.get('down_payment')
             
             # Get current year
             current_year = datetime.now().year
@@ -390,19 +392,25 @@ class FinancialPerformanceCacheService:
             
             # Calculate cash on cash return
             # Formula: (Annual Net Income) / (Total Cash Invested)
+            # Use manual cash_invested if available, otherwise fallback to down_payment
             cash_on_cash = None
-            if purchase_price and current_market_value and purchase_price > 0:
-                cash_invested = current_market_value - purchase_price
-                if cash_invested > 0:
-                    # Annualized profit/loss
-                    from datetime import date
-                    days_ytd = (date.today() - ytd_start).days
-                    if days_ytd > 0:
-                        annual_profit_loss = (ytd_profit_loss / Decimal(str(days_ytd))) * Decimal("365")
-                    else:
-                        annual_profit_loss = ytd_profit_loss
-                    
-                    cash_on_cash = float((annual_profit_loss / cash_invested) * Decimal("100"))
+            investment_amount = None
+            
+            if cash_invested and cash_invested > 0:
+                investment_amount = Decimal(str(cash_invested))
+            elif down_payment and down_payment > 0:
+                investment_amount = Decimal(str(down_payment))
+            
+            if investment_amount and investment_amount > 0:
+                # Annualized profit/loss
+                from datetime import date
+                days_ytd = (date.today() - ytd_start).days
+                if days_ytd > 0:
+                    annual_profit_loss = (ytd_profit_loss / Decimal(str(days_ytd))) * Decimal("365")
+                else:
+                    annual_profit_loss = ytd_profit_loss
+                
+                cash_on_cash = float((annual_profit_loss / investment_amount) * Decimal("100"))
             
             # Create performance record
             perf_record = {

@@ -100,6 +100,8 @@ class LeaseBase(BaseModel):
     pets_allowed: Optional[bool] = True
     pet_fee_one: Optional[Decimal] = Field(None, ge=0)
     pet_fee_two: Optional[Decimal] = Field(None, ge=0)
+    pet_deposit_total: Optional[Decimal] = Field(None, ge=0, description="Total pet deposit amount")
+    pet_description: Optional[str] = Field(None, max_length=500, description="e.g., '2 cats and 1 50lb dog'")
     max_pets: Optional[int] = Field(2, ge=0)
     
     # Parking
@@ -237,6 +239,8 @@ class LeaseUpdate(BaseModel):
     pets_allowed: Optional[bool] = None
     pet_fee_one: Optional[Decimal] = Field(None, ge=0)
     pet_fee_two: Optional[Decimal] = Field(None, ge=0)
+    pet_deposit_total: Optional[Decimal] = Field(None, ge=0)
+    pet_description: Optional[str] = Field(None, max_length=500)
     max_pets: Optional[int] = Field(None, ge=0)
     parking_spaces: Optional[int] = Field(None, ge=0)
     parking_small_vehicles: Optional[int] = Field(None, ge=0)

@@ -15,6 +15,7 @@ class PropertyBase(BaseModel):
         description="Date property was purchased"
     )
     down_payment: Optional[Decimal] = Field(None, ge=0, description="Down payment amount")
+    cash_invested: Optional[Decimal] = Field(None, ge=0, description="Total cash invested (manual entry for CoC)")
     current_market_value: Optional[Decimal] = Field(None, ge=0, description="Current estimated market value")
     property_status: Optional[Literal["own", "evaluating", "rehabbing", "listed_for_rent", "listed_for_sale", "sold", "hide"]] = Field(
         default="evaluating",
@@ -62,6 +63,7 @@ class PropertyUpdate(BaseModel):
     purchase_price: Optional[Decimal] = Field(None, ge=0)
     purchase_date: Optional[datetime] = None
     down_payment: Optional[Decimal] = Field(None, ge=0)
+    cash_invested: Optional[Decimal] = Field(None, ge=0)
     current_market_value: Optional[Decimal] = Field(None, ge=0)
     property_status: Optional[Literal["own", "evaluating", "rehabbing", "listed_for_rent", "listed_for_sale", "sold", "hide"]] = None
     vacancy_rate: Optional[Decimal] = Field(None, ge=0, le=1)

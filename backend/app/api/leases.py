@@ -501,7 +501,12 @@ async def delete_lease_pdf(
         except Exception as e:
             logger.warning(f"Failed to delete LaTeX blob: {e}")
         
-        # Update lease record to clear PDF reference
+        # Update lease record to clear PDF reference using delete + append pattern
+        from pyiceberg.expressions import EqualTo
+        
+        table = load_table(NAMESPACE, LEASES_TABLE)
+        table.delete(EqualTo("id", str(lease_id)))
+        
         update_dict = lease.to_dict()
         update_dict["generated_pdf_document_id"] = None
         update_dict["status"] = "draft"  # Reset to draft

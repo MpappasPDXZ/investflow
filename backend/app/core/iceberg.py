@@ -218,3 +218,67 @@ def table_exists(namespace: Tuple[str, ...], table_name: str) -> bool:
     except Exception:
         return False
 
+
+def upsert_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame, join_cols: list[str] = None):
+    """
+    Upsert data to an Iceberg table using the same conversion logic as append_data.
+    
+    Args:
+        namespace: Table namespace tuple
+        table_name: Name of the table
+        data: DataFrame to upsert
+        join_cols: Columns to use for join (default: ["id"])
+    """
+    if join_cols is None:
+        join_cols = ["id"]
+        
+    try:
+        table = load_table(namespace, table_name)
+        current_schema = table.schema()
+        
+        # Convert timestamp columns from ns to us precision
+        df = data.copy()
+        for col in df.columns:
+            if df[col].dtype == 'datetime64[ns]':
+                df[col] = df[col].astype('datetime64[us]')
+        
+        # Convert numeric columns to Decimal if the schema expects it
+        from decimal import Decimal as PythonDecimal
+        from pyiceberg.types import DecimalType
+        
+        for field in current_schema.fields:
+            if field.name in df.columns and isinstance(field.field_type, DecimalType):
+                scale = field.field_type.scale
+                
+                def to_decimal(x):
+                    if pd.isna(x) or x is None:
+                        return None
+                    try:
+                        if isinstance(x, PythonDecimal):
+                            return PythonDecimal(str(round(float(x), scale)))
+                        else:
+                            return PythonDecimal(str(round(float(x), scale)))
+                    except (ValueError, TypeError):
+                        return None
+                
+                df[field.name] = df[field.name].apply(to_decimal)
+        
+        # Reorder DataFrame columns to match table schema
+        schema_column_order = [field.name for field in current_schema.fields]
+        df = df[[col for col in schema_column_order if col in df.columns]]
+        
+        # Convert to PyArrow table
+        arrow_table = pa.Table.from_pandas(df, preserve_index=False)
+        
+        # Cast to the table's schema
+        table_schema = table.schema().as_arrow()
+        arrow_table = arrow_table.cast(table_schema)
+        
+        # Perform upsert
+        table.upsert(arrow_table, join_cols=join_cols)
+        
+    except Exception as e:
+        logger.error(f"Failed to upsert data to {'.'.join((*namespace, table_name))}: {e}", exc_info=True)
+        raise
+
+

@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from app.core.dependencies import get_current_user
 from app.schemas.unit import UnitCreate, UnitUpdate, UnitResponse, UnitListResponse
-from app.core.iceberg import read_table, append_data, table_exists, load_table
+from app.core.iceberg import read_table, append_data, table_exists, load_table, upsert_data
 from app.core.logging import get_logger
 
 NAMESPACE = ("investflow",)
@@ -214,7 +214,7 @@ async def update_unit_endpoint(
             raise HTTPException(status_code=404, detail="Unit not found")
         
         # Update fields
-        update_dict = unit_data.model_dump(exclude_none=True)
+        update_dict = unit_data.model_dump(exclude_unset=True)  # Changed from exclude_none
         for key, value in update_dict.items():
             if key in df.columns:
                 if key in ["bathrooms", "current_monthly_rent"]:
@@ -224,29 +224,14 @@ async def update_unit_endpoint(
         
         df.loc[mask, "updated_at"] = pd.Timestamp.now()
         
-        # Convert timestamps to microseconds
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                df[col] = df[col].astype('datetime64[us]')
+        # Extract only the updated row
+        updated_row_df = df[mask].copy().reset_index(drop=True)
         
-        # Load table and get its schema
-        table = load_table(NAMESPACE, TABLE_NAME)
-        table_schema = table.schema().as_arrow()
-        
-        # Reorder DataFrame columns to match table schema
-        schema_column_order = [field.name for field in table_schema]
-        df = df[[col for col in schema_column_order if col in df.columns]]
-        
-        # Convert to PyArrow and cast to table schema
-        import pyarrow as pa
-        arrow_table = pa.Table.from_pandas(df)
-        arrow_table = arrow_table.cast(table_schema)
-        
-        # Overwrite the table
-        table.overwrite(arrow_table)
+        # Use Iceberg's upsert for atomic updates
+        upsert_data(NAMESPACE, TABLE_NAME, updated_row_df, join_cols=["id"])
         
         # Get updated unit
-        updated_row = df[mask].iloc[0]
+        updated_row = updated_row_df.iloc[0]
         unit_dict = {
             "id": str(updated_row["id"]),
             "property_id": str(updated_row["property_id"]),
@@ -303,26 +288,11 @@ async def delete_unit_endpoint(
         df.loc[mask, "is_active"] = False
         df.loc[mask, "updated_at"] = pd.Timestamp.now()
         
-        # Convert timestamps to microseconds
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                df[col] = df[col].astype('datetime64[us]')
+        # Extract only the updated row
+        updated_row_df = df[mask].copy().reset_index(drop=True)
         
-        # Load table and get its schema
-        table = load_table(NAMESPACE, TABLE_NAME)
-        table_schema = table.schema().as_arrow()
-        
-        # Reorder DataFrame columns to match table schema
-        schema_column_order = [field.name for field in table_schema]
-        df = df[[col for col in schema_column_order if col in df.columns]]
-        
-        # Convert to PyArrow and cast to table schema
-        import pyarrow as pa
-        arrow_table = pa.Table.from_pandas(df)
-        arrow_table = arrow_table.cast(table_schema)
-        
-        # Overwrite the table
-        table.overwrite(arrow_table)
+        # Use Iceberg's upsert for atomic updates
+        upsert_data(NAMESPACE, TABLE_NAME, updated_row_df, join_cols=["id"])
         
         return None
     except HTTPException:

@@ -258,12 +258,11 @@ async def delete_rent_endpoint(
         property_id = UUID(rent_row['property_id'])
         unit_id = UUID(rent_row['unit_id']) if pd.notna(rent_row.get('unit_id')) else None
         
-        # Filter out the rent to delete
-        df = df[df["id"] != str(rent_id)]
+        # Use Iceberg's delete for proper deletion
+        from pyiceberg.expressions import EqualTo
         
-        # Overwrite the table
         table = load_table(NAMESPACE, TABLE_NAME)
-        table.overwrite(df)
+        table.delete(EqualTo("id", str(rent_id)))
         
         logger.info(f"Deleted rent payment {rent_id}")
         

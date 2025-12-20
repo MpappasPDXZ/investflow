@@ -77,6 +77,7 @@ class Property(Base, TimestampMixin):
     display_name = Column(String(255), nullable=True)
     purchase_price = Column(Numeric(12, 2), nullable=False)
     down_payment = Column(Numeric(12, 2), nullable=True)
+    cash_invested = Column(Numeric(12, 2), nullable=True)  # Total cash out of pocket (manual entry)
     current_market_value = Column(Numeric(12, 2), nullable=True)
     property_status = Column(SQLEnum(PropertyStatus), default=PropertyStatus.EVALUATING, nullable=False)
     vacancy_rate = Column(Numeric(5, 4), default=0.07, nullable=False)  # Default 7% vacancy rate
@@ -261,3 +262,67 @@ class Scenario(Base, TimestampMixin):
         Index('idx_scenarios_property', 'property_id'),
         Index('idx_scenarios_user', 'user_id'),
     )
+
+
+class Walkthrough(Base, TimestampMixin):
+    """Property walkthrough inspection model"""
+    __tablename__ = "walkthroughs"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    unit_id = Column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="SET NULL"), nullable=True)
+    
+    walkthrough_type = Column(String(50), nullable=False, default="move_in")  # move_in, move_out, periodic, maintenance
+    walkthrough_date = Column(Date, nullable=False, default=date.today)
+    status = Column(String(50), nullable=False, default="draft")  # draft, pending_signature, completed
+    
+    inspector_name = Column(String(200), nullable=True)
+    tenant_name = Column(String(200), nullable=True)
+    tenant_signed = Column(Boolean, default=False, nullable=False)
+    tenant_signature_date = Column(Date, nullable=True)
+    landlord_signed = Column(Boolean, default=False, nullable=False)
+    landlord_signature_date = Column(Date, nullable=True)
+    
+    overall_condition = Column(String(50), nullable=False, default="good")  # excellent, good, fair, poor
+    notes = Column(Text, nullable=True)
+    
+    generated_pdf_blob_name = Column(String(500), nullable=True)  # ADLS blob name
+    
+    # Relationships
+    user = relationship("User")
+    property = relationship("Property")
+    areas = relationship("WalkthroughArea", back_populates="walkthrough", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        Index('idx_walkthroughs_property', 'property_id'),
+        Index('idx_walkthroughs_user', 'user_id'),
+    )
+
+
+class WalkthroughArea(Base, TimestampMixin):
+    """Individual area within a walkthrough inspection"""
+    __tablename__ = "walkthrough_areas"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    walkthrough_id = Column(String, ForeignKey("walkthroughs.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    floor = Column(String(100), nullable=False)  # "Basement", "Floor 1", "Floor 2"
+    area_name = Column(String(100), nullable=False)  # "Living Room", "Kitchen", "Bathroom"
+    area_order = Column(Integer, nullable=False, default=1)
+    condition = Column(String(50), nullable=False, default="good")  # excellent, good, fair, poor
+    notes = Column(Text, nullable=True)
+    
+    # Issues stored as JSON array
+    issues = Column(Text, nullable=True)  # JSON: [{"description": "...", "severity": "minor", "estimated_cost": 50.00}]
+    
+    # Photos stored as JSON array
+    photos = Column(Text, nullable=True)  # JSON: [{"blob_name": "...", "notes": "...", "order": 1}]
+    
+    # Relationships
+    walkthrough = relationship("Walkthrough", back_populates="areas")
+    
+    __table_args__ = (
+        Index('idx_walkthrough_areas_walkthrough', 'walkthrough_id'),
+    )
+

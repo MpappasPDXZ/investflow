@@ -11,7 +11,7 @@ from app.core.dependencies import get_current_user
 from app.schemas.property import (
     PropertyCreate, PropertyUpdate, PropertyResponse, PropertyListResponse
 )
-from app.core.iceberg import read_table, append_data, table_exists, load_table
+from app.core.iceberg import read_table, append_data, table_exists, load_table, upsert_data
 from app.core.logging import get_logger
 from app.api.vacancy_utils import create_or_update_vacancy_expenses
 from app.api.tax_savings_utils import create_or_update_tax_savings
@@ -42,6 +42,7 @@ async def create_property_endpoint(
             "purchase_price": Decimal(str(property_data.purchase_price)),
             "purchase_date": pd.Timestamp(property_data.purchase_date) if property_data.purchase_date else pd.Timestamp(2025, 10, 23),
             "down_payment": Decimal(str(property_data.down_payment)) if property_data.down_payment else None,
+            "cash_invested": Decimal(str(property_data.cash_invested)) if property_data.cash_invested else None,
             "current_market_value": Decimal(str(property_data.current_market_value)) if property_data.current_market_value else None,
             "property_status": property_data.property_status if property_data.property_status else "evaluating",
             "vacancy_rate": Decimal(str(property_data.vacancy_rate)) if property_data.vacancy_rate else Decimal("0.07"),
@@ -150,6 +151,7 @@ async def list_properties_endpoint(
                 "purchase_price": Decimal(str(row["purchase_price"])),
                 "purchase_date": row.get("purchase_date").to_pydatetime() if pd.notna(row.get("purchase_date")) else None,
                 "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
+                "cash_invested": Decimal(str(row["cash_invested"])) if pd.notna(row.get("cash_invested")) else None,
                 "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
                 "property_status": row.get("property_status", "evaluating"),
                 "vacancy_rate": Decimal(str(row["vacancy_rate"])) if pd.notna(row.get("vacancy_rate")) else Decimal("0.07"),
@@ -221,6 +223,7 @@ async def get_property_endpoint(
             "purchase_price": Decimal(str(row["purchase_price"])),
             "purchase_date": row.get("purchase_date").to_pydatetime() if pd.notna(row.get("purchase_date")) else None,
             "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
+            "cash_invested": Decimal(str(row["cash_invested"])) if pd.notna(row.get("cash_invested")) else None,
             "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
             "property_status": row.get("property_status", "evaluating"),
             "vacancy_rate": Decimal(str(row["vacancy_rate"])) if pd.notna(row.get("vacancy_rate")) else Decimal("0.07"),
@@ -290,7 +293,7 @@ async def update_property_endpoint(
             if key in df.columns:
                 logger.info(f"Updating {key} with value {value} (type: {type(value)})")
                 # Convert Decimal fields
-                if key in ["purchase_price", "down_payment", "current_market_value", "vacancy_rate", "monthly_rent_to_income_ratio", "bathrooms", "current_monthly_rent"]:
+                if key in ["purchase_price", "down_payment", "cash_invested", "current_market_value", "vacancy_rate", "monthly_rent_to_income_ratio", "bathrooms", "current_monthly_rent"]:
                     df.loc[mask, key] = Decimal(str(value)) if value is not None else None
                 # Handle date fields
                 elif key == "purchase_date":
@@ -307,6 +310,9 @@ async def update_property_endpoint(
         
         # Update timestamp
         df.loc[mask, "updated_at"] = pd.Timestamp.now()
+        
+        # Extract only the updated row
+        updated_row_df = df[mask].copy().reset_index(drop=True)
         
         # Check if vacancy rate or square feet changed - update vacancy expenses
         if "vacancy_rate" in update_dict or "square_feet" in update_dict:
@@ -340,29 +346,11 @@ async def update_property_endpoint(
                 purchase_date=purchase_date
             )
         
-        # Convert timestamps to microseconds
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                df[col] = df[col].astype('datetime64[us]')
+        # Use Iceberg's upsert for atomic updates
+        upsert_data(NAMESPACE, TABLE_NAME, updated_row_df, join_cols=["id"])
         
-        # Load table and get its schema
-        table = load_table(NAMESPACE, TABLE_NAME)
-        table_schema = table.schema().as_arrow()
-        
-        # Reorder DataFrame columns to match table schema
-        schema_column_order = [field.name for field in table_schema]
-        df = df[[col for col in schema_column_order if col in df.columns]]
-        
-        # Convert to PyArrow and cast to table schema
-        import pyarrow as pa
-        arrow_table = pa.Table.from_pandas(df)
-        arrow_table = arrow_table.cast(table_schema)
-        
-        # Overwrite the table
-        table.overwrite(arrow_table)
-        
-        # Get updated property
-        updated_row = df[mask].iloc[0]
+        # Get updated property from the appended data
+        updated_row = updated_row_df.iloc[0]
         logger.info(f"Updated row property_status: {updated_row.get('property_status')}")
         
         # Convert to response
@@ -372,6 +360,7 @@ async def update_property_endpoint(
             "display_name": updated_row.get("display_name"),
             "purchase_price": Decimal(str(updated_row["purchase_price"])),
             "down_payment": Decimal(str(updated_row["down_payment"])) if pd.notna(updated_row.get("down_payment")) else None,
+            "cash_invested": Decimal(str(updated_row["cash_invested"])) if pd.notna(updated_row.get("cash_invested")) else None,
             "current_market_value": Decimal(str(updated_row["current_market_value"])) if pd.notna(updated_row.get("current_market_value")) else None,
             "property_status": updated_row.get("property_status", "evaluating"),
             "vacancy_rate": Decimal(str(updated_row["vacancy_rate"])) if pd.notna(updated_row.get("vacancy_rate")) else Decimal("0.07"),
@@ -421,30 +410,14 @@ async def delete_property_endpoint(
             raise HTTPException(status_code=404, detail="Property not found or you don't have permission to delete")
         
         # SOFT DELETE: Update is_active to False (we keep the data)
-        # For hard delete, we would use: table.delete(And(EqualTo("id", property_id), EqualTo("user_id", user_id)))
         df.loc[mask, "is_active"] = False
         df.loc[mask, "updated_at"] = pd.Timestamp.now()
         
-        # Convert timestamps to microseconds
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                df[col] = df[col].astype('datetime64[us]')
+        # Extract only the updated row
+        updated_row_df = df[mask].copy().reset_index(drop=True)
         
-        # Load table and get its schema
-        table = load_table(NAMESPACE, TABLE_NAME)
-        table_schema = table.schema().as_arrow()
-        
-        # Reorder DataFrame columns to match table schema
-        schema_column_order = [field.name for field in table_schema]
-        df = df[[col for col in schema_column_order if col in df.columns]]
-        
-        # Convert to PyArrow and cast to table schema
-        import pyarrow as pa
-        arrow_table = pa.Table.from_pandas(df)
-        arrow_table = arrow_table.cast(table_schema)
-        
-        # Overwrite the table
-        table.overwrite(arrow_table)
+        # Use Iceberg's upsert for atomic updates
+        upsert_data(NAMESPACE, TABLE_NAME, updated_row_df, join_cols=["id"])
         
         return None
     except HTTPException:

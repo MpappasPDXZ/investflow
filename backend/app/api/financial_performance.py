@@ -29,7 +29,7 @@ async def get_financial_performance(
     Calculates:
     - Year-to-date rent, expenses (excluding rehab), and profit/loss
     - Cumulative (all-time) rent, expenses, and profit/loss
-    - Cash on cash return (if current market value is set)
+    - Cash on cash return (uses manual cash_invested if set, else down_payment)
     """
     try:
         user_id = UUID(current_user["sub"])
@@ -46,16 +46,16 @@ async def get_financial_performance(
         
         property_dict = property_df.iloc[0].to_dict()
         
-        purchase_price = property_dict.get('purchase_price')
-        current_market_value = property_dict.get('current_market_value')
+        cash_invested = property_dict.get('cash_invested')
+        down_payment = property_dict.get('down_payment')
         
         # Calculate financial performance
         performance = financial_performance_service.calculate_financial_performance(
             property_id=property_id,
             user_id=user_id,
             unit_id=unit_id,
-            purchase_price=Decimal(str(purchase_price)) if purchase_price else None,
-            current_market_value=Decimal(str(current_market_value)) if current_market_value else None
+            cash_invested=Decimal(str(cash_invested)) if cash_invested else None,
+            down_payment=Decimal(str(down_payment)) if down_payment else None
         )
         
         return performance

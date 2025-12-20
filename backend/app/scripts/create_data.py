@@ -67,6 +67,12 @@ def create_properties_schema() -> pa.Schema:
         pa.field("user_id", pa.string(), nullable=False),  # UUID as string
         pa.field("display_name", pa.string(), nullable=True),
         pa.field("purchase_price", pa.decimal128(12, 2), nullable=False),
+        pa.field("down_payment", pa.decimal128(12, 2), nullable=True),
+        pa.field("cash_invested", pa.decimal128(12, 2), nullable=True),  # NEW: Manual entry for CoC
+        pa.field("current_market_value", pa.decimal128(12, 2), nullable=True),
+        pa.field("property_status", pa.string(), nullable=True),
+        pa.field("vacancy_rate", pa.decimal128(5, 4), nullable=True),
+        pa.field("purchase_date", pa.timestamp("us"), nullable=True),
         pa.field("monthly_rent_to_income_ratio", pa.decimal128(4, 2), nullable=True),
         pa.field("address_line1", pa.string(), nullable=True),
         pa.field("address_line2", pa.string(), nullable=True),
@@ -74,8 +80,8 @@ def create_properties_schema() -> pa.Schema:
         pa.field("state", pa.string(), nullable=True),
         pa.field("zip_code", pa.string(), nullable=True),
         pa.field("property_type", pa.string(), nullable=True),
-        pa.field("has_units", pa.bool_(), nullable=True),  # NEW: indicates multi-unit property
-        pa.field("unit_count", pa.int32(), nullable=True),  # NEW: number of units
+        pa.field("has_units", pa.bool_(), nullable=True),  # indicates multi-unit property
+        pa.field("unit_count", pa.int32(), nullable=True),  # number of units
         pa.field("bedrooms", pa.int32(), nullable=True),
         pa.field("bathrooms", pa.decimal128(3, 1), nullable=True),
         pa.field("square_feet", pa.int32(), nullable=True),
@@ -285,6 +291,8 @@ def create_leases_schema() -> pa.Schema:
         pa.field("pets_allowed", pa.bool_(), nullable=True),
         pa.field("pet_fee_one", pa.decimal128(10, 2), nullable=True),
         pa.field("pet_fee_two", pa.decimal128(10, 2), nullable=True),
+        pa.field("pet_deposit_total", pa.decimal128(10, 2), nullable=True),  # NEW: Total pet deposit
+        pa.field("pet_description", pa.string(), nullable=True),  # NEW: e.g., "2 cats and 1 50lb dog"
         pa.field("max_pets", pa.int32(), nullable=True),
         
         # Parking (Section 33)
