@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
-import { Building2, Receipt, LogIn, LogOut, Plus, List, FileDown, Home, FileText, User, Lock, Image, Droplet, Banknote, Wallet, FileSignature, CheckCircle, ClipboardList, DollarSign, Camera, ListChecks, Users } from 'lucide-react';
+import { Building2, Receipt, LogIn, LogOut, Plus, List, FileDown, Home, FileText, User, Lock, Image, Droplet, Banknote, Wallet, FileSignature, CheckCircle, ClipboardList, ClipboardCheck, DollarSign, Camera, ListChecks, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Sidebar() {
@@ -110,6 +110,14 @@ export function Sidebar() {
                       <Link href="/leases">
                         <FileSignature className="h-3.5 w-3.5" />
                         <span>Leases</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild className="text-[11px]">
+                      <Link href="/leasing/inspections">
+                        <ClipboardCheck className="h-3.5 w-3.5" />
+                        <span>Inspections</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
