@@ -29,9 +29,19 @@ STORAGE_KEY=$(az storage account keys list --account-name investflowadls --resou
 ACR_USER=$(az acr credential show --name $ACR_NAME --query username -o tsv)
 ACR_PASS=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" -o tsv)
 
-# Generate secrets
+# Generate secrets - BUT keep Lakekeeper encryption key stable!
+# WARNING: Changing LAKEKEEPER_ENCRYPTION_KEY will break existing warehouse credentials
 SECRET_KEY=$(openssl rand -base64 32)
-LAKEKEEPER_ENCRYPTION_KEY=$(openssl rand -base64 32)
+
+# Try to get existing Lakekeeper encryption key, or generate new one only on first deploy
+EXISTING_LAKEKEEPER_KEY=$(az containerapp show --name investflow-lakekeeper --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].env[?name=='LAKEKEEPER__PG_ENCRYPTION_KEY'].value" -o tsv 2>/dev/null)
+if [ -n "$EXISTING_LAKEKEEPER_KEY" ]; then
+    LAKEKEEPER_ENCRYPTION_KEY="$EXISTING_LAKEKEEPER_KEY"
+    echo "  ✓ Using existing Lakekeeper encryption key"
+else
+    LAKEKEEPER_ENCRYPTION_KEY=$(openssl rand -base64 32)
+    echo "  ⚠ Generated NEW Lakekeeper encryption key (first deploy)"
+fi
 
 echo "  ✓ Storage Key retrieved"
 echo "  ✓ ACR credentials retrieved"
