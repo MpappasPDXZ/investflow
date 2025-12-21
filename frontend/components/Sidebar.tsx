@@ -113,6 +113,7 @@ export function Sidebar() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  {/* TODO: Future features - uncomment when pages are created
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild className="text-[11px]">
                       <Link href="/leasing/deposits-fees">
@@ -137,6 +138,7 @@ export function Sidebar() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  */}
 
                   {/* Rent Section */}
                   <SidebarMenuItem>
