@@ -223,7 +223,9 @@ async def create_lease(
         leases_df = read_table(NAMESPACE, LEASES_TABLE)
         user_leases = leases_df[leases_df["user_id"] == user_id]
         if len(user_leases) > 0 and "lease_number" in user_leases.columns:
-            max_lease_number = user_leases["lease_number"].max()
+            # Convert to numeric, coercing errors to NaN (handles mixed str/float types)
+            numeric_lease_numbers = pd.to_numeric(user_leases["lease_number"], errors='coerce')
+            max_lease_number = numeric_lease_numbers.max()
             lease_number = int(max_lease_number) + 1 if pd.notna(max_lease_number) else 1
         else:
             lease_number = 1
