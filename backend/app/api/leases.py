@@ -399,22 +399,21 @@ async def update_lease(
         if hasattr(lease_data, 'lease_date') and lease_data.lease_date:
             lease_dict["lease_date"] = parse_date_midday(lease_data.lease_date)
         
-        # Mark old record as inactive (Iceberg append-only pattern)
-        old_lease_dict = existing_lease.to_dict()
-        old_lease_dict["is_active"] = False
-        old_lease_dict["updated_at"] = now
-        old_df = pd.DataFrame([old_lease_dict])
-        
-        # Get actual Iceberg schema columns (not from read data, which may be missing new columns)
+        # TRUE UPSERT: Delete all old rows for this lease ID, then append the new one
+        # This prevents data duplication from the old append-only pattern
+        from pyiceberg.expressions import EqualTo
         from app.core.iceberg import get_catalog
+        
         catalog = get_catalog()
         table = catalog.load_table((*NAMESPACE, LEASES_TABLE))
         schema_columns = [field.name for field in table.schema().fields]
         
-        # Ensure column order matches the Iceberg table schema
-        old_df = old_df.reindex(columns=schema_columns, fill_value=None)
+        # Delete ALL existing rows for this lease ID
+        table.delete(EqualTo("id", str(lease_id)))
+        logger.info(f"Deleted old lease rows for ID {lease_id} before upsert")
         
-        append_data(NAMESPACE, LEASES_TABLE, old_df)
+        # Ensure the new record has is_active = True
+        lease_dict["is_active"] = True
         
         # Append updated lease
         df = pd.DataFrame([lease_dict])
@@ -423,19 +422,15 @@ async def update_lease(
         df = df.reindex(columns=schema_columns, fill_value=None)
         
         append_data(NAMESPACE, LEASES_TABLE, df)
+        logger.info(f"Appended updated lease {lease_id} (version {lease_dict['lease_version']})")
         
         # Update tenants if provided
         tenant_responses = []
         if hasattr(lease_data, 'tenants') and lease_data.tenants is not None:
-            # Mark old tenants as inactive
-            tenants_df = read_table(NAMESPACE, TENANTS_TABLE)
-            old_tenants = tenants_df[tenants_df["lease_id"] == str(lease_id)]
-            for _, old_tenant in old_tenants.iterrows():
-                old_tenant_dict = old_tenant.to_dict()
-                old_tenant_dict["is_active"] = False
-                old_tenant_dict["updated_at"] = now
-                old_tenant_df = pd.DataFrame([old_tenant_dict])
-                append_data(NAMESPACE, TENANTS_TABLE, old_tenant_df)
+            # TRUE UPSERT for tenants: Delete all old tenants for this lease, then add new ones
+            tenants_table = catalog.load_table((*NAMESPACE, TENANTS_TABLE))
+            tenants_table.delete(EqualTo("lease_id", str(lease_id)))
+            logger.info(f"Deleted old tenants for lease {lease_id} before upsert")
             
             # Create new tenant records
             for idx, tenant in enumerate(lease_data.tenants):
@@ -917,11 +912,11 @@ async def delete_lease(
     lease_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Soft delete a lease (only if draft)"""
+    """Hard delete a lease (only if draft)"""
     try:
         user_id = current_user["sub"]
         
-        # Get lease
+        # Get lease to verify it exists and check permissions
         leases_df = read_table(NAMESPACE, LEASES_TABLE)
         lease_rows = leases_df[leases_df["id"] == str(lease_id)]
         
@@ -929,17 +924,15 @@ async def delete_lease(
             logger.warning(f"Delete attempt: Lease {lease_id} not found in table")
             raise HTTPException(status_code=404, detail="Lease not found")
         
-        # Get the latest version (highest updated_at) for append-only pattern
+        # Get the latest version to check permissions and status
         lease_rows = lease_rows.sort_values("updated_at", ascending=False)
         lease = lease_rows.iloc[0]
         
-        # Check if already deleted - handle pandas Series properly
+        # Check if already deleted
         is_active = lease.get("is_active", True)
-        logger.info(f"Delete attempt: Lease {lease_id} is_active={is_active}")
-        
-        if hasattr(lease, 'is_active') and not is_active:
-            logger.warning(f"Delete attempt: Lease {lease_id} already marked as inactive")
-            raise HTTPException(status_code=404, detail="Lease already deleted")
+        if not is_active:
+            logger.warning(f"Delete attempt: Lease {lease_id} already deleted")
+            raise HTTPException(status_code=404, detail="Lease not found")
         
         # Verify ownership
         if lease["user_id"] != user_id:
@@ -954,15 +947,24 @@ async def delete_lease(
                 detail="Can only delete leases in draft status"
             )
         
-        # Soft delete (append new record with is_active=False)
-        delete_dict = lease.to_dict()
-        delete_dict["is_active"] = False
-        delete_dict["updated_at"] = pd.Timestamp.now()
+        # HARD DELETE: Remove all rows for this lease ID from Iceberg
+        from pyiceberg.expressions import EqualTo
+        from app.core.iceberg import get_catalog
         
-        df = pd.DataFrame([delete_dict])
-        append_data(NAMESPACE, LEASES_TABLE, df)
+        catalog = get_catalog()
+        table = catalog.load_table((*NAMESPACE, LEASES_TABLE))
+        table.delete(EqualTo("id", str(lease_id)))
+        logger.info(f"Hard deleted all rows for lease {lease_id}")
         
-        logger.info(f"Successfully soft-deleted lease {lease_id}")
+        # Also delete associated tenants
+        try:
+            tenants_table = catalog.load_table((*NAMESPACE, TENANTS_TABLE))
+            tenants_table.delete(EqualTo("lease_id", str(lease_id)))
+            logger.info(f"Hard deleted all tenants for lease {lease_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete tenants for lease {lease_id}: {e}")
+        
+        logger.info(f"Successfully hard-deleted lease {lease_id}")
         return None
         
     except HTTPException:

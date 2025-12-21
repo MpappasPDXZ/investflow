@@ -653,21 +653,17 @@ export default function LeasesPage() {
     }
   };
   
-  const handleSaveAndGenerate = async () => {
-    console.log('🔄 [LEASE] Save and Generate PDF workflow started');
-    
-    // Step 1: Save parameters
-    const leaseId = await handleSaveParameters();
-    if (!leaseId) {
-      console.error('❌ [LEASE] Save failed, aborting PDF generation');
+  // Generate PDF only - does NOT save first (requires lease to already be saved)
+  const handleGeneratePDF = async () => {
+    if (!currentLeaseId) {
+      alert('Please save the lease first before generating a PDF.');
       return;
     }
     
-    // Step 2: Generate PDF
+    console.log('📄 [LEASE] Generating PDF (without save) for lease:', currentLeaseId);
     setGenerating(true);
     try {
-      console.log('📄 [LEASE] Generating PDF for lease:', leaseId);
-      const response = await generatePDF(leaseId, true);
+      const response = await generatePDF(currentLeaseId, true);
       console.log('✅ [LEASE] PDF generated:', response);
       setPdfUrl(response.pdf_url);
       setHoldingFeeUrl((response as any).holding_fee_pdf_url || null);
@@ -930,10 +926,11 @@ export default function LeasesPage() {
                     )}
                   </Button>
                   <Button
-                    onClick={handleSaveAndGenerate}
-                    disabled={saving || generating || !formData.property_id || formData.tenants.length === 0}
+                    onClick={handleGeneratePDF}
+                    disabled={saving || generating || !currentLeaseId}
                     size="sm"
                     className="h-7 text-xs px-2 bg-black hover:bg-gray-800"
+                    title={!currentLeaseId ? 'Save the lease first' : 'Generate PDF from saved parameters'}
                   >
                     {generating ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
