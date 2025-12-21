@@ -45,6 +45,7 @@ class DocumentService:
         document_type: str,
         property_id: Optional[uuid.UUID] = None,
         unit_id: Optional[uuid.UUID] = None,
+        tenant_id: Optional[uuid.UUID] = None,
         document_metadata: Optional[Dict[str, str]] = None,
         display_name: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -59,6 +60,7 @@ class DocumentService:
             document_type: Type of document (receipt, lease, screening, etc.)
             property_id: Optional property ID
             unit_id: Optional unit ID
+            tenant_id: Optional tenant ID
             document_metadata: Optional additional metadata
         
         Returns:
@@ -84,6 +86,7 @@ class DocumentService:
                 "user_id": str(user_id),
                 "property_id": str(property_id) if property_id else None,
                 "unit_id": str(unit_id) if unit_id else None,
+                "tenant_id": str(tenant_id) if tenant_id else None,
                 "blob_location": blob_metadata["blob_location"],
                 "container_name": blob_metadata["container_name"],
                 "blob_name": blob_metadata["blob_name"],
@@ -181,6 +184,7 @@ class DocumentService:
         user_id: uuid.UUID,
         property_id: Optional[uuid.UUID] = None,
         unit_id: Optional[uuid.UUID] = None,
+        tenant_id: Optional[uuid.UUID] = None,
         document_type: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
@@ -213,6 +217,9 @@ class DocumentService:
             
             if unit_id:
                 filters.append(EqualTo("unit_id", str(unit_id)))
+            
+            if tenant_id:
+                filters.append(EqualTo("tenant_id", str(tenant_id)))
             
             if document_type:
                 filters.append(EqualTo("document_type", document_type))
@@ -384,6 +391,7 @@ def upload_document(
     document_type: str,
     property_id: Optional[uuid.UUID] = None,
     unit_id: Optional[uuid.UUID] = None,
+    tenant_id: Optional[uuid.UUID] = None,
     document_metadata: Optional[Dict[str, str]] = None,
     display_name: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -396,6 +404,7 @@ def upload_document(
         document_type=document_type,
         property_id=property_id,
         unit_id=unit_id,
+        tenant_id=tenant_id,
         document_metadata=document_metadata,
         display_name=display_name
     )
@@ -415,6 +424,7 @@ def list_documents(
     user_id: uuid.UUID,
     property_id: Optional[uuid.UUID] = None,
     unit_id: Optional[uuid.UUID] = None,
+    tenant_id: Optional[uuid.UUID] = None,
     document_type: Optional[str] = None,
     skip: int = 0,
     limit: int = 100
@@ -424,6 +434,7 @@ def list_documents(
         user_id=user_id,
         property_id=property_id,
         unit_id=unit_id,
+        tenant_id=tenant_id,
         document_type=document_type,
         skip=skip,
         limit=limit

@@ -9,6 +9,7 @@ export interface Property {
   purchase_price: number;
   purchase_date?: string;
   down_payment?: number;
+  cash_invested?: number;
   current_market_value?: number;
   property_status?: 'own' | 'evaluating' | 'rehabbing' | 'listed_for_rent' | 'listed_for_sale' | 'sold' | 'hide';
   vacancy_rate?: number;
@@ -85,9 +86,11 @@ export interface Document {
   file_name: string;
   file_type?: string;
   file_size?: number;
-  document_type: 'receipt' | 'lease' | 'screening' | 'invoice' | 'other';
+  document_type: 'receipt' | 'lease' | 'screening' | 'invoice' | 'other' | 'rental_application' | 'credit_report' | 'criminal_check' | 'eviction_report' | 'income_verification' | 'employment_verification' | 'reference_check' | 'eviction_history' | 'screening_other';
+  display_name?: string;
   property_id?: string;
   unit_id?: string;
+  tenant_id?: string;
   uploaded_at?: string;
   created_at: string;
   updated_at: string;
@@ -98,6 +101,80 @@ export interface DocumentListResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+// Tenant types
+export interface Tenant {
+  id: string;
+  user_id: string;
+  
+  // Personal Information
+  first_name: string;
+  last_name: string;
+  email?: string;
+  phone?: string;
+  phone_secondary?: string;
+  
+  // Identification
+  date_of_birth?: string;
+  ssn_last_four?: string;
+  drivers_license?: string;
+  drivers_license_state?: string;
+  
+  // Current Address
+  current_address?: string;
+  current_city?: string;
+  current_state?: string;
+  current_zip?: string;
+  
+  // Employment
+  employer_name?: string;
+  employer_phone?: string;
+  job_title?: string;
+  monthly_income?: number;
+  employment_start_date?: string;
+  
+  // Emergency Contact
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relationship?: string;
+  
+  // Screening Documents
+  background_check_document_id?: string;
+  application_document_id?: string;
+  
+  // Status
+  status?: 'applicant' | 'approved' | 'current' | 'former' | 'rejected';
+  notes?: string;
+  
+  // Screening Results
+  background_check_date?: string;
+  background_check_status?: 'pass' | 'fail' | 'pending' | 'not_started';
+  credit_score?: number;
+  
+  // Rental History
+  has_evictions?: boolean;
+  eviction_details?: string;
+  previous_landlord_name?: string;
+  previous_landlord_phone?: string;
+  previous_landlord_contacted?: boolean;
+  previous_landlord_reference?: string;
+  
+  // Lease Assignment
+  property_id?: string;
+  unit_id?: string;
+  lease_id?: string;
+  
+  // Metadata
+  created_at: string;
+  updated_at: string;
+  is_deleted: boolean;
+  landlord_references_passed?: number;
+}
+
+export interface TenantListResponse {
+  tenants: Tenant[];
+  total: number;
 }
 
 export interface DocumentUploadResponse {

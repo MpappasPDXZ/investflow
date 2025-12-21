@@ -71,6 +71,41 @@ investflow/
 └── make_app.txt     # Complete application specification
 ```
 
+## Leasing Workflow (Tenant Onboarding)
+
+InvestFlow provides a complete tenant onboarding workflow, from initial application through move-in. This system is designed for landlords to manage the entire leasing process after a prospective tenant has toured the property.
+
+### Complete Workflow (7 Steps)
+
+1. **Background Check** - Screen prospective tenants
+2. **Rental Application** - Download Nebraska/Missouri application forms to send to tenants
+3. **Create Lease** - Generate state-compliant lease agreements (see Lease Generation System below)
+4. **View Leases** - Review all executed leases
+5. **Deposits & Fees** - Log security deposits, pet fees, and first month rent payments
+6. **Property Walkthrough** - Document property condition with photos and notes
+7. **Exit Checklist** - Prepare tenants for move-out requirements
+
+### Rental Application Forms
+
+#### Available Forms
+- **Nebraska Residential Rental Application** (PDF, 575KB)
+- **Missouri Residential Rental Application** (PDF, 179KB - auto-generated from HTML)
+
+#### Workflow
+1. Landlord downloads blank application form from `/leasing/application`
+2. Sends PDF to prospective tenant via email or text
+3. Tenant completes and returns application
+4. Landlord uploads completed application to Vault for record-keeping
+5. Application is tagged with property address and tenant name
+
+#### Generating New Forms
+```bash
+cd frontend
+npm run generate-pdfs
+```
+
+This uses Puppeteer to convert HTML templates in `/frontend/public/` to professional PDF forms. See `/frontend/scripts/README.md` for details on adding new state forms.
+
 ## Lease Generation System
 
 InvestFlow includes a comprehensive lease generation system for creating state-compliant residential lease agreements. All files are stored in ADLS, ensuring consistency between local and production environments.
@@ -223,6 +258,108 @@ uv run app/scripts/upload_316_lease.py
 uv run app/scripts/compare_lease_output.py
 ```
 
+### Running Schema Migrations
+
+When new fields are added to existing tables or new tables are created, you need to run migration scripts.
+
+**⚠️ Important:** Migration scripts MUST be run inside the backend container to access:
+- Lakekeeper OAuth2 credentials (for catalog operations)
+- ADLS credentials (for reading/writing parquet files)
+- PostgreSQL connection (via Lakekeeper)
+- Proper network access to all services
+
+**Run Migration (Inside Container):**
+```bash
+# From your host machine
+cd backend
+docker-compose exec backend uv run app/scripts/migrate_add_fields.py
+```
+
+**Or if container is not running:**
+```bash
+# Start containers first
+docker-compose up -d
+
+# Then run migration
+docker-compose exec backend uv run app/scripts/migrate_add_fields.py
+```
+
+**Migration Script Features:**
+- ✅ Preserves all existing data
+- ✅ Adds new columns with NULL values
+- ✅ Creates new tables if they don't exist
+- ✅ Uses Iceberg schema evolution (no downtime)
+- ✅ Idempotent (safe to run multiple times)
+
+**Example Migration Output:**
+```
+🚀 Starting schema migration...
+🔄 Migrating properties table...
+  ➕ Adding cash_invested column
+  ✅ Properties table migrated successfully
+🔄 Migrating leases table...
+  ➕ Adding pet_deposit_total column
+  ➕ Adding pet_description column
+  ✅ Leases table migrated successfully
+🔄 Creating walkthrough tables...
+  ➕ Creating walkthroughs table
+  ✅ Walkthroughs table created
+  ➕ Creating walkthrough_areas table
+  ✅ Walkthrough_areas table created
+✅ Migration completed successfully!
+```
+
+**Why Run in Container?**
+
+The backend container has access to:
+1. **OAuth2 Credentials**: `LAKEKEEPER__OAUTH2__CLIENT_ID`, `CLIENT_SECRET`, `TENANT_ID`
+2. **ADLS Credentials**: `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_ACCOUNT_KEY`
+3. **Network Access**: Can reach Lakekeeper (port 8181) and PostgreSQL (Azure)
+4. **Python Environment**: All dependencies installed via UV
+
+Running outside the container would require manually setting all environment variables and ensuring network connectivity.
+
+**Verify Migration Success:**
+```bash
+# Check Lakekeeper catalog
+curl -s http://localhost:8181/catalog/v1/investflow/namespaces/investflow/tables | jq
+
+# Check backend logs
+docker-compose logs backend --tail=50
+
+# Test in application
+# Navigate to property details page, should see new "Cash Invested" field
+```
+
+**Rollback (if needed):**
+See `backend/app/scripts/MIGRATION_README.md` for detailed rollback procedures using ADLS backups.
+
+### Common Migration Mistakes
+
+**❌ Mistake #1: Wrong Hook Signature**
+```typescript
+// WRONG - useExpenses only takes a string parameter
+const { data: expensesData } = useExpenses({ property_id: id, limit: 10000 });
+
+// CORRECT - pass propertyId as simple string
+const { data: expensesData } = useExpenses(id);
+```
+**Error:** `Type error: Argument of type '{ property_id: string; limit: number; }' is not assignable to parameter of type 'string'.`
+
+**❌ Mistake #2: Adding Columns Without Schema Update**
+```python
+# WRONG - Can't just add columns to DataFrame and overwrite
+df["new_column"] = None
+table.overwrite(arrow_table)  # Fails!
+
+# CORRECT - Must update schema first
+with table.update_schema() as update:
+    update.add_column("new_column", DecimalType(12, 2), required=False)
+```
+**Error:** `PyArrow table contains more columns: new_column. Update the schema first (hint, use union_by_name).`
+
+**Solution:** Always use Iceberg's schema evolution API (`table.update_schema()`) to add columns before writing data with those columns.
+
 ### Future Enhancements
 
 - [ ] Frontend lease form with multi-step wizard
@@ -283,8 +420,15 @@ This starts all services locally:
 **Workflow:**
 1. Make code changes
 2. Test locally using `docker-compose`
-3. When ready, push to git
-4. Deploy to Azure (see Deployment section below)
+3. **If schema changes**: Run migration script inside container (`docker-compose exec backend uv run app/scripts/migrate_add_fields.py`)
+4. When ready, push to git
+5. Deploy to Azure (see Deployment section below)
+
+**Testing Locally:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+- Lakekeeper: http://localhost:8181
 
 ## Deployment
 
@@ -292,7 +436,15 @@ This starts all services locally:
 
 **When you have new code changes to deploy:**
 
-1. **Build and push new images to Azure Container Registry:**
+1. **Test locally first:**
+```bash
+cd backend
+docker-compose up --build -d
+# Test all changes, including any migrations
+docker-compose exec backend uv run app/scripts/migrate_add_fields.py  # If schema changed
+```
+
+2. **Build and push new images to Azure Container Registry:**
 ```bash
 # Build and push frontend
 cd frontend
@@ -306,7 +458,7 @@ docker build --platform linux/amd64 -t investflowregistry.azurecr.io/investflow-
 docker push investflowregistry.azurecr.io/investflow-backend:latest
 ```
 
-2. **Update Azure Container Apps to use the new images:**
+3. **Update Azure Container Apps to use the new images:**
 ```bash
 # Update frontend only
 az containerapp update --name investflow-frontend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-frontend:latest
@@ -318,6 +470,28 @@ az containerapp update --name investflow-backend --resource-group investflow-rg 
 az containerapp update --name investflow-frontend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-frontend:latest && \
 az containerapp update --name investflow-backend --resource-group investflow-rg --image investflowregistry.azurecr.io/investflow-backend:latest
 ```
+
+4. **Run migrations in production (if schema changed):**
+```bash
+# Connect to Azure backend container and run migration
+az containerapp exec \
+  --name investflow-backend \
+  --resource-group investflow-rg \
+  --command "uv run app/scripts/migrate_add_fields.py"
+
+# Or use Azure Container Apps console/logs to verify
+az containerapp logs show \
+  --name investflow-backend \
+  --resource-group investflow-rg \
+  --tail 100
+```
+
+**Important:** Schema migrations in production:
+- ✅ Safe to run (Iceberg schema evolution preserves data)
+- ✅ Idempotent (can run multiple times)
+- ✅ Zero downtime (adds columns without locking)
+- ⚠️ **Always test locally first!**
+- ⚠️ **Backup before major schema changes:** `uv run backup_iceberg_tables.py`
 
 ### deploy.sh (Limited Use Case)
 

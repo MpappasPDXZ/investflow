@@ -1,11 +1,11 @@
 """API routes for property management"""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Optional
+from typing import List, Optional, Union
 from uuid import UUID
 import uuid
 import pandas as pd
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime, time
 
 from app.core.dependencies import get_current_user
 from app.schemas.property import (
@@ -21,6 +21,34 @@ TABLE_NAME = "properties"
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 logger = get_logger(__name__)
+
+
+def parse_date_midday(date_value: Union[str, date, datetime, pd.Timestamp]) -> pd.Timestamp:
+    """
+    Parse date using Midday Strategy to prevent timezone shifting.
+    Sets time to 12:00:00 (noon) to provide buffer against timezone offsets.
+    """
+    if date_value is None:
+        return None
+    
+    # If already a pandas Timestamp, extract the date part
+    if isinstance(date_value, pd.Timestamp):
+        date_value = date_value.date()
+    
+    # If it's a datetime, extract the date part
+    if isinstance(date_value, datetime):
+        date_value = date_value.date()
+    
+    # If it's a string, parse it to a date
+    if isinstance(date_value, str):
+        date_value = datetime.strptime(date_value, "%Y-%m-%d").date()
+    
+    # Now date_value should be a date object
+    # Combine with midday time (12:00:00)
+    midday_datetime = datetime.combine(date_value, time(12, 0, 0))
+    
+    # Convert to pandas Timestamp
+    return pd.Timestamp(midday_datetime)
 
 
 @router.post("", response_model=PropertyResponse, status_code=201)
@@ -40,7 +68,7 @@ async def create_property_endpoint(
             "user_id": user_id,
             "display_name": property_data.display_name,
             "purchase_price": Decimal(str(property_data.purchase_price)),
-            "purchase_date": pd.Timestamp(property_data.purchase_date) if property_data.purchase_date else pd.Timestamp(2025, 10, 23),
+            "purchase_date": parse_date_midday(property_data.purchase_date) if property_data.purchase_date else parse_date_midday(date(2025, 10, 23)),
             "down_payment": Decimal(str(property_data.down_payment)) if property_data.down_payment else None,
             "cash_invested": Decimal(str(property_data.cash_invested)) if property_data.cash_invested else None,
             "current_market_value": Decimal(str(property_data.current_market_value)) if property_data.current_market_value else None,

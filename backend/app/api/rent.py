@@ -1,9 +1,9 @@
 """API routes for rent payment management"""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional
+from typing import Optional, Union
 from uuid import UUID
 import uuid
-from datetime import date
+from datetime import date, datetime, time
 from calendar import monthrange
 from decimal import Decimal
 import pandas as pd
@@ -20,6 +20,35 @@ TABLE_NAME = "rents"
 
 router = APIRouter(prefix="/rent", tags=["rent"])
 logger = get_logger(__name__)
+
+
+def parse_date_midday(date_value: Union[str, date, datetime, pd.Timestamp]) -> pd.Timestamp:
+    """
+    Parse date using Midday Strategy to prevent timezone shifting.
+    Sets time to 12:00:00 (noon) to provide buffer against timezone offsets.
+    """
+    if date_value is None:
+        return None
+    
+    # If already a pandas Timestamp, extract the date part
+    if isinstance(date_value, pd.Timestamp):
+        date_value = date_value.date()
+    
+    # If it's a datetime, extract the date part
+    if isinstance(date_value, datetime):
+        date_value = date_value.date()
+    
+    # If it's a string, parse it to a date
+    if isinstance(date_value, str):
+        date_value = datetime.strptime(date_value, "%Y-%m-%d").date()
+    
+    # Now date_value should be a date object
+    # Combine with midday time (12:00:00)
+    midday_datetime = datetime.combine(date_value, time(12, 0, 0))
+    
+    # Convert to pandas Timestamp
+    return pd.Timestamp(midday_datetime)
+
 
 
 def _invalidate_financial_performance_cache(property_id: UUID, user_id: str, unit_id: Optional[UUID] = None):
@@ -109,9 +138,9 @@ async def create_rent_endpoint(
             "amount": Decimal(str(rent_data.amount)),
             "rent_period_month": rent_data.rent_period_month,
             "rent_period_year": rent_data.rent_period_year,
-            "rent_period_start": pd.Timestamp(period_start),
-            "rent_period_end": pd.Timestamp(period_end),
-            "payment_date": pd.Timestamp(rent_data.payment_date),
+            "rent_period_start": parse_date_midday(period_start),
+            "rent_period_end": parse_date_midday(period_end),
+            "payment_date": parse_date_midday(rent_data.payment_date),
             "payment_method": rent_data.payment_method if rent_data.payment_method else None,
             "transaction_reference": rent_data.transaction_reference,
             "is_late": rent_data.is_late if rent_data.is_late else False,

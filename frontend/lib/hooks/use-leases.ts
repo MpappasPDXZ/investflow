@@ -23,26 +23,53 @@ export interface LeaseCreate {
   state: 'NE' | 'MO';
   commencement_date: string;
   termination_date: string;
+  lease_duration_months?: number;
   monthly_rent: number;
   security_deposit: number;
+  // Holding Fee
+  include_holding_fee_addendum?: boolean;
+  holding_fee_amount?: number;
+  holding_fee_date?: string;
   tenants: Tenant[];
+  is_official?: boolean;
   auto_convert_month_to_month?: boolean;
   payment_method?: string;
+  // Prorated rent
+  show_prorated_rent?: boolean;
+  prorated_rent_amount?: number;
+  prorated_rent_language?: string;
+  // Occupants
   max_occupants?: number;
   max_adults?: number;
+  num_children?: number;
   max_children?: boolean;
+  // Pets
   pets_allowed?: boolean;
+  pet_fee?: number;
   pet_fee_one?: number;
   pet_fee_two?: number;
   max_pets?: number;
+  pets?: Array<{ type: string; breed?: string; name?: string; weight?: string; isEmotionalSupport?: boolean }>;
+  pet_deposit?: number;
+  additional_pet_fee?: number;
+  // Utilities
   utilities_tenant?: string;
   utilities_landlord?: string;
+  // Parking
   parking_spaces?: number;
   parking_small_vehicles?: number;
   parking_large_trucks?: number;
+  garage_spaces?: number;
+  offstreet_parking_spots?: number;
+  shared_parking_arrangement?: string;
+  // Keys
+  include_keys_clause?: boolean;
+  has_front_door?: boolean;
+  has_back_door?: boolean;
   front_door_keys?: number;
   back_door_keys?: number;
   key_replacement_fee?: number;
+  // Property features
   has_shared_driveway?: boolean;
   shared_driveway_with?: string;
   has_garage?: boolean;
@@ -52,6 +79,9 @@ export interface LeaseCreate {
   has_basement?: boolean;
   appliances_provided?: string;
   snow_removal_responsibility?: string;
+  tenant_lawn_mowing?: boolean;
+  tenant_snow_removal?: boolean;
+  tenant_lawn_care?: boolean;
   lead_paint_disclosure?: boolean;
   lead_paint_year_built?: number;
   early_termination_allowed?: boolean;
@@ -70,6 +100,8 @@ export interface LeaseCreate {
 export interface Lease extends LeaseCreate {
   id: string;
   user_id: string;
+  lease_number: number;
+  is_official: boolean;
   status: 'draft' | 'pending_signature' | 'active' | 'expired' | 'terminated';
   lease_version: number;
   created_at: string;
@@ -86,6 +118,11 @@ export interface LeaseListResponse {
 export function useLeases() {
   const createLease = async (leaseData: LeaseCreate): Promise<Lease> => {
     const response = await apiClient.post('/leases', leaseData);
+    return response as Lease;
+  };
+
+  const updateLease = async (leaseId: string, leaseData: Partial<LeaseCreate>): Promise<Lease> => {
+    const response = await apiClient.put(`/leases/${leaseId}`, leaseData);
     return response as Lease;
   };
 
@@ -120,7 +157,8 @@ export function useLeases() {
   };
 
   return { 
-    createLease, 
+    createLease,
+    updateLease,
     listLeases, 
     getLease, 
     generatePDF, 

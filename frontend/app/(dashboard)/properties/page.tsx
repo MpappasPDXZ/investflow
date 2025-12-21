@@ -99,7 +99,7 @@ export default function PropertiesPage() {
                       <TableHead className="text-xs">Name</TableHead>
                       <TableHead className="text-xs">Address</TableHead>
                       <TableHead className="text-xs">Purchase Price</TableHead>
-                      <TableHead className="text-xs">Down Payment</TableHead>
+                      <TableHead className="text-xs">Cash Invested</TableHead>
                       <TableHead className="text-xs">Market Value</TableHead>
                       <TableHead className="text-xs">Vacancy Rate</TableHead>
                       <TableHead className="text-xs">Type</TableHead>
@@ -128,8 +128,8 @@ export default function PropertiesPage() {
                           ${Math.round(property.purchase_price / 1000).toLocaleString()}k
                         </TableCell>
                         <TableCell className="text-xs">
-                          {property.down_payment 
-                            ? `$${Math.round(property.down_payment / 1000).toLocaleString()}k`
+                          {property.cash_invested 
+                            ? `$${Math.round(property.cash_invested / 1000).toLocaleString()}k`
                             : '-'}
                         </TableCell>
                         <TableCell className="text-xs">
@@ -216,10 +216,10 @@ export default function PropertiesPage() {
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Down:</span>{' '}
+                        <span className="text-gray-500">Cash Invested:</span>{' '}
                         <span className="font-medium">
-                          {property.down_payment 
-                            ? `$${Math.round(property.down_payment / 1000).toLocaleString()}k`
+                          {property.cash_invested 
+                            ? `$${Math.round(property.cash_invested / 1000).toLocaleString()}k`
                             : '-'}
                         </span>
                       </div>

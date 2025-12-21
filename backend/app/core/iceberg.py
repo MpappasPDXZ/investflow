@@ -263,9 +263,16 @@ def upsert_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame,
                 
                 df[field.name] = df[field.name].apply(to_decimal)
         
-        # Reorder DataFrame columns to match table schema
+        # Reorder DataFrame columns to match table schema and fill missing columns
         schema_column_order = [field.name for field in current_schema.fields]
-        df = df[[col for col in schema_column_order if col in df.columns]]
+        
+        # Add missing columns with None values
+        for col in schema_column_order:
+            if col not in df.columns:
+                df[col] = None
+        
+        # Reorder to match schema
+        df = df[schema_column_order]
         
         # Convert to PyArrow table
         arrow_table = pa.Table.from_pandas(df, preserve_index=False)

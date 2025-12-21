@@ -373,6 +373,76 @@ def create_lease_tenants_schema() -> pa.Schema:
     ])
 
 
+def create_tenants_schema() -> pa.Schema:
+    """Create PyArrow schema for tenants table"""
+    return pa.schema([
+        pa.field("id", pa.string(), nullable=False),  # UUID as string
+        pa.field("user_id", pa.string(), nullable=False),  # Owner/landlord user ID
+        
+        # Personal Information
+        pa.field("first_name", pa.string(), nullable=False),
+        pa.field("last_name", pa.string(), nullable=False),
+        pa.field("email", pa.string(), nullable=True),
+        pa.field("phone", pa.string(), nullable=True),
+        pa.field("phone_secondary", pa.string(), nullable=True),
+        
+        # Identification
+        pa.field("date_of_birth", pa.date32(), nullable=True),
+        pa.field("ssn_last_four", pa.string(), nullable=True),
+        pa.field("drivers_license", pa.string(), nullable=True),
+        pa.field("drivers_license_state", pa.string(), nullable=True),
+        
+        # Current Address
+        pa.field("current_address", pa.string(), nullable=True),
+        pa.field("current_city", pa.string(), nullable=True),
+        pa.field("current_state", pa.string(), nullable=True),
+        pa.field("current_zip", pa.string(), nullable=True),
+        
+        # Employment
+        pa.field("employer_name", pa.string(), nullable=True),
+        pa.field("employer_phone", pa.string(), nullable=True),
+        pa.field("job_title", pa.string(), nullable=True),
+        pa.field("monthly_income", pa.decimal128(10, 2), nullable=True),
+        pa.field("employment_start_date", pa.date32(), nullable=True),
+        
+        # Emergency Contact
+        pa.field("emergency_contact_name", pa.string(), nullable=True),
+        pa.field("emergency_contact_phone", pa.string(), nullable=True),
+        pa.field("emergency_contact_relationship", pa.string(), nullable=True),
+        
+        # Screening Documents (vault references)
+        pa.field("background_check_document_id", pa.string(), nullable=True),
+        pa.field("application_document_id", pa.string(), nullable=True),
+        
+        # Status
+        pa.field("status", pa.string(), nullable=True),  # applicant, approved, current, former, rejected
+        pa.field("notes", pa.string(), nullable=True),
+        
+        # Screening Results
+        pa.field("background_check_date", pa.date32(), nullable=True),
+        pa.field("background_check_status", pa.string(), nullable=True),  # pass, fail, pending, not_started
+        pa.field("credit_score", pa.int32(), nullable=True),
+        
+        # Rental History
+        pa.field("has_evictions", pa.bool_(), nullable=True),
+        pa.field("eviction_details", pa.string(), nullable=True),
+        pa.field("previous_landlord_name", pa.string(), nullable=True),
+        pa.field("previous_landlord_phone", pa.string(), nullable=True),
+        pa.field("previous_landlord_contacted", pa.bool_(), nullable=True),
+        pa.field("previous_landlord_reference", pa.string(), nullable=True),
+        
+        # Lease Assignment
+        pa.field("property_id", pa.string(), nullable=True),
+        pa.field("unit_id", pa.string(), nullable=True),
+        pa.field("lease_id", pa.string(), nullable=True),
+        
+        # Metadata
+        pa.field("created_at", pa.timestamp("us"), nullable=False),
+        pa.field("updated_at", pa.timestamp("us"), nullable=False),
+        pa.field("is_deleted", pa.bool_(), nullable=True),
+    ])
+
+
 def create_sample_users() -> pd.DataFrame:
     """Create sample user data"""
     now = pd.Timestamp.now()

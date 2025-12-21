@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useProperties } from '@/lib/hooks/use-properties';
+import { useUnits } from '@/lib/hooks/use-units';
+import { useTenants } from '@/lib/hooks/use-tenants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,8 +14,15 @@ import { Camera, Upload, X, FileText, Image, Loader2, ArrowLeft } from 'lucide-r
 import Link from 'next/link';
 
 const DOCUMENT_TYPES = [
+  { value: "rental_application", label: "Rental Application" },
   { value: "lease", label: "Lease" },
   { value: "background_check", label: "Background Check" },
+  { value: "credit_report", label: "Credit Report" },
+  { value: "criminal", label: "Criminal Check" },
+  { value: "eviction", label: "Eviction Check" },
+  { value: "income", label: "Income Verification" },
+  { value: "employment", label: "Employment Verification" },
+  { value: "reference", label: "Reference" },
   { value: "contract", label: "Contract" },
   { value: "invoice", label: "Invoice" },
   { value: "inspection", label: "Inspection" },
@@ -26,20 +35,37 @@ const FILE_ACCEPT = 'image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.he
 
 export default function AddDocumentPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: propertiesData } = useProperties();
+  const { data: tenantsData } = useTenants();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('unassigned');
   const [formData, setFormData] = useState({
     property_id: 'unassigned',
+    unit_id: '',
+    tenant_id: '',
     display_name: '',
-    document_type: 'other',
+    document_type: searchParams.get('type') || 'other',
   });
   const [file, setFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
 
   const properties = propertiesData?.items || [];
+  const tenants = tenantsData?.tenants || [];
+  
+  // Fetch units for selected property
+  const { data: unitsData } = useUnits(selectedPropertyId === 'unassigned' ? '' : selectedPropertyId);
+  const units = unitsData?.items || [];
+
+  // Update selectedPropertyId when formData.property_id changes
+  useEffect(() => {
+    setSelectedPropertyId(formData.property_id);
+    // Reset unit_id when property changes
+    setFormData(prev => ({ ...prev, unit_id: '' }));
+  }, [formData.property_id]);
 
   // Create preview for selected file
   useEffect(() => {
@@ -111,6 +137,14 @@ export default function AddDocumentPage() {
       
       if (formData.display_name.trim()) {
         uploadFormData.append('display_name', formData.display_name.trim());
+      }
+      
+      if (formData.unit_id) {
+        uploadFormData.append('unit_id', formData.unit_id);
+      }
+      
+      if (formData.tenant_id) {
+        uploadFormData.append('tenant_id', formData.tenant_id);
       }
 
       await apiClient.upload('/documents/upload', uploadFormData);
@@ -237,17 +271,52 @@ export default function AddDocumentPage() {
               </div>
               
               <div>
-                <Label htmlFor="property_id" className="text-xs md:text-sm">Property</Label>
+                <Label htmlFor="tenant_id" className="text-xs md:text-sm">Tenant (optional)</Label>
+                <select
+                  id="tenant_id"
+                  value={formData.tenant_id}
+                  onChange={(e) => setFormData({ ...formData, tenant_id: e.target.value })}
+                  className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px]"
+                >
+                  <option value="">None</option>
+                  {tenants.map((tenant) => (
+                    <option key={tenant.id} value={tenant.id}>
+                      {tenant.first_name} {tenant.last_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <Label htmlFor="property_id" className="text-xs md:text-sm">Property (optional)</Label>
                 <select
                   id="property_id"
                   value={formData.property_id}
                   onChange={(e) => setFormData({ ...formData, property_id: e.target.value })}
                   className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px]"
                 >
-                  <option value="unassigned">Unassigned</option>
+                  <option value="unassigned">None</option>
                   {properties.map((prop) => (
                     <option key={prop.id} value={prop.id}>
                       {prop.display_name || prop.address_line1 || 'Property'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <Label htmlFor="unit_id" className="text-xs md:text-sm">Unit (optional)</Label>
+                <select
+                  id="unit_id"
+                  value={formData.unit_id}
+                  onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
+                  disabled={!selectedPropertyId || selectedPropertyId === 'unassigned' || units.length === 0}
+                  className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px] disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                  <option value="">None</option>
+                  {units.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.unit_number}
                     </option>
                   ))}
                 </select>

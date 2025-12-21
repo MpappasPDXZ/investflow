@@ -15,6 +15,15 @@ class MoveOutCostItem(BaseModel):
     order: int = Field(..., ge=1, description="Display order")
 
 
+class PetInfo(BaseModel):
+    """Information about a pet"""
+    type: str = Field(..., min_length=1, max_length=50, description="Pet type: Dog, Cat, Other")
+    breed: Optional[str] = Field(None, max_length=100)
+    name: Optional[str] = Field(None, max_length=100)
+    weight: Optional[str] = Field(None, max_length=20)
+    isEmotionalSupport: Optional[bool] = False
+
+
 class TenantBase(BaseModel):
     """Base tenant model"""
     first_name: str = Field(..., min_length=1, max_length=100)
@@ -87,9 +96,23 @@ class LeaseBase(BaseModel):
     security_deposit: Decimal = Field(..., ge=0)
     deposit_return_days: Optional[int] = Field(None, ge=1)
     
+    # Holding Fee Addendum
+    include_holding_fee_addendum: Optional[bool] = Field(False, description="Generate holding fee addendum")
+    holding_fee_amount: Optional[Decimal] = Field(None, ge=0, description="Holding fee amount (converts to security deposit)")
+    holding_fee_date: Optional[str] = Field(None, description="Date holding fee was collected")
+    
+    # Lease Duration
+    lease_duration_months: Optional[int] = Field(12, ge=1, le=36, description="Lease duration in months")
+    
+    # Prorated Rent
+    show_prorated_rent: Optional[bool] = Field(False, description="Whether to include prorated rent")
+    prorated_rent_amount: Optional[Decimal] = Field(None, ge=0, description="Prorated rent amount")
+    prorated_rent_language: Optional[str] = Field(None, max_length=1000, description="Custom prorated rent language")
+    
     # Occupants
     max_occupants: Optional[int] = Field(3, ge=1)
     max_adults: Optional[int] = Field(2, ge=1)
+    num_children: Optional[int] = Field(0, ge=0, description="Number of children occupants")
     max_children: Optional[bool] = True
     
     # Utilities
@@ -98,18 +121,28 @@ class LeaseBase(BaseModel):
     
     # Pets
     pets_allowed: Optional[bool] = True
+    pet_fee: Optional[Decimal] = Field(None, ge=0, description="Total pet fee ($300/pet, max $500)")
     pet_fee_one: Optional[Decimal] = Field(None, ge=0)
     pet_fee_two: Optional[Decimal] = Field(None, ge=0)
     pet_deposit_total: Optional[Decimal] = Field(None, ge=0, description="Total pet deposit amount")
     pet_description: Optional[str] = Field(None, max_length=500, description="e.g., '2 cats and 1 50lb dog'")
     max_pets: Optional[int] = Field(2, ge=0)
+    pets: Optional[List[PetInfo]] = None
+    pet_deposit: Optional[Decimal] = Field(None, ge=0, description="Pet deposit amount per pet")
+    additional_pet_fee: Optional[Decimal] = Field(None, ge=0, description="Fee for additional pets beyond the first")
     
     # Parking
     parking_spaces: Optional[int] = Field(2, ge=0)
     parking_small_vehicles: Optional[int] = Field(2, ge=0)
     parking_large_trucks: Optional[int] = Field(1, ge=0)
+    garage_spaces: Optional[int] = Field(0, ge=0, description="Number of garage spaces")
+    offstreet_parking_spots: Optional[int] = Field(0, ge=0, description="Number of off-street parking spots")
+    shared_parking_arrangement: Optional[str] = Field(None, max_length=2000, description="Description of any shared parking arrangement with neighbors")
     
     # Keys
+    include_keys_clause: Optional[bool] = Field(True, description="Whether to include keys clause in lease")
+    has_front_door: Optional[bool] = Field(True, description="Property has front door")
+    has_back_door: Optional[bool] = Field(True, description="Property has back door")
     front_door_keys: Optional[int] = Field(1, ge=0)
     back_door_keys: Optional[int] = Field(1, ge=0)
     key_replacement_fee: Optional[Decimal] = Field(None, ge=0)
@@ -118,6 +151,11 @@ class LeaseBase(BaseModel):
     has_shared_driveway: Optional[bool] = False
     shared_driveway_with: Optional[str] = Field(None, max_length=200)
     snow_removal_responsibility: Optional[str] = Field("tenant", max_length=50)
+    
+    # Maintenance Responsibilities (True = Tenant handles, False = Landlord handles)
+    tenant_lawn_mowing: Optional[bool] = Field(True, description="Tenant responsible for mowing lawn")
+    tenant_snow_removal: Optional[bool] = Field(True, description="Tenant responsible for snow removal")
+    tenant_lawn_care: Optional[bool] = Field(False, description="Tenant responsible for lawn care (sprinkler, seeding, fertilizing)")
     
     # Garage
     has_garage: Optional[bool] = False
@@ -205,6 +243,9 @@ class LeaseCreate(LeaseBase):
 
 class LeaseUpdate(BaseModel):
     """Lease update (all fields optional except cannot change property/state)"""
+    # Metadata
+    is_official: Optional[bool] = None
+    
     # Dates
     commencement_date: Optional[date] = None
     termination_date: Optional[date] = None
@@ -230,27 +271,54 @@ class LeaseUpdate(BaseModel):
     security_deposit: Optional[Decimal] = Field(None, ge=0)
     deposit_return_days: Optional[int] = Field(None, ge=1)
     
+    # Holding Fee Addendum
+    include_holding_fee_addendum: Optional[bool] = None
+    holding_fee_amount: Optional[Decimal] = Field(None, ge=0)
+    holding_fee_date: Optional[str] = None
+    
+    # Lease Duration
+    lease_duration_months: Optional[int] = Field(None, ge=1, le=36)
+    
+    # Prorated Rent
+    show_prorated_rent: Optional[bool] = None
+    prorated_rent_amount: Optional[Decimal] = Field(None, ge=0)
+    prorated_rent_language: Optional[str] = Field(None, max_length=1000)
+    
     # All other fields...
     max_occupants: Optional[int] = Field(None, ge=1)
     max_adults: Optional[int] = Field(None, ge=1)
+    num_children: Optional[int] = Field(None, ge=0)
     max_children: Optional[bool] = None
     utilities_tenant: Optional[str] = Field(None, max_length=500)
     utilities_landlord: Optional[str] = Field(None, max_length=500)
     pets_allowed: Optional[bool] = None
+    pet_fee: Optional[Decimal] = Field(None, ge=0)
     pet_fee_one: Optional[Decimal] = Field(None, ge=0)
     pet_fee_two: Optional[Decimal] = Field(None, ge=0)
     pet_deposit_total: Optional[Decimal] = Field(None, ge=0)
     pet_description: Optional[str] = Field(None, max_length=500)
     max_pets: Optional[int] = Field(None, ge=0)
+    pets: Optional[List[PetInfo]] = None
+    pet_deposit: Optional[Decimal] = Field(None, ge=0)
+    additional_pet_fee: Optional[Decimal] = Field(None, ge=0)
     parking_spaces: Optional[int] = Field(None, ge=0)
     parking_small_vehicles: Optional[int] = Field(None, ge=0)
     parking_large_trucks: Optional[int] = Field(None, ge=0)
+    garage_spaces: Optional[int] = Field(None, ge=0)
+    offstreet_parking_spots: Optional[int] = Field(None, ge=0)
+    shared_parking_arrangement: Optional[str] = Field(None, max_length=2000)
+    include_keys_clause: Optional[bool] = None
+    has_front_door: Optional[bool] = None
+    has_back_door: Optional[bool] = None
     front_door_keys: Optional[int] = Field(None, ge=0)
     back_door_keys: Optional[int] = Field(None, ge=0)
     key_replacement_fee: Optional[Decimal] = Field(None, ge=0)
     has_shared_driveway: Optional[bool] = None
     shared_driveway_with: Optional[str] = Field(None, max_length=200)
     snow_removal_responsibility: Optional[str] = Field(None, max_length=50)
+    tenant_lawn_mowing: Optional[bool] = None
+    tenant_snow_removal: Optional[bool] = None
+    tenant_lawn_care: Optional[bool] = None
     has_garage: Optional[bool] = None
     garage_outlets_prohibited: Optional[bool] = None
     has_attic: Optional[bool] = None
@@ -290,6 +358,8 @@ class LeaseResponse(LeaseBase):
     """Lease response with all details"""
     id: UUID
     user_id: UUID
+    lease_number: int = Field(..., description="Auto-incrementing lease number per user")
+    is_official: bool = Field(default=False, description="Mark as official/final version")
     lease_version: int
     property: PropertySummary
     unit: Optional[dict] = None
@@ -310,6 +380,10 @@ class LeaseResponse(LeaseBase):
 class LeaseListItem(BaseModel):
     """Condensed lease info for list view"""
     id: UUID
+    property_id: UUID
+    unit_id: Optional[UUID] = None
+    lease_number: int = Field(..., description="Auto-incrementing lease number")
+    is_official: bool = Field(default=False, description="Official/final version flag")
     property: PropertySummary
     tenants: List[dict]  # Just name info
     commencement_date: date
@@ -340,6 +414,11 @@ class GeneratePDFResponse(BaseModel):
     latex_blob_name: str
     generated_at: datetime
     status: str
+    # Optional holding fee addendum
+    holding_fee_pdf_url: Optional[str] = None
+    holding_fee_latex_url: Optional[str] = None
+    holding_fee_pdf_blob_name: Optional[str] = None
+    holding_fee_latex_blob_name: Optional[str] = None
 
 
 class TerminateLeaseRequest(BaseModel):

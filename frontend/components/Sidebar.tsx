@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
-import { Building2, Receipt, LogIn, LogOut, Plus, List, FileDown, Home, FileText, User, Lock, Image, Droplet, Banknote, Wallet, FileSignature } from 'lucide-react';
+import { Building2, Receipt, LogIn, LogOut, Plus, List, FileDown, Home, FileText, User, Lock, Image, Droplet, Banknote, Wallet, FileSignature, CheckCircle, ClipboardList, DollarSign, Camera, ListChecks, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Sidebar() {
@@ -74,26 +74,66 @@ export function Sidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
 
-                  {/* Leases Section */}
+                  {/* Leasing Section - Complete Tenant Onboarding */}
                   <SidebarMenuItem>
                     <SidebarGroupLabel className="text-[14px] font-bold text-gray-700">
                       <FileSignature className="h-3.5 w-3.5 inline mr-1" />
-                      Leases
+                      Leasing
                     </SidebarGroupLabel>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild className="text-[11px]">
-                      <Link href="/leases/create">
-                        <Plus className="h-3.5 w-3.5" />
-                        <span>Create Lease</span>
+                      <Link href="/leasing/tenants">
+                        <Users className="h-3.5 w-3.5" />
+                        <span>Tenant Profiles</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild className="text-[11px]">
+                      <Link href="/leasing/background-check">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        <span>Background Check</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild className="text-[11px]">
+                      <Link href="/leasing/application">
+                        <ClipboardList className="h-3.5 w-3.5" />
+                        <span>Rental Application</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild className="text-[11px]">
                       <Link href="/leases">
-                        <List className="h-3.5 w-3.5" />
-                        <span>View Leases</span>
+                        <FileSignature className="h-3.5 w-3.5" />
+                        <span>Leases</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild className="text-[11px]">
+                      <Link href="/leasing/deposits-fees">
+                        <DollarSign className="h-3.5 w-3.5" />
+                        <span>Deposits & Fees</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild className="text-[11px]">
+                      <Link href="/leasing/walkthrough">
+                        <Camera className="h-3.5 w-3.5" />
+                        <span>Property Walkthrough</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild className="text-[11px]">
+                      <Link href="/leasing/exit-checklist">
+                        <ListChecks className="h-3.5 w-3.5" />
+                        <span>Exit Checklist</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

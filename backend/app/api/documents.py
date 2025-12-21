@@ -21,6 +21,7 @@ async def upload_document_endpoint(
     document_type: Optional[str] = Form("other"),
     property_id: Optional[str] = Form(None),
     unit_id: Optional[str] = Form(None),
+    tenant_id: Optional[str] = Form(None),
     display_name: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
@@ -58,6 +59,7 @@ async def upload_document_endpoint(
             document_type=document_type or "other",
             property_id=UUID(property_id) if property_id else None,
             unit_id=UUID(unit_id) if unit_id else None,
+            tenant_id=UUID(tenant_id) if tenant_id else None,
             display_name=display_name.strip() if display_name else None
         )
         
@@ -80,6 +82,7 @@ async def upload_document_endpoint(
 async def list_documents_endpoint(
     property_id: Optional[UUID] = Query(None, description="Filter by property ID"),
     unit_id: Optional[UUID] = Query(None, description="Filter by unit ID"),
+    tenant_id: Optional[UUID] = Query(None, description="Filter by tenant ID"),
     document_type: Optional[str] = Query(None, description="Filter by document type"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -94,6 +97,7 @@ async def list_documents_endpoint(
             user_id=user_id,
             property_id=property_id,
             unit_id=unit_id,
+            tenant_id=tenant_id,
             document_type=document_type,
             skip=skip,
             limit=limit

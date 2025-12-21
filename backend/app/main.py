@@ -17,7 +17,7 @@ from app.core.middleware import (
     validation_exception_handler
 )
 from app.core.exceptions import InvestFlowException
-from app.api import auth, health, properties, users, units, scheduled, shares, rent, expenses, documents, financial_performance, scheduled_template, comparables, leases
+from app.api import auth, health, properties, users, units, scheduled, shares, rent, expenses, documents, financial_performance, scheduled_template, comparables, leases, tenants, landlord_references
 # Temporarily disabled
 # from app.api import lakekeeper_test
 from app.models.base import Base
@@ -154,6 +154,8 @@ app.include_router(scheduled_template.router, prefix=settings.API_V1_PREFIX)
 app.include_router(comparables.router, prefix=settings.API_V1_PREFIX)
 app.include_router(shares.router, prefix=settings.API_V1_PREFIX)
 app.include_router(leases.router, prefix=settings.API_V1_PREFIX)
+app.include_router(tenants.router, prefix=settings.API_V1_PREFIX)
+app.include_router(landlord_references.router, prefix=settings.API_V1_PREFIX)
 app.include_router(rent.router, prefix=settings.API_V1_PREFIX)
 app.include_router(expenses.router, prefix=settings.API_V1_PREFIX)
 app.include_router(documents.router, prefix=settings.API_V1_PREFIX)

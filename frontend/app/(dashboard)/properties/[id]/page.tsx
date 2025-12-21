@@ -3,6 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useProperty } from '@/lib/hooks/use-properties';
 import { useFinancialPerformance } from '@/lib/hooks/use-financial-performance';
+import { useExpenses } from '@/lib/hooks/use-expenses';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,6 +48,12 @@ export default function PropertyDetailPage() {
 
   // Fetch financial performance for YTD P/L display
   const { data: financialPerformance } = useFinancialPerformance(id);
+  const { data: expensesData } = useExpenses(id);
+
+  // Calculate total rehab expenses
+  const totalRehabExpenses = expensesData?.items
+    ?.filter((exp: any) => exp.expense_type === 'rehab')
+    ?.reduce((sum: number, exp: any) => sum + Number(exp.amount), 0) || 0;
 
   // Form state for adding/editing units
   const [unitForm, setUnitForm] = useState({
@@ -63,6 +70,7 @@ export default function PropertyDetailPage() {
     purchase_price: '',
     purchase_date: '',
     down_payment: '',
+    cash_invested: '',
     current_market_value: '',
     property_status: '',
     vacancy_rate: '',
@@ -198,6 +206,7 @@ export default function PropertyDetailPage() {
       purchase_price: property.purchase_price?.toString() || '',
       purchase_date: property.purchase_date?.split('T')[0] || '2024-10-23',
       down_payment: property.down_payment?.toString() || '',
+      cash_invested: property.cash_invested?.toString() || '',
       current_market_value: property.current_market_value?.toString() || '',
       property_status: property.property_status || 'evaluating',
       vacancy_rate: property.vacancy_rate?.toString() || '0.07',
@@ -223,6 +232,7 @@ export default function PropertyDetailPage() {
         purchase_price: propertyForm.purchase_price ? parseFloat(propertyForm.purchase_price) : undefined,
         purchase_date: propertyForm.purchase_date || undefined,
         down_payment: propertyForm.down_payment ? parseFloat(propertyForm.down_payment) : undefined,
+        cash_invested: propertyForm.cash_invested ? parseFloat(propertyForm.cash_invested) : undefined,
         current_market_value: propertyForm.current_market_value ? parseFloat(propertyForm.current_market_value) : undefined,
         property_status: propertyForm.property_status || undefined,
         vacancy_rate: propertyForm.vacancy_rate ? parseFloat(propertyForm.vacancy_rate) : undefined,
@@ -432,6 +442,39 @@ export default function PropertyDetailPage() {
                       onChange={(e) => setPropertyForm({ ...propertyForm, down_payment: e.target.value })}
                       className="text-sm"
                     />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_cash_invested">Cash Invested (for CoC)</Label>
+                    <Input
+                      id="edit_cash_invested"
+                      type="number"
+                      step="0.01"
+                      value={propertyForm.cash_invested}
+                      onChange={(e) => setPropertyForm({ ...propertyForm, cash_invested: e.target.value })}
+                      className="text-sm"
+                      placeholder="e.g., 75000"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Manual entry: down payment + cash rehab costs</p>
+                    <div className="mt-2 p-2 bg-gray-50 rounded text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Down Payment:</span>
+                        <span className="font-semibold text-gray-900">
+                          ${propertyForm.down_payment ? Math.round(parseFloat(propertyForm.down_payment) / 1000).toLocaleString() + 'k' : '$0'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Rehab Expenses:</span>
+                        <span className="font-semibold text-gray-900">
+                          ${totalRehabExpenses ? Math.round(totalRehabExpenses / 1000).toLocaleString() + 'k' : '$0'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t border-gray-200">
+                        <span className="text-gray-700 font-medium">Suggested Total:</span>
+                        <span className="font-bold text-blue-600">
+                          ${Math.round(((parseFloat(propertyForm.down_payment) || 0) + totalRehabExpenses) / 1000).toLocaleString()}k
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <Label htmlFor="edit_current_market_value">Current Market Value</Label>
@@ -695,11 +738,27 @@ export default function PropertyDetailPage() {
                     ${Math.round(property.purchase_price / 1000).toLocaleString()}k
                   </div>
                 </div>
-                {property.down_payment !== null && property.down_payment !== undefined && (
+                <div>
+                  <div className="text-sm text-gray-600">Cash Invested (for CoC)</div>
+                  <div className="text-sm text-gray-900 font-semibold">
+                    {property.cash_invested 
+                      ? `$${Math.round(property.cash_invested / 1000).toLocaleString()}k`
+                      : 'Not Set'}
+                  </div>
+                </div>
+                {totalRehabExpenses > 0 && (
                   <div>
-                    <div className="text-sm text-gray-600">Down Payment</div>
+                    <div className="text-sm text-gray-600">Rehab Expenses</div>
                     <div className="text-sm text-gray-900">
-                      ${Math.round(property.down_payment / 1000).toLocaleString()}k
+                      ${Math.round(totalRehabExpenses / 1000).toLocaleString()}k
+                    </div>
+                  </div>
+                )}
+                {property.cash_invested !== null && property.cash_invested !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Cash Invested (for CoC)</div>
+                    <div className="text-sm text-gray-900 font-semibold">
+                      ${Math.round(property.cash_invested / 1000).toLocaleString()}k
                     </div>
                   </div>
                 )}

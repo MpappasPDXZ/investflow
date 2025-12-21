@@ -8,6 +8,7 @@ import type { Document, DocumentListResponse, DocumentUploadResponse } from '../
 export interface DocumentFilters {
   property_id?: string;
   unit_id?: string;
+  tenant_id?: string;
   document_type?: string;
   skip?: number;
   limit?: number;
@@ -53,19 +54,25 @@ export function useUploadDocument() {
     mutationFn: async ({
       file,
       documentType,
+      displayName,
       propertyId,
       unitId,
+      tenantId,
     }: {
       file: File;
       documentType: string;
+      displayName?: string;
       propertyId?: string;
       unitId?: string;
+      tenantId?: string;
     }) => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('document_type', documentType);
+      if (displayName) formData.append('display_name', displayName);
       if (propertyId) formData.append('property_id', propertyId);
       if (unitId) formData.append('unit_id', unitId);
+      if (tenantId) formData.append('tenant_id', tenantId);
       
       return apiClient.upload<DocumentUploadResponse>('/documents/upload', formData);
     },

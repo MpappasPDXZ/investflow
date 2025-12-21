@@ -12,12 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     fontconfig \
     libfontconfig1 \
-    && wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh \
-    && /root/bin/tlmgr install enumitem titlesec fancyhdr tabularx || true \
+    texlive-latex-base \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
     && rm -rf /var/lib/apt/lists/*
-
-# Add TinyTeX to PATH
-ENV PATH="/root/bin:$PATH"
 
 # Install UV
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

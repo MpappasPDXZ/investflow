@@ -303,9 +303,41 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             <CardTitle className="text-sm font-bold">Cash on Cash Return</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-600">(Annual Rent - Annual Expenses) / (Current Market Value - Purchase Price)</span>
-              <span className="text-xl font-bold text-purple-900">{formatPercent(performance.cash_on_cash)}</span>
+            <div className="space-y-3">
+              {/* Main Value */}
+              <div className="flex justify-between items-center pb-2 border-b">
+                <span className="text-xs text-gray-600">Cash on Cash %</span>
+                <span className="text-xl font-bold text-purple-900">{formatPercent(performance.cash_on_cash)}</span>
+              </div>
+              
+              {/* Formula Breakdown with Actual Values */}
+              <div className="text-[10px] text-gray-700 space-y-1 bg-gray-50 p-3 rounded">
+                <div className="font-semibold mb-2">Formulas with Actual Values:</div>
+                <div>• <strong>Annual Rent</strong> = YTD Rent Annualized ({formatCurrency(performance.ytd_rent)})</div>
+                <div>• <strong>Vacancy (Lost Rent)</strong> = Calculated in vacancy expenses</div>
+                <div>• <strong>Adjusted Rent</strong> = Annual Rent - Vacancy</div>
+                <div>• <strong>Annual Expenses</strong> = Tax & Ins + CapEx + Maintenance + Vacancy Costs + P&I ({formatCurrency(performance.ytd_expenses)})</div>
+                <div className="ml-4 text-[9px] text-gray-500">
+                  Tax & Ins ({formatCurrency(performance.ytd_insurance)}) + 
+                  CapEx ({formatCurrency(performance.ytd_capex)}) + 
+                  Maintenance ({formatCurrency(performance.ytd_maintenance)}) + 
+                  Vacancy/Utilities ({formatCurrency(performance.ytd_utilities)}) + 
+                  P&I ({formatCurrency(performance.ytd_piti)}) + 
+                  Other ({formatCurrency(performance.ytd_other)})
+                </div>
+                <div>• <strong>Cash Flow</strong> = Adjusted Rent - Annual Expenses = <strong>{formatCurrency(performance.ytd_profit_loss)}</strong></div>
+                <div className="pt-1 border-t border-gray-300 mt-2">
+                  <strong>• Cash on Cash % = Cash Flow ÷ Cash Invested × 100%</strong>
+                </div>
+                <div className="ml-4 text-[9px] text-gray-600 italic">
+                  = {formatCurrency(performance.ytd_profit_loss)} ÷ Cash Invested × 100% = {formatPercent(performance.cash_on_cash)}
+                </div>
+                <div className="mt-2 pt-2 border-t border-gray-300">
+                  <div className="text-[9px] text-gray-500 italic">
+                    Note: Uses manually entered Cash Invested (down payment + cash rehab costs)
+                  </div>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>

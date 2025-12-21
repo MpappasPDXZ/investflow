@@ -8,6 +8,15 @@ router = APIRouter(prefix="/health", tags=["health"])
 logger = get_logger(__name__)
 
 
+@router.get("")
+async def health_check():
+    """Basic health check endpoint"""
+    return {
+        "status": "healthy",
+        "message": "Service is running"
+    }
+
+
 @router.get("/catalog")
 async def check_catalog():
     """Check catalog/database connection status"""
