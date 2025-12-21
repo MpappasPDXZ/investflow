@@ -323,6 +323,13 @@ async def create_lease(
         response_dict["pets"] = lease_data.pets or _deserialize_pets(lease_dict.get("pets"))
         response_dict["pdf_url"] = None
         response_dict["latex_url"] = None
+        # Convert midday timestamps to dates for Pydantic response
+        response_dict["commencement_date"] = pd.Timestamp(lease_dict["commencement_date"]).date()
+        response_dict["termination_date"] = pd.Timestamp(lease_dict["termination_date"]).date()
+        response_dict["lease_date"] = pd.Timestamp(lease_dict["lease_date"]).date() if lease_dict.get("lease_date") and pd.notna(lease_dict.get("lease_date")) else None
+        response_dict["signed_date"] = None
+        response_dict["created_at"] = now.to_pydatetime()
+        response_dict["updated_at"] = now.to_pydatetime()
         
         return LeaseResponse(**response_dict)
         
