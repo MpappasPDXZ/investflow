@@ -1,362 +1,72 @@
-name: Deploy to Azure
+name: Deploy to Azure Container Apps
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      deploy_backend:
-        description: 'Deploy backend'
-        required: false
-        default: 'true'
-        type: boolean
-      deploy_frontend:
-        description: 'Deploy frontend'
-        required: false
-        default: 'true'
-        type: boolean
-      run_migration:
-        description: 'Run CDC cache migration after deployment'
-        required: false
-        default: 'true'
-        type: boolean
+  workflow_dispatch:  # Manual trigger
 
 env:
   AZURE_RESOURCE_GROUP: investflow-rg
-  ACR_LOGIN_SERVER: investflowregistry.azurecr.io
-  CONTAINER_APP_ENV: investflow-env
-  # Backend URL - used for frontend build (stable once deployed)
-  BACKEND_FQDN: investflow-backend.yellowsky-ca466dfe.eastus.azurecontainerapps.io
+  ACR_NAME: investflowregistry
+  ACR_SERVER: investflowregistry.azurecr.io
+  BACKEND_APP: investflow-backend
+  FRONTEND_APP: investflow-frontend
+  BACKEND_URL: https://investflow-backend.yellowsky-ca466dfe.eastus.azurecontainerapps.io
 
 jobs:
-  # Get current infrastructure info
-  get-infrastructure:
-    name: Get Infrastructure Info
+  build-and-deploy:
     runs-on: ubuntu-latest
-    outputs:
-      backend_url: ${{ steps.urls.outputs.backend_url }}
-      lakekeeper_url: ${{ steps.urls.outputs.lakekeeper_url }}
+    
     steps:
-      - name: Azure Login
-        uses: azure/login@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Get service URLs
-        id: urls
-        run: |
-          BACKEND_FQDN=$(az containerapp show --name investflow-backend --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "${{ env.BACKEND_FQDN }}")
-          LAKEKEEPER_FQDN=$(az containerapp show --name investflow-lakekeeper --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "")
-          
-          echo "backend_url=https://$BACKEND_FQDN" >> $GITHUB_OUTPUT
-          echo "lakekeeper_url=https://$LAKEKEEPER_FQDN" >> $GITHUB_OUTPUT
-          
-          echo "Backend URL: https://$BACKEND_FQDN"
-          echo "Lakekeeper URL: https://$LAKEKEEPER_FQDN"
 
-  # Build backend image
-  build-backend:
-    name: Build Backend Image
-    runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.meta.outputs.image_tag }}
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Log in to Azure Container Registry
-        uses: azure/docker-login@v2
-        with:
-          login-server: ${{ env.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      
-      - name: Set image tag
-        id: meta
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push Backend
         run: |
-          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-          echo "image_tag=${{ env.ACR_LOGIN_SERVER }}/investflow-backend:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "Image tag: ${{ env.ACR_LOGIN_SERVER }}/investflow-backend:${SHORT_SHA}"
-      
-      - name: Build and push backend image
-        run: |
+          cd backend
           docker build --platform linux/amd64 \
-            -t ${{ steps.meta.outputs.image_tag }} \
-            -t ${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest \
-            ./backend
-          docker push ${{ steps.meta.outputs.image_tag }}
-          docker push ${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest
+            -t ${{ env.ACR_SERVER }}/backend:latest \
+            -t ${{ env.ACR_SERVER }}/backend:${{ github.sha }} \
+            .
+          docker push ${{ env.ACR_SERVER }}/backend:latest
+          docker push ${{ env.ACR_SERVER }}/backend:${{ github.sha }}
 
-  # Build frontend image (needs backend URL for NEXT_PUBLIC_API_URL)
-  build-frontend:
-    name: Build Frontend Image
-    runs-on: ubuntu-latest
-    needs: get-infrastructure
-    outputs:
-      image_tag: ${{ steps.meta.outputs.image_tag }}
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Log in to Azure Container Registry
-        uses: azure/docker-login@v2
-        with:
-          login-server: ${{ env.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      
-      - name: Set image tag
-        id: meta
+      - name: Build and push Frontend
         run: |
-          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-          echo "image_tag=${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "Image tag: ${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:${SHORT_SHA}"
-      
-      - name: Build and push frontend image
-        run: |
+          cd frontend
           docker build --platform linux/amd64 \
-            --build-arg NEXT_PUBLIC_API_URL=${{ needs.get-infrastructure.outputs.backend_url }} \
-            -t ${{ steps.meta.outputs.image_tag }} \
-            -t ${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest \
-            ./frontend
-          docker push ${{ steps.meta.outputs.image_tag }}
-          docker push ${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest
+            --build-arg NEXT_PUBLIC_API_URL=${{ env.BACKEND_URL }} \
+            -t ${{ env.ACR_SERVER }}/frontend:latest \
+            -t ${{ env.ACR_SERVER }}/frontend:${{ github.sha }} \
+            .
+          docker push ${{ env.ACR_SERVER }}/frontend:latest
+          docker push ${{ env.ACR_SERVER }}/frontend:${{ github.sha }}
 
-  # Deploy Lakekeeper (only on first deployment or manual trigger)
-  deploy-lakekeeper:
-    name: Deploy Lakekeeper
-    runs-on: ubuntu-latest
-    needs: get-infrastructure
-    outputs:
-      lakekeeper_url: ${{ steps.deploy.outputs.fqdn }}
-    steps:
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Check if Lakekeeper exists
-        id: check
+      - name: Deploy Backend
         run: |
-          EXISTS=$(az containerapp show --name investflow-lakekeeper --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query name -o tsv 2>/dev/null || echo "")
-          echo "exists=$EXISTS" >> $GITHUB_OUTPUT
-      
-      - name: Create Lakekeeper Container App
-        id: create
-        if: steps.check.outputs.exists == ''
-        run: |
-          az containerapp create \
-            --name investflow-lakekeeper \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --environment ${{ env.CONTAINER_APP_ENV }} \
-            --image quay.io/lakekeeper/catalog:latest \
-            --target-port 8181 \
-            --ingress external \
-            --min-replicas 1 \
-            --max-replicas 2 \
-            --cpu 0.5 \
-            --memory 1.0Gi \
-            --env-vars \
-              "LAKEKEEPER__PG_DATABASE_URL_READ=${{ secrets.POSTGRES_CONNECTION_STRING }}" \
-              "LAKEKEEPER__PG_DATABASE_URL_WRITE=${{ secrets.POSTGRES_CONNECTION_STRING }}" \
-              "LAKEKEEPER__PG_ENCRYPTION_KEY=${{ secrets.LAKEKEEPER_ENCRYPTION_KEY }}" \
-              "LAKEKEEPER__DEBUG__AUTO_SERVE=true" \
-              "LAKEKEEPER__DEBUG__MIGRATE_BEFORE_SERVE=true"
-      
-      - name: Get Lakekeeper URL
-        id: deploy
-        run: |
-          FQDN=$(az containerapp show --name investflow-lakekeeper --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          echo "fqdn=https://$FQDN" >> $GITHUB_OUTPUT
-
-  # Deploy Backend
-  deploy-backend:
-    name: Deploy Backend
-    runs-on: ubuntu-latest
-    needs: [build-backend, deploy-lakekeeper]
-    outputs:
-      backend_url: ${{ steps.deploy.outputs.fqdn }}
-    steps:
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Check if Backend exists
-        id: check
-        run: |
-          EXISTS=$(az containerapp show --name investflow-backend --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query name -o tsv 2>/dev/null || echo "")
-          echo "exists=$EXISTS" >> $GITHUB_OUTPUT
-      
-      - name: Create Backend Container App
-        if: steps.check.outputs.exists == ''
-        run: |
-          IMAGE_TAG="${{ needs.build-backend.outputs.image_tag }}"
-          if [ -z "$IMAGE_TAG" ]; then
-            IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest"
-          fi
-          az containerapp create \
-            --name investflow-backend \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --environment ${{ env.CONTAINER_APP_ENV }} \
-            --image "$IMAGE_TAG" \
-            --registry-server ${{ env.ACR_LOGIN_SERVER }} \
-            --registry-username ${{ secrets.ACR_USERNAME }} \
-            --registry-password ${{ secrets.ACR_PASSWORD }} \
-            --target-port 8000 \
-            --ingress external \
-            --min-replicas 1 \
-            --max-replicas 3 \
-            --cpu 0.5 \
-            --memory 1.0Gi \
-            --env-vars \
-              "ENVIRONMENT=production" \
-              "SECRET_KEY=${{ secrets.APP_SECRET_KEY }}" \
-              "ALGORITHM=HS256" \
-              "ACCESS_TOKEN_EXPIRE_MINUTES=480" \
-              "CORS_ORIGINS=*" \
-              "LAKEKEEPER__BASE_URI=${{ needs.deploy-lakekeeper.outputs.lakekeeper_url }}" \
-              "LAKEKEEPER__WAREHOUSE_NAME=lakekeeper" \
-              "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
-              "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
-              "AZURE_STORAGE_CONTAINER_NAME=documents" \
-              "POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}" \
-              "POSTGRES_PORT=5432" \
-              "POSTGRES_DB=${{ secrets.POSTGRES_DB }}" \
-              "POSTGRES_USER=${{ secrets.POSTGRES_USER }}" \
-              "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}"
-      
-      - name: Update Backend Container App
-        if: steps.check.outputs.exists != ''
-        run: |
-          IMAGE_TAG="${{ needs.build-backend.outputs.image_tag }}"
-          if [ -z "$IMAGE_TAG" ]; then
-            IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-backend:latest"
-          fi
-          echo "Using image: $IMAGE_TAG"
-          # Force new revision with timestamp to ensure new image is pulled
           az containerapp update \
-            --name investflow-backend \
+            --name ${{ env.BACKEND_APP }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image "$IMAGE_TAG" \
-            --set-env-vars "DEPLOY_TIMESTAMP=$(date +%s)"
-      
-      - name: Get Backend URL
-        id: deploy
-        run: |
-          FQDN=$(az containerapp show --name investflow-backend --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          echo "fqdn=https://$FQDN" >> $GITHUB_OUTPUT
+            --image ${{ env.ACR_SERVER }}/backend:${{ github.sha }}
 
-  # Deploy Frontend
-  deploy-frontend:
-    name: Deploy Frontend
-    runs-on: ubuntu-latest
-    needs: [build-frontend, deploy-backend]
-    steps:
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Check if Frontend exists
-        id: check
+      - name: Deploy Frontend
         run: |
-          EXISTS=$(az containerapp show --name investflow-frontend --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query name -o tsv 2>/dev/null || echo "")
-          echo "exists=$EXISTS" >> $GITHUB_OUTPUT
-      
-      - name: Create Frontend Container App
-        if: steps.check.outputs.exists == ''
-        run: |
-          IMAGE_TAG="${{ needs.build-frontend.outputs.image_tag }}"
-          if [ -z "$IMAGE_TAG" ]; then
-            IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest"
-          fi
-          az containerapp create \
-            --name investflow-frontend \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --environment ${{ env.CONTAINER_APP_ENV }} \
-            --image "$IMAGE_TAG" \
-            --registry-server ${{ env.ACR_LOGIN_SERVER }} \
-            --registry-username ${{ secrets.ACR_USERNAME }} \
-            --registry-password ${{ secrets.ACR_PASSWORD }} \
-            --target-port 3000 \
-            --ingress external \
-            --min-replicas 1 \
-            --max-replicas 3 \
-            --cpu 0.25 \
-            --memory 0.5Gi \
-            --env-vars \
-              "NODE_ENV=production"
-      
-      - name: Update Frontend Container App
-        if: steps.check.outputs.exists != ''
-        run: |
-          IMAGE_TAG="${{ needs.build-frontend.outputs.image_tag }}"
-          if [ -z "$IMAGE_TAG" ]; then
-            IMAGE_TAG="${{ env.ACR_LOGIN_SERVER }}/investflow-frontend:latest"
-          fi
-          echo "Using image: $IMAGE_TAG"
-          # Force new revision to pull new image
           az containerapp update \
-            --name investflow-frontend \
+            --name ${{ env.FRONTEND_APP }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image "$IMAGE_TAG" \
-            --set-env-vars "DEPLOY_TIMESTAMP=$(date +%s)"
+            --image ${{ env.ACR_SERVER }}/frontend:${{ github.sha }}
 
-  # Run CDC cache migration
-  run-migration:
-    name: Run CDC Cache Migration
-    runs-on: ubuntu-latest
-    needs: [deploy-backend]
-    steps:
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Wait for backend to be ready
-        run: sleep 30
-      
-      - name: Run migration via API
+      - name: Deployment Summary
         run: |
-          BACKEND_URL=${{ needs.deploy-backend.outputs.backend_url }}
-          
-          echo "🔄 Syncing CDC cache..."
-          curl -sf -X POST "${BACKEND_URL}/api/v1/health/cache/sync" || echo "Cache sync endpoint not available"
-          
-          echo ""
-          echo "✅ Verifying backend health..."
-          curl -sf "${BACKEND_URL}/api/v1/health" | jq . || echo "Health check completed"
-
-  # Output deployment summary
-  deployment-summary:
-    name: Deployment Summary
-    runs-on: ubuntu-latest
-    needs: [deploy-lakekeeper, deploy-backend, deploy-frontend]
-    if: always()
-    steps:
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Get all URLs and print summary
-        run: |
-          echo "🚀 =========================================="
-          echo "   InvestFlow Deployment Complete!"
-          echo "==========================================="
-          echo ""
-          
-          LAKEKEEPER=$(az containerapp show --name investflow-lakekeeper --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "not deployed")
-          BACKEND=$(az containerapp show --name investflow-backend --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "not deployed")
-          FRONTEND=$(az containerapp show --name investflow-frontend --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "not deployed")
-          
-          echo "📍 Service URLs:"
-          echo "   Frontend:   https://$FRONTEND"
-          echo "   Backend:    https://$BACKEND"
-          echo "   Lakekeeper: https://$LAKEKEEPER"
-          echo ""
-          echo "📚 Useful Links:"
-          echo "   API Docs:   https://$BACKEND/docs"
-          echo "   Health:     https://$BACKEND/api/v1/health"
-          echo ""
-          echo "📦 Commit: ${{ github.sha }}"
-          echo "🔗 Run:    ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "✅ Deployment complete!"
+          echo "Frontend: https://investflow-frontend.yellowsky-ca466dfe.eastus.azurecontainerapps.io"
+          echo "Backend: ${{ env.BACKEND_URL }}"
+          echo "Commit: ${{ github.sha }}"
