@@ -54,7 +54,15 @@ echo "  ✓ Backend image pushed"
 # Build and push Frontend
 echo "  Building frontend..."
 cd ../frontend
-docker build --platform linux/amd64 -t $ACR_SERVER/investflow-frontend:latest .
+
+# Get Backend URL first (may already exist)
+BACKEND_FQDN=$(az containerapp show --name investflow-backend --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv 2>/dev/null || echo "investflow-backend.yellowsky-ca466dfe.eastus.azurecontainerapps.io")
+echo "  Using backend URL: https://$BACKEND_FQDN"
+
+# Pass the production API URL as build arg so Next.js bakes it in
+docker build --platform linux/amd64 \
+  --build-arg NEXT_PUBLIC_API_URL=https://$BACKEND_FQDN \
+  -t $ACR_SERVER/investflow-frontend:latest .
 docker push $ACR_SERVER/investflow-frontend:latest
 echo "  ✓ Frontend image pushed"
 
