@@ -23,6 +23,8 @@ services:
       # Azure Configuration
       # Set to true to use Azure Managed Identity for authentication
       - LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS=${LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS:-false}
+      - AZURE_STORAGE_ACCOUNT_NAME=${AZURE_STORAGE_ACCOUNT_NAME}
+      - AZURE_STORAGE_ACCOUNT_KEY=${AZURE_STORAGE_ACCOUNT_KEY}
       
       # OAuth2/OIDC Configuration (Azure AD)
       # See lakekeeper/OAUTH2_SETUP.md for setup instructions

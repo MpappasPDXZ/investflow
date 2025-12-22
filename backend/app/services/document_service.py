@@ -16,7 +16,7 @@ class DocumentService:
     def __init__(self):
         self.catalog = get_catalog()
         self.namespace = "investflow"
-        self.table_name = "document_metadata"
+        self.table_name = "vault"
         self._table_cache = None
         self._table_cache_time = None
         self._cache_ttl = 60  # Cache table reference for 60 seconds
@@ -135,12 +135,11 @@ class DocumentService:
         try:
             table = self._get_table()
             
-            # Query for the document
+            # Query for the document - vault table uses user_id column
             scan = table.scan(
                 row_filter=And(
                     EqualTo("id", str(document_id)),
-                    EqualTo("user_id", str(user_id)),
-                    EqualTo("is_deleted", False)
+                    EqualTo("user_id", str(user_id))
                 )
             )
             
@@ -206,10 +205,10 @@ class DocumentService:
         try:
             table = self._get_table()
             
-            # Build filter
+            # Build filter - vault table uses user_id and has property_id, unit_id, tenant_id
             filters = [
                 EqualTo("user_id", str(user_id)),
-                EqualTo("is_deleted", False)
+                EqualTo("is_deleted", False)  # Filter out deleted documents
             ]
             
             if property_id:

@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/comparables", tags=["comparables"])
 
 NAMESPACE = ("investflow",)
-TABLE_NAME = "rental_comparables"
+TABLE_NAME = "leases"  # Comparable property data is stored in leases table
 
 
 def get_comparable_schema() -> pa.Schema:
@@ -158,6 +158,12 @@ async def list_comparables(
         
         # Filter by property
         df = df[df['property_id'] == property_id]
+        
+        # Deduplicate: keep only the latest version of each comparable (by id)
+        # Sort by updated_at descending and drop duplicates keeping first (most recent)
+        if len(df) > 0 and 'updated_at' in df.columns:
+            df = df.sort_values('updated_at', ascending=False)
+            df = df.drop_duplicates(subset=['id'], keep='first')
         
         # Filter by unit if specified
         if unit_id:

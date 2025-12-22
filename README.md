@@ -950,3 +950,133 @@ If the Lakekeeper catalog (PostgreSQL) is lost or reset:
 4. **Restore to Current Catalog**: Append recovered data to new Iceberg tables
 
 See `DATA_RECOVERY_SUMMARY.md` for detailed recovery procedure used on 2025-12-07.
+
+## EMERGENCY RECOVERY: If Lakekeeper Catalog Gets Deleted
+
+**⚠️ CRITICAL: DO NOT RUN `reset_lakekeeper.py` **
+
+If the Lakekeeper PostgreSQL metadata gets deleted (tables dropped, wrong encryption key, etc.):
+
+### Your Data is SAFE
+- ✅ All Iceberg data in Azure ADLS is intact (parquet files are immutable)
+- ✅ CDC caches are intact (users, shares, scheduled financials)
+- ✅ Document uploads are intact
+- ❌ Only the catalog metadata (table locations, schemas) is lost
+
+### Quick Recovery Steps
+
+#### Step 1: Create the Warehouse
+
+The warehouse creation requires specific credential format. Here's the EXACT command that works:
+
+```bash
+cd /Users/matt/code/property/backend
+
+# Get OAuth2 token from Azure AD
+TENANT_ID=$(grep LAKEKEEPER__OAUTH2__TENANT_ID .env | cut -d'=' -f2)
+CLIENT_ID=$(grep LAKEKEEPER__OAUTH2__CLIENT_ID .env | cut -d'=' -f2)
+CLIENT_SECRET=$(grep LAKEKEEPER__OAUTH2__CLIENT_SECRET .env | cut -d'=' -f2)
+SCOPE=$(grep LAKEKEEPER__OAUTH2__SCOPE .env | cut -d'=' -f2)
+STORAGE_KEY=$(grep AZURE_STORAGE_ACCOUNT_KEY .env | cut -d'=' -f2)
+
+TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=$CLIENT_ID&scope=$SCOPE&client_secret=$CLIENT_SECRET&grant_type=client_credentials" \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+# Create warehouse with storage credential
+curl -X POST http://localhost:8181/management/v1/warehouse \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{
+    \"warehouse-name\": \"lakekeeper\",
+    \"project-id\": \"00000000-0000-0000-0000-000000000000\",
+    \"storage-profile\": {
+      \"type\": \"azdls\",
+      \"account-name\": \"investflowadls\",
+      \"filesystem\": \"documents\"
+    },
+    \"storage-credential\": {
+      \"type\": \"az\",
+      \"credential-type\": \"shared-access-key\",
+      \"key\": \"$STORAGE_KEY\"
+    }
+  }" | python3 -m json.tool
+```
+
+**Expected Output:**
+```json
+{
+    "warehouse-id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+```
+
+#### Step 2: Restart Backend
+
+```bash
+cd /Users/matt/code/property/backend
+docker compose restart backend
+sleep 10
+```
+
+#### Step 3: Test Properties Endpoint
+
+```bash
+# Login and get token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "matt.pappasemail@gmail.com", "password": "levi0210"}' \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+# Test properties endpoint
+curl -s http://localhost:8000/api/v1/properties \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+**Expected:** Should return your 7 properties (316 S 50th Ave, 1621 Washington, etc.)
+
+### If Properties Don't Appear: Restore from PostgreSQL Backup
+
+If the warehouse creation doesn't automatically discover your tables:
+
+```bash
+# Restore PostgreSQL to before the deletion
+az postgres flexible-server restore \
+  --resource-group investflow-rg \
+  --name if-postgres-restored-$(date +%Y%m%d) \
+  --source-server if-postgres \
+  --restore-time "2025-12-21T22:13:00Z"  # CHANGE THIS TO 1 MINUTE BEFORE DELETION
+
+# Wait 10-15 minutes for restore to complete
+az postgres flexible-server show --resource-group investflow-rg --name if-postgres-restored-$(date +%Y%m%d) --query state
+
+# Once "Ready", run the restore script:
+cd /Users/matt/code/property/backend
+bash restore_catalog.sh  # This script dumps from restored DB and imports to current DB
+
+# Restart containers
+docker compose restart lakekeeper backend
+```
+
+### Prevention Tips
+
+1. **Never run `reset_lakekeeper.py` without PostgreSQL backups ready**
+2. **Backup before any catalog operations:** `uv run backup_iceberg_tables.py`
+3. **Azure PostgreSQL has 7-day automatic backups** - use them!
+4. **Test locally first** - always verify changes work before deploying
+
+### Common Mistakes That Lead Here
+
+❌ Running `reset_lakekeeper.py` due to encryption key mismatch  
+❌ Changing `LAKEKEEPER__PG_ENCRYPTION_KEY` without migrating secrets  
+❌ Dropping PostgreSQL tables manually  
+❌ Deleting the warehouse without backup  
+
+### Key Insight
+
+**Lakekeeper is just a catalog.** It points to data in Azure ADLS but doesn't store the data itself. Losing the catalog is recoverable because:
+1. The Iceberg metadata files exist in Azure ADLS (`documents/` filesystem)
+2. Azure PostgreSQL has 7-day point-in-time restore
+3. Recreating the warehouse can sometimes auto-discover tables
+
+**Last Recovery:** 2025-12-21 (warehouse recreation successful)

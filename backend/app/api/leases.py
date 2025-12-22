@@ -22,8 +22,9 @@ from app.services.lease_generator_service import LeaseGeneratorService
 from app.services.adls_service import adls_service
 
 NAMESPACE = ("investflow",)
-LEASES_TABLE = "leases"
+LEASES_TABLE = "leases_full"
 TENANTS_TABLE = "lease_tenants"
+PROPERTIES_TABLE = "properties"
 
 router = APIRouter(prefix="/leases", tags=["leases"])
 logger = get_logger(__name__)
@@ -163,6 +164,11 @@ def _get_property_summary(property_id: str, unit_id: Optional[str] = None) -> di
         else:
             full_address = f"{base_address}, {city}, {state} {zip_code}".strip()
         
+        # Handle NaN values for Pydantic validation
+        year_built = prop.get("year_built")
+        if pd.isna(year_built):
+            year_built = None
+        
         return {
             "id": prop["id"],
             "display_name": display_name,
@@ -170,7 +176,7 @@ def _get_property_summary(property_id: str, unit_id: Optional[str] = None) -> di
             "city": prop.get("city", ""),
             "state": prop.get("state", ""),
             "zip_code": prop.get("zip_code"),
-            "year_built": prop.get("year_built")
+            "year_built": year_built
         }
     except Exception as e:
         logger.error(f"Error getting property summary for {property_id}: {e}", exc_info=True)
@@ -539,9 +545,16 @@ async def list_leases(
     try:
         user_id = current_user["sub"]
         
-        # Read leases
+        # Get user's properties first (leases are filtered by property ownership)
+        properties_df = read_table(NAMESPACE, PROPERTIES_TABLE)
+        user_property_ids = properties_df[properties_df["user_id"] == user_id]["id"].tolist()
+        
+        if not user_property_ids:
+            return {"leases": [], "total": 0}
+        
+        # Read leases and filter by user's properties
         leases_df = read_table(NAMESPACE, LEASES_TABLE)
-        leases_df = leases_df[leases_df["user_id"] == user_id]
+        leases_df = leases_df[leases_df["property_id"].isin(user_property_ids)]
         
         # For Iceberg append-only pattern: get only the latest version of each lease
         # Sort by updated_at descending and drop duplicates keeping first (most recent)

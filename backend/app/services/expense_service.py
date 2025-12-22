@@ -81,7 +81,6 @@ class ExpenseService:
                 "document_storage_id": str(expense_data.document_storage_id) if expense_data.document_storage_id else None,
                 "is_planned": expense_data.is_planned,
                 "notes": expense_data.notes,
-                "created_by_user_id": str(user_id),
                 "created_at": now,
                 "updated_at": now
             }
@@ -126,7 +125,7 @@ class ExpenseService:
         user_id: uuid.UUID
     ) -> Optional[Dict[str, Any]]:
         """
-        Get an expense by ID (with user access check)
+        Get an expense by ID (with user access check via property ownership)
         
         Args:
             expense_id: Expense ID
@@ -143,12 +142,9 @@ class ExpenseService:
             logger.info(f"[PERF] get_expense: Table loaded in {time.time() - start:.3f}s")
             
             scan_start = time.time()
-            # Query for the expense
+            # Query for the expense by ID only
             scan = table.scan(
-                row_filter=And(
-                    EqualTo("id", str(expense_id)),
-                    EqualTo("created_by_user_id", str(user_id))
-                ),
+                row_filter=EqualTo("id", str(expense_id)),
                 limit=1  # Only need one result
             )
             
@@ -161,6 +157,24 @@ class ExpenseService:
             
             if len(arrow_table) > 0:
                 result = arrow_table.to_pylist()[0]
+                
+                # Verify property ownership
+                properties_table = self.catalog.load_table(f"{self.namespace}.properties")
+                props_scan = properties_table.scan(
+                    row_filter=EqualTo("id", result["property_id"]),
+                    limit=1
+                )
+                props_arrow = props_scan.to_arrow()
+                
+                if len(props_arrow) == 0:
+                    logger.warning(f"Expense {expense_id} references non-existent property {result['property_id']}")
+                    return None
+                
+                property_owner = props_arrow.to_pylist()[0]["user_id"]
+                if property_owner != str(user_id):
+                    logger.warning(f"User {user_id} attempted to access expense {expense_id} owned by {property_owner}")
+                    return None
+                
                 logger.info(f"[PERF] get_expense: Total time {time.time() - start:.3f}s")
                 logger.info(f"[DEBUG] Retrieved expense date: {result.get('date')} (type: {type(result.get('date'))})")
                 return result
@@ -184,7 +198,7 @@ class ExpenseService:
         limit: int = 100
     ) -> tuple[List[Dict[str, Any]], int]:
         """
-        List expenses with optional filters
+        List expenses with optional filters (filtered by property ownership)
         
         Args:
             user_id: User ID
@@ -202,11 +216,33 @@ class ExpenseService:
         try:
             table = self._get_table()
             
-            # Build filter
-            filters = [EqualTo("created_by_user_id", str(user_id))]
+            # Get user's property IDs
+            properties_table = self.catalog.load_table(f"{self.namespace}.properties")
+            props_scan = properties_table.scan(
+                row_filter=EqualTo("user_id", str(user_id))
+            )
+            user_property_ids = [p["id"] for p in props_scan.to_arrow().to_pylist()]
+            
+            if not user_property_ids:
+                # User has no properties, so no expenses
+                return [], 0
+            
+            # Build filter - start with property ownership
+            filters = []
             
             if property_id:
+                # If specific property requested, verify user owns it
+                if str(property_id) not in user_property_ids:
+                    return [], 0
                 filters.append(EqualTo("property_id", str(property_id)))
+            else:
+                # Filter by all user's properties
+                # Use OR conditions for multiple properties
+                if len(user_property_ids) == 1:
+                    filters.append(EqualTo("property_id", user_property_ids[0]))
+                else:
+                    from pyiceberg.expressions import In
+                    filters.append(In("property_id", user_property_ids))
             
             if unit_id:
                 filters.append(EqualTo("unit_id", str(unit_id)))
@@ -221,12 +257,16 @@ class ExpenseService:
                 filters.append(EqualTo("expense_type", expense_type))
             
             # Combine filters
-            row_filter = filters[0]
-            for f in filters[1:]:
-                row_filter = And(row_filter, f)
-            
-            # Query
-            scan = table.scan(row_filter=row_filter)
+            if len(filters) > 0:
+                row_filter = filters[0]
+                for f in filters[1:]:
+                    row_filter = And(row_filter, f)
+                
+                # Query
+                scan = table.scan(row_filter=row_filter)
+            else:
+                # No filters, scan all
+                scan = table.scan()
             
             # Collect all results - scan.to_arrow() returns a Table
             arrow_table = scan.to_arrow()
@@ -251,7 +291,7 @@ class ExpenseService:
         year: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Get expense summary with yearly subtotals
+        Get expense summary with yearly subtotals (filtered by property ownership)
         
         Args:
             user_id: User ID
@@ -264,19 +304,54 @@ class ExpenseService:
         try:
             table = self._get_table()
             
+            # Get user's property IDs
+            properties_table = self.catalog.load_table(f"{self.namespace}.properties")
+            props_scan = properties_table.scan(
+                row_filter=EqualTo("user_id", str(user_id))
+            )
+            user_property_ids = [p["id"] for p in props_scan.to_arrow().to_pylist()]
+            
+            if not user_property_ids:
+                # User has no properties, return empty summary
+                return {
+                    "yearly_totals": [],
+                    "type_totals": {},
+                    "grand_total": 0,
+                    "total_count": 0
+                }
+            
             # Build filter
-            filters = [EqualTo("created_by_user_id", str(user_id))]
+            filters = []
             
             if property_id:
+                # If specific property requested, verify user owns it
+                if str(property_id) not in user_property_ids:
+                    return {
+                        "yearly_totals": [],
+                        "type_totals": {},
+                        "grand_total": 0,
+                        "total_count": 0
+                    }
                 filters.append(EqualTo("property_id", str(property_id)))
+            else:
+                # Filter by all user's properties
+                if len(user_property_ids) == 1:
+                    filters.append(EqualTo("property_id", user_property_ids[0]))
+                else:
+                    from pyiceberg.expressions import In
+                    filters.append(In("property_id", user_property_ids))
             
             # Combine filters
-            row_filter = filters[0]
-            for f in filters[1:]:
-                row_filter = And(row_filter, f)
-            
-            # Query
-            scan = table.scan(row_filter=row_filter)
+            if len(filters) > 0:
+                row_filter = filters[0]
+                for f in filters[1:]:
+                    row_filter = And(row_filter, f)
+                
+                # Query
+                scan = table.scan(row_filter=row_filter)
+            else:
+                # No filters
+                scan = table.scan()
             
             # Collect all results - scan.to_arrow() returns a Table
             arrow_table = scan.to_arrow()
@@ -387,12 +462,7 @@ class ExpenseService:
             # Get fresh table reference for writes to avoid lock issues
             table = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
             
-            table.delete(
-                And(
-                    EqualTo("id", str(expense_id)),
-                    EqualTo("created_by_user_id", str(user_id))
-                )
-            )
+            table.delete(EqualTo("id", str(expense_id)))
             
             import pyarrow as pa
             schema = table.schema().as_arrow()
@@ -452,12 +522,7 @@ class ExpenseService:
             # Get fresh table reference for writes to avoid lock issues
             table = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
             
-            table.delete(
-                And(
-                    EqualTo("id", str(expense_id)),
-                    EqualTo("created_by_user_id", str(user_id))
-                )
-            )
+            table.delete(EqualTo("id", str(expense_id)))
             
             logger.info(f"Deleted expense: {expense_id}")
             
