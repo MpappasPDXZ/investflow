@@ -52,6 +52,50 @@ jobs:
           docker push ${{ env.ACR_SERVER }}/frontend:latest
           docker push ${{ env.ACR_SERVER }}/frontend:${{ github.sha }}
 
+      - name: Get Azure Storage Key
+        id: get-storage-key
+        run: |
+          STORAGE_KEY=$(az storage account keys list \
+            --account-name investflowadls \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "[0].value" -o tsv)
+          echo "key=$STORAGE_KEY" >> $GITHUB_OUTPUT
+
+      - name: Deploy/Update Lakekeeper
+        run: |
+          # Get PostgreSQL connection string
+          POSTGRES_URL="postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@${{ secrets.POSTGRES_HOST }}:5432/${{ secrets.POSTGRES_DB }}?sslmode=require"
+          
+          # Try to create, or update if it exists
+          az containerapp create \
+            --name investflow-lakekeeper \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --environment investflow-env \
+            --image quay.io/lakekeeper/catalog:latest \
+            --target-port 8181 \
+            --ingress external \
+            --min-replicas 1 \
+            --max-replicas 2 \
+            --cpu 0.5 \
+            --memory 1.0Gi \
+            --env-vars \
+              "LAKEKEEPER__PG_DATABASE_URL_READ=$POSTGRES_URL" \
+              "LAKEKEEPER__PG_DATABASE_URL_WRITE=$POSTGRES_URL" \
+              "LAKEKEEPER__PG_ENCRYPTION_KEY=${{ secrets.LAKEKEEPER_ENCRYPTION_KEY }}" \
+              "LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS=false" \
+              "AZURE_STORAGE_ACCOUNT_NAME=investflowadls" \
+              "AZURE_STORAGE_ACCOUNT_KEY=${{ steps.get-storage-key.outputs.key }}" \
+            2>/dev/null || az containerapp update \
+              --name investflow-lakekeeper \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --set-env-vars \
+                "LAKEKEEPER__PG_DATABASE_URL_READ=$POSTGRES_URL" \
+                "LAKEKEEPER__PG_DATABASE_URL_WRITE=$POSTGRES_URL" \
+                "LAKEKEEPER__PG_ENCRYPTION_KEY=${{ secrets.LAKEKEEPER_ENCRYPTION_KEY }}" \
+                "LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS=false" \
+                "AZURE_STORAGE_ACCOUNT_NAME=investflowadls" \
+                "AZURE_STORAGE_ACCOUNT_KEY=${{ steps.get-storage-key.outputs.key }}"
+
       - name: Deploy Backend
         run: |
           az containerapp update \

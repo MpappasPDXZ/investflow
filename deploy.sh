@@ -33,14 +33,22 @@ ACR_PASS=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" 
 # WARNING: Changing LAKEKEEPER_ENCRYPTION_KEY will break existing warehouse credentials
 SECRET_KEY=$(openssl rand -base64 32)
 
-# Try to get existing Lakekeeper encryption key, or generate new one only on first deploy
-EXISTING_LAKEKEEPER_KEY=$(az containerapp show --name investflow-lakekeeper --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].env[?name=='LAKEKEEPER__PG_ENCRYPTION_KEY'].value" -o tsv 2>/dev/null)
-if [ -n "$EXISTING_LAKEKEEPER_KEY" ]; then
-    LAKEKEEPER_ENCRYPTION_KEY="$EXISTING_LAKEKEEPER_KEY"
-    echo "  ✓ Using existing Lakekeeper encryption key"
+# Get Lakekeeper encryption key from local .env file to ensure local and production match
+# This is CRITICAL: both local and production Lakekeeper must use the same key
+# to decrypt warehouse credentials stored in the shared PostgreSQL database
+if [ -f "backend/.env" ]; then
+    LAKEKEEPER_ENCRYPTION_KEY=$(grep "^LAKEKEEPER__PG_ENCRYPTION_KEY=" backend/.env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | xargs)
+    if [ -n "$LAKEKEEPER_ENCRYPTION_KEY" ]; then
+        echo "  ✓ Using Lakekeeper encryption key from backend/.env (ensures local/production match)"
+    else
+        echo "  ❌ ERROR: LAKEKEEPER__PG_ENCRYPTION_KEY not found in backend/.env"
+        echo "  Please set it in backend/.env and try again"
+        exit 1
+    fi
 else
-    LAKEKEEPER_ENCRYPTION_KEY=$(openssl rand -base64 32)
-    echo "  ⚠ Generated NEW Lakekeeper encryption key (first deploy)"
+    echo "  ❌ ERROR: backend/.env file not found"
+    echo "  Please create backend/.env with LAKEKEEPER__PG_ENCRYPTION_KEY set"
+    exit 1
 fi
 
 echo "  ✓ Storage Key retrieved"
@@ -99,12 +107,22 @@ az containerapp create \
     "LAKEKEEPER__PG_DATABASE_URL_READ=$LAKEKEEPER_POSTGRES_URL" \
     "LAKEKEEPER__PG_DATABASE_URL_WRITE=$LAKEKEEPER_POSTGRES_URL" \
     "LAKEKEEPER__PG_ENCRYPTION_KEY=$LAKEKEEPER_ENCRYPTION_KEY" \
+    "LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS=false" \
+    "AZURE_STORAGE_ACCOUNT_NAME=investflowadls" \
+    "AZURE_STORAGE_ACCOUNT_KEY=$STORAGE_KEY" \
     "LAKEKEEPER__DEBUG__AUTO_SERVE=true" \
     "LAKEKEEPER__DEBUG__MIGRATE_BEFORE_SERVE=true" \
   2>/dev/null || az containerapp update \
     --name investflow-lakekeeper \
     --resource-group $RESOURCE_GROUP \
-    --image quay.io/lakekeeper/catalog:latest
+    --image quay.io/lakekeeper/catalog:latest \
+    --set-env-vars \
+      "LAKEKEEPER__PG_DATABASE_URL_READ=$LAKEKEEPER_POSTGRES_URL" \
+      "LAKEKEEPER__PG_DATABASE_URL_WRITE=$LAKEKEEPER_POSTGRES_URL" \
+      "LAKEKEEPER__PG_ENCRYPTION_KEY=$LAKEKEEPER_ENCRYPTION_KEY" \
+      "LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS=false" \
+      "AZURE_STORAGE_ACCOUNT_NAME=investflowadls" \
+      "AZURE_STORAGE_ACCOUNT_KEY=$STORAGE_KEY"
 
 echo "  ✓ Lakekeeper deployed"
 

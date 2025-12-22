@@ -55,6 +55,95 @@ InvestFlow is a comprehensive application for managing rental properties, tracki
    - Both local AND Azure share same PostgreSQL database (for Lakekeeper metadata)
    - **Important**: Changes made locally appear in Azure and vice versa
 
+## Lakekeeper & PostgreSQL Authentication
+
+### ⚠️ CRITICAL: Encryption Key Must Match
+
+**If production breaks after `git push` but local works, check the encryption key first.**
+
+**The Problem:**
+- Local and production Lakekeeper share the same PostgreSQL database
+- Warehouse storage credentials are encrypted with `LAKEKEEPER__PG_ENCRYPTION_KEY`
+- If keys don't match → production can't decrypt → "SecretFetchError: Wrong key or corrupt data"
+- **Result**: Production returns no data, even though data exists in ADLS
+
+**Quick Fix:**
+```bash
+# 1. Check if keys match
+LOCAL_KEY=$(grep "^LAKEKEEPER__PG_ENCRYPTION_KEY=" backend/.env | cut -d'=' -f2- | xargs)
+PROD_KEY=$(az containerapp show --name investflow-lakekeeper --resource-group investflow-rg \
+  --query "properties.template.containers[0].env[?name=='LAKEKEEPER__PG_ENCRYPTION_KEY'].value" -o tsv)
+
+# 2. If they don't match, fix it
+if [ "$LOCAL_KEY" != "$PROD_KEY" ]; then
+  ./fix_production_encryption_key.sh
+fi
+```
+
+**Prevention (Automatic via Git):**
+
+- **`deploy.sh`**: Automatically reads from `backend/.env` and sets production to match
+- **GitHub Actions**: Uses `LAKEKEEPER_ENCRYPTION_KEY` secret (must match `backend/.env`)
+
+**Set GitHub Secret (one-time):**
+```bash
+# Get your local key
+grep LAKEKEEPER__PG_ENCRYPTION_KEY backend/.env
+
+# Add to GitHub: Settings → Secrets → Actions → New secret
+# Name: LAKEKEEPER_ENCRYPTION_KEY
+# Value: <paste from backend/.env>
+```
+
+### Lakekeeper Configuration
+
+**Required Environment Variables:**
+
+**Lakekeeper Container App:**
+```bash
+# PostgreSQL connection (shared with local)
+LAKEKEEPER__PG_DATABASE_URL_READ=postgresql://pgadmin:pass1234!@if-postgres.postgres.database.azure.com:5432/if-postgres?sslmode=require
+LAKEKEEPER__PG_DATABASE_URL_WRITE=postgresql://pgadmin:pass1234!@if-postgres.postgres.database.azure.com:5432/if-postgres?sslmode=require
+
+# Encryption key (MUST match local backend/.env)
+LAKEKEEPER__PG_ENCRYPTION_KEY=<same-as-local>
+
+# Azure storage access
+LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS=false
+AZURE_STORAGE_ACCOUNT_NAME=investflowadls
+AZURE_STORAGE_ACCOUNT_KEY=<storage-key>
+```
+
+**Backend Container App:**
+```bash
+# Lakekeeper connection
+LAKEKEEPER__BASE_URI=https://investflow-lakekeeper.yellowsky-ca466dfe.eastus.azurecontainerapps.io
+LAKEKEEPER__WAREHOUSE_NAME=lakekeeper
+
+# OAuth2 for backend → Lakekeeper (works automatically, no issues to date)
+LAKEKEEPER__OAUTH2__CLIENT_ID=2f43977e-7c3d-478f-86b0-f72b82e869dd
+LAKEKEEPER__OAUTH2__CLIENT_SECRET=<secret>
+LAKEKEEPER__OAUTH2__TENANT_ID=479bc30b-030f-4a2e-8ea2-67f549b32f5e
+LAKEKEEPER__OAUTH2__SCOPE=api://9c72d190-0a2f-4b94-9cb5-99349363f4f7/.default
+```
+
+**All of these are set automatically by:**
+- `deploy.sh` (reads from `backend/.env`)
+- GitHub Actions workflow (uses GitHub Secrets)
+
+### Troubleshooting
+
+**Production broken after git push, but local works?**
+1. Check encryption key: `./fix_production_encryption_key.sh`
+2. Check Lakekeeper health: `curl https://investflow-lakekeeper.yellowsky-ca466dfe.eastus.azurecontainerapps.io/health`
+3. Check backend logs: `az containerapp logs show --name investflow-backend --resource-group investflow-rg --tail 50`
+
+**"SecretFetchError: Wrong key or corrupt data"**
+→ Encryption key mismatch. Run `./fix_production_encryption_key.sh`
+
+**"No data returned" but data exists in ADLS**
+→ Lakekeeper can't access ADLS. Check `AZURE_STORAGE_ACCOUNT_KEY` is set in Lakekeeper container app.
+
 ## Project Structure
 
 ```
@@ -505,6 +594,12 @@ For normal code deployments, use the standard process above (build/push manually
 - Full stack redeployment scenarios
 
 **Not recommended for regular code deployments** - always test locally with `docker-compose` first, then use the manual build/push process.
+
+**Automatic Encryption Key Sync:**
+- `deploy.sh` automatically reads `LAKEKEEPER__PG_ENCRYPTION_KEY` from `backend/.env`
+- Ensures production uses the same encryption key as local
+- Prevents "SecretFetchError: Wrong key or corrupt data" issues
+- **No manual intervention needed** - just ensure your local `.env` has the correct key
 
 ### POSTGRES SETUP
 POSTGRES_HOST=if-postgres.postgres.database.azure.com
