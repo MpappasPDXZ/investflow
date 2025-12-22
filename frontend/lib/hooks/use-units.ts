@@ -23,14 +23,14 @@ export interface UnitListResponse {
   total: number;
 }
 
-export function useUnits(propertyId: string) {
+export function useUnits(propertyId?: string) {
   return useQuery<UnitListResponse>({
-    queryKey: ['units', propertyId],
+    queryKey: propertyId ? ['units', propertyId] : ['units'],
     queryFn: () => {
-      console.log(`📤 [UNITS] GET /api/v1/units?property_id=${propertyId} - Request`);
-      return apiClient.get<UnitListResponse>(`/units?property_id=${propertyId}`);
+      const url = propertyId ? `/units?property_id=${propertyId}` : '/units';
+      console.log(`📤 [UNITS] GET /api/v1${url} - Request`);
+      return apiClient.get<UnitListResponse>(url);
     },
-    enabled: !!propertyId,
   });
 }
 
