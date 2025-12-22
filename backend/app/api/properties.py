@@ -177,7 +177,7 @@ async def list_properties_endpoint(
                 "user_id": UUID(str(row["user_id"])),
                 "display_name": row.get("display_name"),
                 "purchase_price": Decimal(str(row["purchase_price"])),
-                "purchase_date": row.get("purchase_date").to_pydatetime() if pd.notna(row.get("purchase_date")) else None,
+                "purchase_date": row.get("purchase_date") if pd.notna(row.get("purchase_date")) else None,
                 "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
                 "cash_invested": Decimal(str(row["cash_invested"])) if pd.notna(row.get("cash_invested")) else None,
                 "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
@@ -249,7 +249,7 @@ async def get_property_endpoint(
             "user_id": UUID(str(row["user_id"])),
             "display_name": row.get("display_name"),
             "purchase_price": Decimal(str(row["purchase_price"])),
-            "purchase_date": row.get("purchase_date").to_pydatetime() if pd.notna(row.get("purchase_date")) else None,
+            "purchase_date": row.get("purchase_date") if pd.notna(row.get("purchase_date")) else None,
             "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
             "cash_invested": Decimal(str(row["cash_invested"])) if pd.notna(row.get("cash_invested")) else None,
             "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
@@ -309,6 +309,20 @@ async def update_property_endpoint(
         if not user_has_property_access(property_user_id, user_id, user_email):
             raise HTTPException(status_code=404, detail="Property not found")
         
+        # Ensure all expected columns exist in DataFrame (for schema evolution)
+        # Get the table schema to check for missing columns
+        table = load_table(NAMESPACE, TABLE_NAME)
+        schema_fields = {field.name for field in table.schema().fields}
+        # Only add columns that exist in the schema (don't add new columns that aren't in schema yet)
+        for col in schema_fields:
+            if col not in df.columns:
+                df[col] = None
+        # Remove any columns from DataFrame that don't exist in schema
+        columns_to_remove = [col for col in df.columns if col not in schema_fields]
+        if columns_to_remove:
+            logger.warning(f"Removing columns from DataFrame that don't exist in table schema: {columns_to_remove}")
+            df = df.drop(columns=columns_to_remove)
+        
         # Update the property
         mask = df["id"] == property_id
         
@@ -341,6 +355,18 @@ async def update_property_endpoint(
         
         # Extract only the updated row
         updated_row_df = df[mask].copy().reset_index(drop=True)
+        
+        # CRITICAL: Ensure the updated row has ALL schema columns
+        # This prevents schema mismatch errors during upsert
+        table = load_table(NAMESPACE, TABLE_NAME)
+        schema_fields = {field.name for field in table.schema().fields}
+        for col in schema_fields:
+            if col not in updated_row_df.columns:
+                updated_row_df[col] = None
+        
+        # Reorder columns to match schema order
+        schema_column_order = [field.name for field in table.schema().fields]
+        updated_row_df = updated_row_df[[col for col in schema_column_order if col in updated_row_df.columns]]
         
         # Check if vacancy rate or square feet changed - update vacancy expenses
         if "vacancy_rate" in update_dict or "square_feet" in update_dict:
@@ -388,7 +414,7 @@ async def update_property_endpoint(
             "display_name": updated_row.get("display_name"),
             "purchase_price": Decimal(str(updated_row["purchase_price"])),
             "down_payment": Decimal(str(updated_row["down_payment"])) if pd.notna(updated_row.get("down_payment")) else None,
-            "cash_invested": Decimal(str(updated_row["cash_invested"])) if pd.notna(updated_row.get("cash_invested")) else None,
+            "cash_invested": Decimal(str(updated_row["cash_invested"])) if "cash_invested" in updated_row and pd.notna(updated_row.get("cash_invested")) else None,
             "current_market_value": Decimal(str(updated_row["current_market_value"])) if pd.notna(updated_row.get("current_market_value")) else None,
             "property_status": updated_row.get("property_status", "evaluating"),
             "vacancy_rate": Decimal(str(updated_row["vacancy_rate"])) if pd.notna(updated_row.get("vacancy_rate")) else Decimal("0.07"),

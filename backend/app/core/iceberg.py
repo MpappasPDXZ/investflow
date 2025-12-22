@@ -144,7 +144,29 @@ def append_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame)
             if df[col].dtype == 'datetime64[ns]':
                 df[col] = df[col].astype('datetime64[us]')
         
-        # Convert numeric columns to Decimal if the schema expects it
+        # Convert date columns to date32 if schema expects it
+        from pyiceberg.types import DateType
+        for field in current_schema.fields:
+            if field.name in df.columns and isinstance(field.field_type, DateType):
+                # Convert date/datetime to date (date32)
+                if pd.api.types.is_datetime64_any_dtype(df[field.name]):
+                    df[field.name] = pd.to_datetime(df[field.name]).dt.date
+                elif df[field.name].dtype == 'object':
+                    # Try to parse as date
+                    df[field.name] = pd.to_datetime(df[field.name], errors='coerce').dt.date
+        
+        # Convert date columns to date32 if schema expects it
+        from pyiceberg.types import DateType
+        for field in current_schema.fields:
+            if field.name in df.columns and isinstance(field.field_type, DateType):
+                # Convert date/datetime to date (date32)
+                if pd.api.types.is_datetime64_any_dtype(df[field.name]):
+                    df[field.name] = pd.to_datetime(df[field.name]).dt.date
+                elif df[field.name].dtype == 'object':
+                    # Try to parse as date
+                    df[field.name] = pd.to_datetime(df[field.name], errors='coerce').dt.date
+        
+                # Convert numeric columns to Decimal if the schema expects it
         from decimal import Decimal as PythonDecimal
         from pyiceberg.types import DecimalType
         
@@ -242,44 +264,105 @@ def upsert_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame,
             if df[col].dtype == 'datetime64[ns]':
                 df[col] = df[col].astype('datetime64[us]')
         
-        # Convert numeric columns to Decimal if the schema expects it
+        # Convert date columns to date32 if schema expects it
+        from pyiceberg.types import DateType
+        for field in current_schema.fields:
+            if field.name in df.columns and isinstance(field.field_type, DateType):
+                # Convert date/datetime to date (date32)
+                if pd.api.types.is_datetime64_any_dtype(df[field.name]):
+                    df[field.name] = pd.to_datetime(df[field.name]).dt.date
+                elif df[field.name].dtype == 'object':
+                    # Try to parse as date
+                    df[field.name] = pd.to_datetime(df[field.name], errors='coerce').dt.date
+        
+        # Convert numeric columns to proper types based on schema
         from decimal import Decimal as PythonDecimal
-        from pyiceberg.types import DecimalType
+        from pyiceberg.types import DecimalType, IntegerType, LongType
         
         for field in current_schema.fields:
-            if field.name in df.columns and isinstance(field.field_type, DecimalType):
+            if field.name not in df.columns:
+                continue
+                
+            # Handle Decimal types
+            if isinstance(field.field_type, DecimalType):
                 scale = field.field_type.scale
                 
-                def to_decimal(x):
+                def to_decimal(x, s=scale):
                     if pd.isna(x) or x is None:
                         return None
                     try:
-                        if isinstance(x, PythonDecimal):
-                            return PythonDecimal(str(round(float(x), scale)))
-                        else:
-                            return PythonDecimal(str(round(float(x), scale)))
+                        return PythonDecimal(str(round(float(x), s)))
                     except (ValueError, TypeError):
                         return None
                 
                 df[field.name] = df[field.name].apply(to_decimal)
+            
+            # Handle Integer types - convert floats/doubles to ints
+            elif isinstance(field.field_type, (IntegerType, LongType)):
+                def to_int(x):
+                    if pd.isna(x) or x is None:
+                        return None
+                    try:
+                        return int(x)
+                    except (ValueError, TypeError):
+                        return None
+                
+                df[field.name] = df[field.name].apply(to_int)
         
-        # Reorder DataFrame columns to match table schema and fill missing columns
-        schema_column_order = [field.name for field in current_schema.fields]
+        # CRITICAL: PyIceberg's upsert compares DataFrame schema with existing parquet file schemas
+        # If schema evolution added new columns, existing parquet files won't have them
+        # We need to determine which columns exist in the actual data files
         
-        # Add missing columns with None values
-        for col in schema_column_order:
-            if col not in df.columns:
-                df[col] = None
+        # Read existing row to get actual parquet file schema
+        join_col = join_cols[0] if join_cols else "id"
+        join_value = df[join_col].iloc[0] if len(df) > 0 else None
         
-        # Reorder to match schema
-        df = df[schema_column_order]
+        existing_columns = set()
+        if join_value is not None:
+            try:
+                existing_data = table.scan(
+                    row_filter=f"{join_col} == '{join_value}'"
+                ).to_pandas()
+                if not existing_data.empty:
+                    existing_columns = set(existing_data.columns)
+                    logger.info(f"Existing row has columns: {existing_columns}")
+            except Exception as e:
+                logger.warning(f"Could not read existing row: {e}")
         
-        # Convert to PyArrow table
+        # If we found existing data, use its column set; otherwise use table schema
+        if existing_columns:
+            # Only use columns that exist in BOTH the DataFrame AND the existing data
+            columns_to_use = [col for col in df.columns if col in existing_columns]
+            
+            # Ensure join columns are included
+            for col in join_cols:
+                if col not in columns_to_use:
+                    columns_to_use.insert(0, col)
+            
+            logger.info(f"Using columns for upsert: {columns_to_use}")
+            df = df[columns_to_use]
+        else:
+            # No existing row - use table schema (new insert via upsert)
+            schema_column_order = [field.name for field in current_schema.fields]
+            schema_field_names = set(schema_column_order)
+            columns_to_remove = [col for col in df.columns if col not in schema_field_names]
+            if columns_to_remove:
+                df = df.drop(columns=columns_to_remove)
+            for col in schema_column_order:
+                if col not in df.columns:
+                    df[col] = None
+            df = df[schema_column_order]
+        
+        # Convert to PyArrow table and cast to table schema
         arrow_table = pa.Table.from_pandas(df, preserve_index=False)
         
-        # Cast to the table's schema
+        # Cast to table schema to ensure exact type match
         table_schema = table.schema().as_arrow()
-        arrow_table = arrow_table.cast(table_schema)
+        try:
+            arrow_table = arrow_table.cast(table_schema)
+        except Exception as cast_error:
+            logger.warning(f"Could not cast to table schema: {cast_error}")
+            # Continue with inferred schema
         
         # Perform upsert
         table.upsert(arrow_table, join_cols=join_cols)

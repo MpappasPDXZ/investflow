@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 import pandas as pd
 from datetime import datetime
 
-from app.core.iceberg import read_table, append_data, upsert_data
+from app.core.iceberg import read_table, append_data, upsert_data, table_exists
 from app.core.logging import get_logger
 from app.core.dependencies import get_current_user
 from app.schemas.landlord_reference import (
@@ -29,12 +29,30 @@ async def create_landlord_reference(
 ):
     """Create a new landlord reference check"""
     try:
+        # Check if table exists, if not provide helpful error
+        if not table_exists(NAMESPACE, TABLE_NAME):
+            logger.error(f"Table {'.'.join((*NAMESPACE, TABLE_NAME))} does not exist. Please run migration script.")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Table tenant_landlord_references does not exist. Please run: docker-compose exec backend uv run app/scripts/migrate_add_fields.py"
+            )
+        
         user_id = current_user["sub"]
         reference_id = str(uuid4())
         now = pd.Timestamp.now()
         
         # Convert Pydantic model to dict
         reference_dict = reference_data.model_dump()
+        
+        # Convert contact_date to pandas date if it's a date object
+        if "contact_date" in reference_dict and reference_dict["contact_date"]:
+            if isinstance(reference_dict["contact_date"], str):
+                # Parse string date to date object
+                from datetime import datetime
+                reference_dict["contact_date"] = datetime.strptime(reference_dict["contact_date"], "%Y-%m-%d").date()
+            # Convert date to pandas Timestamp then to date
+            reference_dict["contact_date"] = pd.Timestamp(reference_dict["contact_date"]).date()
+        
         reference_dict.update({
             "id": reference_id,
             "user_id": user_id,
