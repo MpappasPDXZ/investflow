@@ -146,7 +146,7 @@ class LeaseGeneratorService:
 % Header/Footer
 \pagestyle{fancy}
 \fancyhf{}
-\lhead{\includegraphics[height=0.4in]{sm_logo.png}}
+\lhead{\includegraphics[height=0.4in]{n_logo.jpeg}}
 \rhead{Lease Agreement: ''' + property_address + r'''}
 \cfoot{Page \thepage\ of \pageref{LastPage}}
 
@@ -534,9 +534,9 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
             pdf_file = tmpdir_path / "lease.pdf"
             
             # Copy logo to temp directory for LaTeX to find
-            logo_src = Path(__file__).parent.parent / "assets" / "sm_logo.png"
+            logo_src = Path(__file__).parent.parent / "assets" / "n_logo.jpeg"
             if logo_src.exists():
-                shutil.copy(logo_src, tmpdir_path / "sm_logo.png")
+                shutil.copy(logo_src, tmpdir_path / "n_logo.jpeg")
             
             # Write LaTeX to file
             tex_file.write_text(latex_content, encoding="utf-8")
@@ -864,7 +864,7 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
 
 \pagestyle{fancy}
 \fancyhf{}
-\lhead{\includegraphics[height=0.4in]{sm_logo.png}}
+\lhead{\includegraphics[height=0.4in]{n_logo.jpeg}}
 \rhead{Holding Fee Agreement: ''' + self._escape_latex(full_address) + r'''}
 \cfoot{Page \thepage\ of \pageref{LastPage}}
 

@@ -105,7 +105,7 @@ export default function InspectionsPage() {
   const { data: tenantsData } = useTenants()
   
   const properties = propertiesData?.items || []
-  const units = unitsData?.units || []
+  const units = unitsData?.items || []
   const tenantProfiles = tenantsData?.tenants || []
   
   // View state - like leases page
