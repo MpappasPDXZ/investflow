@@ -125,3 +125,4 @@ site/
 # Monorepo specific
 .turbo/
 
+backend/.env.backup
