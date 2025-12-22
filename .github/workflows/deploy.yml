@@ -12,6 +12,7 @@ env:
   BACKEND_APP: investflow-backend
   FRONTEND_APP: investflow-frontend
   BACKEND_URL: https://investflow-backend.yellowsky-ca466dfe.eastus.azurecontainerapps.io
+  LAKEKEEPER_URL: https://investflow-lakekeeper.yellowsky-ca466dfe.eastus.azurecontainerapps.io
 
 jobs:
   build-and-deploy:
@@ -55,7 +56,10 @@ jobs:
           az containerapp update \
             --name ${{ env.BACKEND_APP }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ env.ACR_SERVER }}/backend:${{ github.sha }}
+            --image ${{ env.ACR_SERVER }}/backend:${{ github.sha }} \
+            --set-env-vars \
+              LAKEKEEPER__BASE_URI=${{ env.LAKEKEEPER_URL }} \
+              LAKEKEEPER__WAREHOUSE_NAME=lakekeeper
 
       - name: Deploy Frontend
         run: |
