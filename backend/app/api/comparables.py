@@ -86,9 +86,10 @@ def calculate_computed_fields(row: dict) -> dict:
     """Calculate computed fields for a comparable"""
     today = date.today()
     
-    # Days on Zillow - use date_rented if available, otherwise date_listed
+    # Days on Zillow - use date_rented only if property is actually rented, otherwise use today
     date_rented = row.get('date_rented')
     date_listed = row.get('date_listed')
+    is_rented = row.get('is_rented')
     
     # DOZ = (date_rented - date_listed) if rented, otherwise (today - date_listed)
     if date_listed:
@@ -100,7 +101,8 @@ def calculate_computed_fields(row: dict) -> dict:
         else:
             date_listed_date = date_listed
         
-        if date_rented:
+        # Only use date_rented if property is actually rented
+        if is_rented is True and date_rented:
             # Property was rented - use date_rented as end date
             if isinstance(date_rented, str):
                 date_rented_date = datetime.fromisoformat(date_rented).date()
