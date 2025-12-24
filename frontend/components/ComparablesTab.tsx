@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { LayoutGrid, Plus, Pencil, Trash2, Check, X, ChevronRight, ChevronDown, Printer } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { Property } from '@/lib/types';
 
 interface Comparable {
   id: string;
@@ -31,6 +32,7 @@ interface Comparable {
   has_washer_dryer?: boolean;
   garage_spaces?: number;
   date_listed: string;
+  date_rented?: string;
   contacts?: number;
   is_rented?: boolean;
   last_rented_price?: number;
@@ -71,6 +73,11 @@ const emptyForm = {
   has_washer_dryer: false,
   garage_spaces: 0,
   date_listed: new Date().toISOString().split('T')[0],
+  date_rented: (() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 30);
+    return date.toISOString().split('T')[0];
+  })(),
   contacts: 0,
   is_rented: false,
   last_rented_price: '',
@@ -88,6 +95,32 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
   const [showFormAmenities, setShowFormAmenities] = useState(false);
   const [showTableAmenities, setShowTableAmenities] = useState(true);
   const [viewMode, setViewMode] = useState<'normal' | 'print'>('normal');
+  const [property, setProperty] = useState<Property | null>(null);
+
+  // Fetch property data to get default city/state/zip
+  useEffect(() => {
+    const fetchProperty = async () => {
+      try {
+        const response = await apiClient.get<Property>(`/properties/${propertyId}`);
+        setProperty(response);
+      } catch (err) {
+        console.error('Error fetching property:', err);
+      }
+    };
+    fetchProperty();
+  }, [propertyId]);
+
+  // Update form defaults when showing add form
+  useEffect(() => {
+    if (showAddForm && property && !editingId) {
+      setForm(prev => ({
+        ...prev,
+        city: property.city || prev.city || '',
+        state: property.state || prev.state || 'NE',
+        zip_code: property.zip_code || prev.zip_code || '',
+      }));
+    }
+  }, [showAddForm, property, editingId]);
 
   useEffect(() => {
     fetchComparables();
@@ -131,7 +164,8 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
         has_washer_dryer: form.has_washer_dryer || undefined,
         garage_spaces: form.garage_spaces || undefined,
         date_listed: form.date_listed,
-        contacts: form.contacts || undefined,
+        date_rented: form.date_rented || undefined,
+        contacts: form.is_rented ? undefined : (form.contacts || undefined),  // Contacts null if rented (not listed)
         is_rented: form.is_rented || undefined,
         last_rented_price: form.last_rented_price ? parseFloat(form.last_rented_price) : undefined,
         last_rented_year: form.last_rented_year ? parseInt(form.last_rented_year) : undefined,
@@ -168,7 +202,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
         has_washer_dryer: form.has_washer_dryer,
         garage_spaces: form.garage_spaces,
         date_listed: form.date_listed,
-        contacts: form.contacts,
+        contacts: form.is_rented ? undefined : form.contacts,  // Contacts null if rented (not listed)
         is_rented: form.is_rented,
         last_rented_price: form.last_rented_price ? parseFloat(form.last_rented_price) : undefined,
         last_rented_year: form.last_rented_year ? parseInt(form.last_rented_year) : undefined,
@@ -216,6 +250,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
       has_washer_dryer: comp.has_washer_dryer || false,
       garage_spaces: comp.garage_spaces || 0,
       date_listed: comp.date_listed.split('T')[0],
+      date_rented: comp.date_rented ? comp.date_rented.split('T')[0] : undefined,
       contacts: comp.contacts || 0,
       is_rented: comp.is_rented || false,
       last_rented_price: comp.last_rented_price?.toString() || '',
@@ -227,7 +262,13 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
   };
 
   const resetForm = () => {
-    setForm(emptyForm);
+    // Reset form with property defaults for city/state/zip
+    setForm({
+      ...emptyForm,
+      city: property?.city || '',
+      state: property?.state || 'NE',
+      zip_code: property?.zip_code || '',
+    });
     setEditingId(null);
     setShowAddForm(false);
   };
@@ -374,7 +415,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                     {comp.actual_price_per_sf ? comp.actual_price_per_sf.toFixed(2) : '-'}
                   </td>
                   <td className="border border-gray-800 p-1 text-right">
-                    {comp.contact_rate ? comp.contact_rate.toFixed(2) : '-'}
+                    {comp.is_rented || !comp.contact_rate ? '-' : comp.contact_rate.toFixed(2)}
                   </td>
                   <td className="border border-gray-800 p-1 text-center">
                     {comp.is_rented === true ? '✓' : comp.is_rented === false ? '✗' : '-'}
@@ -419,7 +460,16 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => { setShowAddForm(!showAddForm); setEditingId(null); setForm(emptyForm); }}
+              onClick={() => { 
+                setShowAddForm(!showAddForm); 
+                setEditingId(null); 
+                setForm({
+                  ...emptyForm,
+                  city: property?.city || '',
+                  state: property?.state || 'NE',
+                  zip_code: property?.zip_code || '',
+                });
+              }}
               className="h-7 text-xs"
             >
               <Plus className="h-3 w-3 mr-1" />
@@ -524,8 +574,28 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                 <Input
                   type="date"
                   value={form.date_listed}
-                  onChange={(e) => setForm({ ...form, date_listed: e.target.value })}
+                  onChange={(e) => {
+                    const newDateListed = e.target.value;
+                    // Auto-update date_rented to be 30 days after date_listed if not manually set
+                    if (newDateListed && !form.date_rented) {
+                      const date = new Date(newDateListed);
+                      date.setDate(date.getDate() + 30);
+                      setForm({ ...form, date_listed: newDateListed, date_rented: date.toISOString().split('T')[0] });
+                    } else {
+                      setForm({ ...form, date_listed: newDateListed });
+                    }
+                  }}
                   className="h-7 text-xs w-full"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Date Rented</Label>
+                <Input
+                  type="date"
+                  value={form.date_rented || ''}
+                  onChange={(e) => setForm({ ...form, date_rented: e.target.value })}
+                  className="h-7 text-xs w-full"
+                  title="Date the property was rented (used for accurate DOZ calculation)"
                 />
               </div>
               <div>
@@ -535,6 +605,9 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                   value={form.contacts}
                   onChange={(e) => setForm({ ...form, contacts: parseInt(e.target.value) || 0 })}
                   className="h-7 text-xs"
+                  disabled={form.is_rented}
+                  placeholder={form.is_rented ? "N/A (not listed)" : ""}
+                  title={form.is_rented ? "Inquiries not visible for rented properties (no longer listed)" : ""}
                 />
               </div>
             </div>
@@ -564,7 +637,14 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                 <label className="flex items-center gap-1 text-xs h-7">
                   <Checkbox
                     checked={form.is_rented}
-                    onCheckedChange={(checked) => setForm({ ...form, is_rented: !!checked })}
+                    onCheckedChange={(checked) => {
+                      const isRented = !!checked;
+                      setForm({ 
+                        ...form, 
+                        is_rented: isRented,
+                        contacts: isRented ? undefined : form.contacts  // Clear contacts if rented (not listed)
+                      });
+                    }}
                   />
                   Rented
                 </label>
@@ -754,11 +834,11 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
-                    <td className={`text-center p-1.5 ${getCRStyle(comp.contact_rate)}`}>
-                      {comp.contact_rate ? (
-                        <span className="font-medium">{comp.contact_rate.toFixed(2)}</span>
-                      ) : (
+                    <td className={`text-center p-1.5 ${getCRStyle(comp.is_rented ? undefined : comp.contact_rate)}`}>
+                      {comp.is_rented || !comp.contact_rate ? (
                         <span className="text-gray-400">-</span>
+                      ) : (
+                        <span className="font-medium">{comp.contact_rate.toFixed(2)}</span>
                       )}
                     </td>
                     <td className="text-center p-1.5">
