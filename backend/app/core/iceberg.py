@@ -192,10 +192,42 @@ def append_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame)
                 
                 df[field.name] = df[field.name].apply(to_decimal)
         
-        # Reorder DataFrame columns to match table schema
+        # Convert integer columns to proper types
+        from pyiceberg.types import IntegerType, LongType
+        
+        for field in current_schema.fields:
+            if field.name not in df.columns:
+                continue
+            
+            # Handle Integer types - convert floats/doubles to ints
+            if isinstance(field.field_type, (IntegerType, LongType)):
+                def to_int(x):
+                    if pd.isna(x) or x is None:
+                        return None
+                    try:
+                        return int(x)
+                    except (ValueError, TypeError):
+                        return None
+                
+                df[field.name] = df[field.name].apply(to_int)
+        
+        # Reorder DataFrame columns to match table schema and add missing columns
         schema_column_order = [field.name for field in current_schema.fields]
-        # Only include columns that exist in both the DataFrame and schema
-        df = df[[col for col in schema_column_order if col in df.columns]]
+        schema_field_names = set(schema_column_order)
+        
+        # Add missing columns with None values
+        for col in schema_column_order:
+            if col not in df.columns:
+                df[col] = None
+        
+        # Only include columns that exist in the schema (remove any extra columns)
+        columns_to_remove = [col for col in df.columns if col not in schema_field_names]
+        if columns_to_remove:
+            logger.warning(f"Removing columns from DataFrame that don't exist in table schema: {columns_to_remove}")
+            df = df.drop(columns=columns_to_remove)
+        
+        # Reorder to match schema order
+        df = df[schema_column_order]
         
         # Convert pandas DataFrame to PyArrow table without schema first
         arrow_table = pa.Table.from_pandas(df)

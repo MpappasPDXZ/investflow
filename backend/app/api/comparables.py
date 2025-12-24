@@ -10,7 +10,7 @@ import pandas as pd
 import pyarrow as pa
 
 from app.core.dependencies import get_current_user
-from app.core.iceberg import get_catalog, read_table, table_exists, load_table, append_data
+from app.core.iceberg import get_catalog, read_table, table_exists, load_table, append_data, upsert_data
 from app.schemas.comparable import (
     ComparableCreate,
     ComparableUpdate,
@@ -264,7 +264,7 @@ async def create_comparable(
             "has_shaker_cabinets": comparable_data.has_shaker_cabinets,
             "has_washer_dryer": comparable_data.has_washer_dryer,
             "garage_spaces": comparable_data.garage_spaces,
-            "date_listed": comparable_data.date_listed,
+            "date_listed": comparable_data.date_listed.date() if hasattr(comparable_data.date_listed, 'date') else comparable_data.date_listed,
             "contacts": comparable_data.contacts,
             "is_rented": comparable_data.is_rented,
             "last_rented_price": float(comparable_data.last_rented_price) if comparable_data.last_rented_price else None,
@@ -327,34 +327,31 @@ async def update_comparable(
         if property_match.empty:
             raise HTTPException(status_code=404, detail="Property not found")
         
-        # Update fields
+        # Get the row to update
+        updated_row = df.loc[comp_idx[0]].copy()
+        
+        # Update fields from the update request
         update_data = comparable_update.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            df.loc[comp_idx[0], field] = value
         
-        # Update timestamp
-        df.loc[comp_idx[0], 'updated_at'] = pd.Timestamp.now(tz=timezone.utc).tz_localize(None)
+        # Handle date_listed conversion if it's being updated
+        if 'date_listed' in update_data and update_data['date_listed']:
+            if hasattr(update_data['date_listed'], 'date'):
+                update_data['date_listed'] = update_data['date_listed'].date()
         
-        # Convert decimal columns to float64 for PyArrow compatibility
-        decimal_cols = ['bathrooms', 'asking_price', 'last_rented_price']
-        for col in decimal_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+        # Update the row
+        updated_row.update(update_data)
+        updated_row['updated_at'] = pd.Timestamp.now(tz=timezone.utc).floor('us')
         
-        # Convert timestamps
-        for col in ['created_at', 'updated_at']:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], utc=True).dt.tz_localize(None).dt.floor('us')
+        # Convert to DataFrame (single row)
+        updated_df = pd.DataFrame([updated_row])
         
-        # Convert to PyArrow and overwrite
-        arrow_table = pa.Table.from_pandas(df)
-        arrow_table = arrow_table.cast(table.schema().as_arrow())
-        table.overwrite(arrow_table)
+        # Use upsert_data which handles all type conversions properly
+        upsert_data(NAMESPACE, TABLE_NAME, updated_df, join_cols=["id"])
         
         logger.info(f"✅ Comparable updated: {comparable_id}")
         
-        # Return updated comparable
-        updated_row = df.loc[comp_idx[0]].to_dict()
+        # Return updated comparable - convert DataFrame row to dict
+        updated_row = updated_df.iloc[0].to_dict()
         updated_row = {k: (None if pd.isna(v) else v) for k, v in updated_row.items()}
         updated_row = calculate_computed_fields(updated_row)
         
@@ -401,28 +398,18 @@ async def delete_comparable(
             raise HTTPException(status_code=404, detail="Property not found")
         
         if hard_delete:
-            # Remove the row
-            df = df.drop(comp_idx[0])
+            # Hard delete using PyIceberg delete API
+            from pyiceberg.expressions import EqualTo
+            table.delete(EqualTo("id", comparable_id))
         else:
-            # Soft delete
-            df.loc[comp_idx[0], 'is_active'] = False
-            df.loc[comp_idx[0], 'updated_at'] = pd.Timestamp.now(tz=timezone.utc).tz_localize(None)
-        
-        # Convert decimal columns to float64
-        decimal_cols = ['bathrooms', 'asking_price', 'last_rented_price']
-        for col in decimal_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # Convert timestamps
-        for col in ['created_at', 'updated_at']:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], utc=True).dt.tz_localize(None).dt.floor('us')
-        
-        # Overwrite table
-        arrow_table = pa.Table.from_pandas(df)
-        arrow_table = arrow_table.cast(table.schema().as_arrow())
-        table.overwrite(arrow_table)
+            # Soft delete using upsert_data
+            updated_row = df.loc[comp_idx[0]].copy()
+            updated_row['is_active'] = False
+            updated_row['updated_at'] = pd.Timestamp.now(tz=timezone.utc).floor('us')
+            
+            # Convert to DataFrame and upsert
+            updated_df = pd.DataFrame([updated_row])
+            upsert_data(NAMESPACE, TABLE_NAME, updated_df, join_cols=["id"])
         
         logger.info(f"✅ Comparable {'deleted' if hard_delete else 'deactivated'}: {comparable_id}")
         
