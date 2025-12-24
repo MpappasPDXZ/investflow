@@ -90,13 +90,29 @@ def calculate_computed_fields(row: dict) -> dict:
     date_rented = row.get('date_rented')
     date_listed = row.get('date_listed')
     
-    # Use date_rented if available, otherwise fall back to date_listed
-    reference_date = date_rented if date_rented else date_listed
-    
-    if reference_date:
-        if isinstance(reference_date, str):
-            reference_date = datetime.fromisoformat(reference_date).date()
-        days_on_zillow = (today - reference_date).days
+    # DOZ = (date_rented - date_listed) if rented, otherwise (today - date_listed)
+    if date_listed:
+        # Convert date_listed to date object if needed
+        if isinstance(date_listed, str):
+            date_listed_date = datetime.fromisoformat(date_listed).date()
+        elif isinstance(date_listed, pd.Timestamp):
+            date_listed_date = date_listed.date()
+        else:
+            date_listed_date = date_listed
+        
+        if date_rented:
+            # Property was rented - use date_rented as end date
+            if isinstance(date_rented, str):
+                date_rented_date = datetime.fromisoformat(date_rented).date()
+            elif isinstance(date_rented, pd.Timestamp):
+                date_rented_date = date_rented.date()
+            else:
+                date_rented_date = date_rented
+            days_on_zillow = (date_rented_date - date_listed_date).days
+        else:
+            # Property not rented yet - use today as end date
+            days_on_zillow = (today - date_listed_date).days
+        
         row['days_on_zillow'] = max(1, days_on_zillow)  # At least 1 day
     else:
         row['days_on_zillow'] = None
