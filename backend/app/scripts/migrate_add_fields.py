@@ -237,6 +237,11 @@ def add_columns_to_leases():
             updates_needed.append(("pet_description", StringType()))
             logger.info("  ➕ Adding pet_description column")
         
+        if "date_rented" not in existing_fields:
+            from pyiceberg.types import DateType
+            updates_needed.append(("date_rented", DateType()))
+            logger.info("  ➕ Adding date_rented column")
+        
         # Apply schema updates
         if updates_needed:
             with table.update_schema() as update:

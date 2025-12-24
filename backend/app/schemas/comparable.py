@@ -39,7 +39,8 @@ class ComparableBase(BaseModel):
     
     # Zillow data
     date_listed: date
-    contacts: Optional[int] = None  # Zillow inquiries/contacts
+    date_rented: Optional[date] = None  # Date property was rented (defaults to date_listed + 30 days)
+    contacts: Optional[int] = None  # Zillow inquiries/contacts (null if is_rented = true, since not visible on Zillow)
     
     # Rental status (NEW)
     is_rented: Optional[bool] = None  # Has it been rented?
@@ -83,6 +84,7 @@ class ComparableUpdate(BaseModel):
     garage_spaces: Optional[float] = None
     
     date_listed: Optional[date] = None
+    date_rented: Optional[date] = None
     contacts: Optional[int] = None
     
     is_rented: Optional[bool] = None

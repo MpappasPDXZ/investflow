@@ -54,9 +54,10 @@ def get_comparable_schema() -> pa.Schema:
         pa.field("garage_spaces", pa.float32(), nullable=True),
         # Listing data
         pa.field("date_listed", pa.date32(), nullable=False),
-        pa.field("contacts", pa.int32(), nullable=True),
+        pa.field("date_rented", pa.date32(), nullable=True),  # Date property was rented (for accurate DOZ)
+        pa.field("contacts", pa.int32(), nullable=True),  # Inquiries/contacts (null if is_rented = true, since not visible on Zillow)
         # Rental status
-        pa.field("is_rented", pa.bool_(), nullable=True),
+        pa.field("is_rented", pa.bool_(), nullable=True),  # True if rented (no longer listed) - contacts must be null
         pa.field("last_rented_price", pa.decimal128(10, 2), nullable=True),
         pa.field("last_rented_year", pa.int32(), nullable=True),
         # Flags
@@ -85,12 +86,17 @@ def calculate_computed_fields(row: dict) -> dict:
     """Calculate computed fields for a comparable"""
     today = date.today()
     
-    # Days on Zillow
+    # Days on Zillow - use date_rented if available, otherwise date_listed
+    date_rented = row.get('date_rented')
     date_listed = row.get('date_listed')
-    if date_listed:
-        if isinstance(date_listed, str):
-            date_listed = datetime.fromisoformat(date_listed).date()
-        days_on_zillow = (today - date_listed).days
+    
+    # Use date_rented if available, otherwise fall back to date_listed
+    reference_date = date_rented if date_rented else date_listed
+    
+    if reference_date:
+        if isinstance(reference_date, str):
+            reference_date = datetime.fromisoformat(reference_date).date()
+        days_on_zillow = (today - reference_date).days
         row['days_on_zillow'] = max(1, days_on_zillow)  # At least 1 day
     else:
         row['days_on_zillow'] = None
@@ -104,11 +110,16 @@ def calculate_computed_fields(row: dict) -> dict:
         row['price_per_sf'] = None
     
     # Contact Rate (CR)
-    contacts = row.get('contacts')
-    if contacts is not None and row.get('days_on_zillow'):
-        row['contact_rate'] = round(float(contacts) / float(row['days_on_zillow']), 2)
-    else:
+    # If property is rented (not listed), contacts are not visible, so CR must be None
+    is_rented = row.get('is_rented')
+    if is_rented is True:
         row['contact_rate'] = None
+    else:
+        contacts = row.get('contacts')
+        if contacts is not None and row.get('days_on_zillow'):
+            row['contact_rate'] = round(float(contacts) / float(row['days_on_zillow']), 2)
+        else:
+            row['contact_rate'] = None
     
     # Actual Price per SF (ACT $-SF)
     last_rented_price = row.get('last_rented_price')
@@ -243,6 +254,16 @@ async def create_comparable(
         comparable_id = str(uuid.uuid4())
         now = pd.Timestamp.now(tz=timezone.utc).floor('us')
         
+        # Convert date_listed to date object
+        date_listed = comparable_data.date_listed.date() if hasattr(comparable_data.date_listed, 'date') else comparable_data.date_listed
+        
+        # Default date_rented to date_listed + 30 days if not provided
+        if comparable_data.date_rented:
+            date_rented = comparable_data.date_rented.date() if hasattr(comparable_data.date_rented, 'date') else comparable_data.date_rented
+        else:
+            from datetime import timedelta
+            date_rented = date_listed + timedelta(days=30) if date_listed else None
+        
         comparable_dict = {
             "id": comparable_id,
             "property_id": comparable_data.property_id,
@@ -264,8 +285,9 @@ async def create_comparable(
             "has_shaker_cabinets": comparable_data.has_shaker_cabinets,
             "has_washer_dryer": comparable_data.has_washer_dryer,
             "garage_spaces": comparable_data.garage_spaces,
-            "date_listed": comparable_data.date_listed.date() if hasattr(comparable_data.date_listed, 'date') else comparable_data.date_listed,
-            "contacts": comparable_data.contacts,
+            "date_listed": date_listed,
+            "date_rented": date_rented,
+            "contacts": None if comparable_data.is_rented else comparable_data.contacts,  # Contacts null if rented (not listed)
             "is_rented": comparable_data.is_rented,
             "last_rented_price": float(comparable_data.last_rented_price) if comparable_data.last_rented_price else None,
             "last_rented_year": comparable_data.last_rented_year,
@@ -327,16 +349,43 @@ async def update_comparable(
         if property_match.empty:
             raise HTTPException(status_code=404, detail="Property not found")
         
-        # Get the row to update
-        updated_row = df.loc[comp_idx[0]].copy()
+        # Get the row to update and convert to dict
+        updated_row = df.loc[comp_idx[0]].to_dict()
+        
+        # Convert date fields from pandas Timestamp to date objects
+        for date_field in ['date_listed', 'date_rented']:
+            if date_field in updated_row and pd.notna(updated_row[date_field]):
+                if isinstance(updated_row[date_field], pd.Timestamp):
+                    updated_row[date_field] = updated_row[date_field].date()
+                elif hasattr(updated_row[date_field], 'date'):
+                    updated_row[date_field] = updated_row[date_field].date()
+            elif date_field in updated_row:
+                updated_row[date_field] = None
         
         # Update fields from the update request
         update_data = comparable_update.model_dump(exclude_unset=True)
         
+        # If is_rented is being set to true (or already true), contacts must be null (not visible on Zillow)
+        final_is_rented = update_data.get('is_rented') if 'is_rented' in update_data else updated_row.get('is_rented')
+        if final_is_rented is True:
+            update_data['contacts'] = None
+        
         # Handle date_listed conversion if it's being updated
         if 'date_listed' in update_data and update_data['date_listed']:
-            if hasattr(update_data['date_listed'], 'date'):
+            if isinstance(update_data['date_listed'], str):
+                update_data['date_listed'] = datetime.strptime(update_data['date_listed'], "%Y-%m-%d").date()
+            elif hasattr(update_data['date_listed'], 'date'):
                 update_data['date_listed'] = update_data['date_listed'].date()
+        
+        # Handle date_rented conversion if it's being updated
+        if 'date_rented' in update_data:
+            if update_data['date_rented']:
+                if isinstance(update_data['date_rented'], str):
+                    update_data['date_rented'] = datetime.strptime(update_data['date_rented'], "%Y-%m-%d").date()
+                elif hasattr(update_data['date_rented'], 'date'):
+                    update_data['date_rented'] = update_data['date_rented'].date()
+            else:
+                update_data['date_rented'] = None
         
         # Update the row
         updated_row.update(update_data)
