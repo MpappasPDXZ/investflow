@@ -17,6 +17,7 @@ interface Property {
   id: string;
   purchase_price?: number;
   down_payment?: number;
+  cash_invested?: number;
   unit_count?: number;
   vacancy_rate?: number;
   property_type?: string;
@@ -56,7 +57,7 @@ interface RentRow {
   annualExpenses: number;
   operatingExpenses: number;
   operatingExpensePercent: number;
-  downPayment: number;
+  cashInvested: number;
   cashFlow: number;
   cocPercent: number;
   revenueSchedule: number;
@@ -203,6 +204,8 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
   const vacancyRate = property.vacancy_rate || 0.07;
   const purchasePrice = property.purchase_price || 0;
   const downPayment = property.down_payment || 0;
+  // Cash Invested = manually entered cash_invested (down payment + rehab costs), fallback to down_payment
+  const cashInvested = property.cash_invested || downPayment;
   const mortgageRate = userProfile?.mortgage_interest_rate || 0.07;
   
   // Use scheduled P&I if available, otherwise calculate it
@@ -244,9 +247,9 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
       const operatingExpenses = taxAndInsurance + capex + maintenance + vacancyCosts; // Exclude P&I
       const operatingExpensePercent = effectiveAnnualRent > 0 ? (operatingExpenses / effectiveAnnualRent) * 100 : 0;
       const cashFlow = effectiveAnnualRent - annualExpenses;
-      const cocPercent = downPayment > 0 ? (cashFlow / downPayment) * 100 : 0;
+      const cocPercent = cashInvested > 0 ? (cashFlow / cashInvested) * 100 : 0;
       const totalReturnDollars = (effectiveAnnualRent + totalRevenue) - annualExpenses;
-      const totalReturnPercent = downPayment > 0 ? (totalReturnDollars / downPayment) * 100 : 0;
+      const totalReturnPercent = cashInvested > 0 ? (totalReturnDollars / cashInvested) * 100 : 0;
 
       rows.push({
         monthlyRent,
@@ -257,7 +260,7 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
         annualExpenses,
         operatingExpenses,
         operatingExpensePercent,
-        downPayment,
+        cashInvested,
         cashFlow,
         cocPercent,
         revenueSchedule: totalRevenue,
@@ -267,7 +270,7 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
     }
 
     return rows;
-  }, [minRent, maxRent, rentIncrement, unitCount, vacancyRate, taxAndInsurance, capex, maintenance, vacancyCosts, annualPI, downPayment, totalRevenue]);
+  }, [minRent, maxRent, rentIncrement, unitCount, vacancyRate, taxAndInsurance, capex, maintenance, vacancyCosts, annualPI, cashInvested, totalRevenue]);
 
   // Find the row that matches current monthly rent
   const currentRentIdx = useMemo(() => {
@@ -476,14 +479,14 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
                 </div>
                 <div className="ml-4 text-xs text-gray-500 italic">Operating Expenses = Tax & Ins + CapEx + Maintenance + Vacancy Costs (excludes P&I)</div>
                 <div>• <strong>Cash Flow</strong> = Adjusted Rent - Annual Expenses = ${row.effectiveAnnualRent.toLocaleString()} - ${row.annualExpenses.toLocaleString()} = <strong>${row.cashFlow.toLocaleString()}</strong></div>
-                <div>• <strong>Cash on Cash %</strong> = Cash Flow ÷ Cash Invested × 100% = ${row.cashFlow.toLocaleString()} ÷ ${row.downPayment.toLocaleString()} × 100% = <strong>{row.cocPercent.toFixed(2)}%</strong></div>
+                <div>• <strong>Cash on Cash %</strong> = Cash Flow ÷ Cash Invested × 100% = ${row.cashFlow.toLocaleString()} ÷ ${row.cashInvested.toLocaleString()} × 100% = <strong>{row.cocPercent.toFixed(2)}%</strong></div>
                 <div className="ml-4 text-xs text-gray-500 italic">Uses manually entered Cash Invested (down payment + cash rehab costs)</div>
                 <div>• <strong>Revenue</strong> = Scheduled revenue (tax savings, appreciation, principal paydown, etc.) = <strong>${row.revenueSchedule.toLocaleString()}</strong></div>
                 <div>• <strong>Total Return</strong> = (Adjusted Rent + Revenue) - Annual Expenses</div>
                 <div className="ml-4 text-[10px] text-gray-600">
                   = (${row.effectiveAnnualRent.toLocaleString()} + ${row.revenueSchedule.toLocaleString()}) - ${row.annualExpenses.toLocaleString()} = <strong>${row.totalReturnDollars.toLocaleString()}</strong>
                 </div>
-                <div>• <strong>Total %</strong> = Total Return ÷ Cash Invested × 100% = ${row.totalReturnDollars.toLocaleString()} ÷ ${row.downPayment.toLocaleString()} × 100% = <strong>{row.totalReturnPercent.toFixed(2)}%</strong></div>
+                <div>• <strong>Total %</strong> = Total Return ÷ Cash Invested × 100% = ${row.totalReturnDollars.toLocaleString()} ÷ ${row.cashInvested.toLocaleString()} × 100% = <strong>{row.totalReturnPercent.toFixed(2)}%</strong></div>
               </>
             );
           })()}

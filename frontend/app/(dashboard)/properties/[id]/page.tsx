@@ -264,7 +264,7 @@ export default function PropertyDetailPage() {
         }
       });
 
-      console.log('📝 [PROPERTY] Updating property with payload:', payload);
+      console.log('📝 [PROPERTY] Updating property with payload:', JSON.stringify(payload, null, 2));
       await apiClient.put(`/properties/${id}`, payload);
       console.log('✅ [PROPERTY] Updated property');
       

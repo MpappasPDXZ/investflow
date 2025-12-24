@@ -250,7 +250,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
       has_washer_dryer: comp.has_washer_dryer || false,
       garage_spaces: comp.garage_spaces || 0,
       date_listed: comp.date_listed.split('T')[0],
-      date_rented: comp.date_rented ? comp.date_rented.split('T')[0] : undefined,
+      date_rented: comp.date_rented ? comp.date_rented.split('T')[0] : '',
       contacts: comp.contacts || 0,
       is_rented: comp.is_rented || false,
       last_rented_price: comp.last_rented_price?.toString() || '',
