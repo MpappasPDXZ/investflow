@@ -642,7 +642,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
                       setForm({ 
                         ...form, 
                         is_rented: isRented,
-                        contacts: isRented ? undefined : form.contacts  // Clear contacts if rented (not listed)
+                        contacts: isRented ? 0 : form.contacts  // Clear contacts if rented (not listed)
                       });
                     }}
                   />
