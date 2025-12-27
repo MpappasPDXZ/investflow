@@ -209,7 +209,7 @@ At the signing of this Lease, Tenant shall deposit with Landlord the sum of \tex
 If Tenant fails to perform any obligation under this Lease, Tenant shall be in default.
 \begin{itemize}
     \item \textbf{Non-Payment:} Landlord may deliver a \textbf{7-Day Notice to Pay or Quit}.
-    \item \textbf{Other Breaches:} Landlord may deliver a \textbf{14/30 Day Notice} to cure or quit.
+    \item \textbf{Other Breaches:} Landlord may deliver a ''' + (r'''\textbf{30-Day Notice with 14-day cure period}''' if lease_data.get("state") == "NE" else r'''\textbf{14/30 Day Notice}''') + r''' to cure or quit.
     \item \textbf{Illegal Activity:} Landlord may deliver a \textbf{5-Day Unconditional Notice to Quit}.
 \end{itemize}
 Landlord may re-enter and take possession as permitted by law. Tenant remains liable for unpaid rent and damages.
@@ -218,16 +218,23 @@ Landlord may re-enter and take possession as permitted by law. Tenant remains li
 Tenant shall be entitled to quiet enjoyment of the Premises as long as Tenant pays rent and performs all obligations under this Lease.
 
 \section{9. POSSESSION AND SURRENDER}
-Tenant shall be entitled to possession on the first day of the Lease Term. At expiration, Tenant shall surrender the Premises in good condition, reasonable wear and tear excepted.
+Tenant shall be entitled to possession on the first day of the Lease Term. At expiration, Tenant shall surrender the Premises in as good a state and condition as they were at the commencement of this Agreement, reasonable use and wear and tear thereof excepted. For purposes of this Agreement, Tenant has "surrendered" the Premises when: (i) the move-out date has passed and no one is living in the Premises in Landlord's reasonable judgment; or (ii) the keys and access devices listed in this Agreement have been turned in to Landlord, whichever happens first. Surrender, abandonment, or judicial eviction ends Tenant's right of possession for all purposes, and gives Landlord the immediate right to clean up, make repairs in, and relet the Premises; determine any Security Deposit deductions; and remove property left in the Premises.''' + (r'''
+
+\textit{Note: Under Nebraska Revised Statutes § 76-1430, Nebraska has specific statutory procedures for handling abandoned property. Nebraska requires landlords to store abandoned property for 30 days and provide notice before disposal.}''' if lease_data.get("state") == "NE" else "") + r'''
 
 \section{10. USE OF PREMISES}
 The Premises shall be used as a private residence only. No business or trade may be conducted without prior written consent. Tenant will comply with all laws, rules, ordinances, statutes and orders regarding the use of the Premises.
+
+\subsection{10.1 COMPLIANCE WITH LAWS}
+Tenant shall not violate any law or ordinance (federal, state, or local), or commit or permit any waste or nuisance in or about the Premises, or in any way annoy any other person residing within three hundred (300) feet of the Premises. Such actions shall be a material and irreparable violation of the Agreement and good cause for termination of Agreement.
 
 \section{11. OCCUPANTS}
 Tenant agrees that no more than \textbf{''' + str(lease_data.get("max_occupants", 3)) + r'''} persons OR \textbf{''' + str(lease_data.get("max_adults", 2)) + r''' adults and their minor children} may reside on the Premises, without prior written consent of the Landlord. Guests staying longer than 7 consecutive days or 14 days in a 6-month period require written consent. Unauthorized occupants shall constitute a material breach of this Lease, subject to termination under Section 7.
 
 \section{12. CONDITION OF PREMISES}
-Tenant or Tenant's agent has inspected the Premises, the fixtures, the grounds, building and improvements and acknowledges that the Premises are in good and acceptable condition and are habitable. If at any time during the term of this Lease, in Tenant's opinion, the conditions change, Tenant shall promptly provide reasonable notice to Landlord.
+Tenant or Tenant's agent has inspected the Premises, the fixtures, the grounds, building and improvements and acknowledges that the Premises are in good and acceptable condition and are habitable. If at any time during the term of this Lease, in Tenant's opinion, the conditions change, Tenant shall promptly provide reasonable notice to Landlord.''' + (r'''
+
+\textit{Important Nebraska Tenant Rights: Under Nebraska Revised Statutes § 76-1427, Nebraska tenants have explicit statutory rights regarding habitability issues. After providing written notice and allowing reasonable time for the landlord to remedy, tenants may: (1) withhold rent until habitability issues are fixed, or (2) repair and deduct costs from rent (capped at one month's rent per 12-month period). These rights are in addition to any other remedies available under Nebraska law.}''' if lease_data.get("state") == "NE" else "") + r'''
 
 \section{13. ASSIGNMENT AND SUBLEASE}
 Tenant shall not assign or sublease any interest in this lease without prior written consent of the Landlord, which consent shall not be unreasonably withheld. Any assignment or sublease without Landlord's written prior consent shall, at Landlord's option, terminate this Lease.
@@ -251,14 +258,50 @@ Tenant will be responsible for all utilities and services required on the Premis
             pet_descriptions = self._format_pet_descriptions(pets_array)
             
             if pet_descriptions:
-                latex += r'''Pet Fee is \textbf{\$''' + pet_fee + r'''} and includes ''' + str(max_pets) + r''' pet''' + ('s' if max_pets != 1 else '') + r''': ''' + pet_descriptions + r'''. Pets are replaceable at no cost to the tenant. All pets must be approved if breed is changed or weight is increased. It is Tenant's responsibility to properly clean-up/dispose of all waste from pets on property.'''
+                pet_plural_desc = 's' if max_pets != 1 else ''
+                base_desc = (r'''Pet Fee is \textbf{\$''' + pet_fee + r'''} and includes ''' + 
+                            str(max_pets) + r''' pet''' + pet_plural_desc + r''': ''' + 
+                            pet_descriptions + r'''. Pets are replaceable at no cost to the tenant. All pets must be approved if breed is changed or weight is increased. It is Tenant's responsibility to properly clean-up/dispose of all waste from pets on property.''')
+                if lease_data.get("state") == "NE":
+                    ne_note_desc = r'''
+
+\textit{Important: This is a non-refundable pet fee, not a pet deposit. Under Nebraska Revised Statutes § 76-1410, pet deposits (refundable amounts held as security) are capped at 25\% of one month's rent. However, this provision does not apply to non-refundable pet fees, which are separate consideration for the privilege of keeping pets on the Premises and are not subject to the deposit cap limitations.}'''
+                else:
+                    ne_note_desc = ""
+                latex += base_desc + ne_note_desc
             else:
                 # Fallback if no pet details provided
-                latex += r'''Pet Fee is \textbf{\$''' + pet_fee + r'''} for up to ''' + str(max_pets) + r''' pet''' + ('s' if max_pets != 1 else '') + r'''. Fee is non-refundable. Pets are replaceable at no cost to the tenant. All pets must be approved if breed is changed or weight is increased. It is Tenant's responsibility to properly clean-up/dispose of all waste from pets on property.'''
+                pet_plural = 's' if max_pets != 1 else ''
+                if lease_data.get("state") == "NE":
+                    fee_note = r'''This is a non-refundable pet fee, not a pet deposit.'''
+                    ne_note = (r'''
+
+\textit{Important: This is a non-refundable pet fee, not a pet deposit. Under Nebraska Revised Statutes § 76-1410, pet deposits (refundable amounts held as security) are capped at 25\% of one month's rent. However, this provision does not apply to non-refundable pet fees, which are separate consideration for the privilege of keeping pets on the Premises and are not subject to the deposit cap limitations.}''')
+                else:
+                    fee_note = r'''Fee is non-refundable.'''
+                    ne_note = r'''
+
+'''
+                latex += r'''Pet Fee is \textbf{\$''' + pet_fee + r'''} for up to ''' + str(max_pets) + r''' pet''' + pet_plural + r'''. ''' + fee_note + r''' Pets are replaceable at no cost to the tenant. All pets must be approved if breed is changed or weight is increased. It is Tenant's responsibility to properly clean-up/dispose of all waste from pets on property.''' + ne_note
         else:
             latex += r'''No pets allowed on the Premises without prior written consent of the Landlord.'''
         
+        # Add smoking section
+        smoking_policy = lease_data.get("smoking_policy", "not_permitted")  # Options: not_permitted, permitted, outdoors_only
+        smoking_not_permitted = r'''\cmark''' if smoking_policy == "not_permitted" else r'''\xmark'''
+        smoking_permitted = r'''\cmark''' if smoking_policy == "permitted" else r'''\xmark'''
+        smoking_outdoors_only = r'''\cmark''' if smoking_policy == "outdoors_only" else r'''\xmark'''
+        
         latex += r'''
+
+\subsection{16.1 SMOKING}
+The Premises are designated as a property where smoking is:
+
+''' + smoking_not_permitted + r''' Not Permitted
+''' + smoking_permitted + r''' Permitted
+''' + smoking_outdoors_only + r''' Permitted Outdoors Only
+
+For the purposes of clarifying and restricting its use, the term "Smoking" is defined to include the use of cigarettes, pipes, cigars, electronic vaporizing or aerosol devices, or other devices intended for the inhalation of tobacco, marijuana, or similar substances. Tenant understands and agrees that any damage caused by Smoking shall not constitute ordinary wear and tear. Landlord may deduct from the Security Deposit all damages and/or costs for the cleaning or repairing of any damage caused by or related to Smoking, including but not limited to: deodorizing the Premises, sealing and painting the walls and ceiling, and/or repairing or replacing the carpet and pads.
 
 \section{17. ALTERATIONS AND IMPROVEMENTS}
 Tenant agrees not to make any improvements or alterations to the Premises without prior written consent of the Landlord. If any alterations, improvements or changes are made to or built on or around the Premises, with the exception of fixtures and personal property that can be removed without damage to the Premises, they shall become the property of Landlord and shall remain at the expiration of the Lease, unless otherwise agreed in writing.
@@ -305,6 +348,13 @@ Tenant will, at Tenant's sole expense, keep and maintain the Premises in good, c
         # Add move-out costs section
         latex += self._generate_moveout_section(lease_data)
         
+        # Add Section 40 - Descriptive Headings
+        latex += r'''
+
+\section{40. DESCRIPTIVE HEADINGS}
+The descriptive headings used herein are for convenience of reference only, and they are not intended to have any effect whatsoever in determining the rights or obligations of the Landlord or Tenant.
+'''
+        
         # Add signatures
         latex += self._generate_signatures(tenants)
         
@@ -318,7 +368,7 @@ Tenant will, at Tenant's sole expense, keep and maintain the Premises in good, c
         """Generate sections 20-38"""
         latex = r'''
 \section{20. RIGHT OF INSPECTION}
-Tenant agrees to make the premises available to Landlord or Landlord's agents for the purposes of inspection, making repairs or improvements, or to supply agreed services or show the premises to prospective buyers or tenants, or in case of emergency. Except in case of emergency, Landlord shall give Tenant reasonable notice of intent to enter. For these purposes, twenty-four (24) hour notice shall be deemed reasonable. Tenant shall not, without Landlord's prior written consent, add, alter or re-key any locks to the premises. At all times Landlord shall be provided with a key or keys capable of unlocking all such locks and gaining entry. Tenant further agree to notify Landlord in writing if Tenant installs any burglar alarm system, including instructions on how to disarm it in case of emergency entry.
+Tenant agrees to make the premises available to Landlord or Landlord's agents for the purposes of inspection, making repairs or improvements, or to supply agreed services or show the premises to prospective buyers or tenants, or in case of emergency. Except in case of emergency, Landlord shall give Tenant ''' + (r'''at least 24 hours' notice of intent to enter.''' if lease_data.get("state") == "NE" else r'''reasonable notice of intent to enter. For these purposes, twenty-four (24) hour notice shall be deemed reasonable.''') + r''' Tenant shall not, without Landlord's prior written consent, add, alter or re-key any locks to the premises. At all times Landlord shall be provided with a key or keys capable of unlocking all such locks and gaining entry. Tenant further agree to notify Landlord in writing if Tenant installs any burglar alarm system, including instructions on how to disarm it in case of emergency entry.
 
 \section{21. ABANDONMENT}
 If Tenant abandons the Premises or any personal property during the term of this Lease, Landlord may at its option enter the Premises by any legal means without liability to Tenant and may at Landlord's option terminate the Lease. Abandonment is defined as absence of the Tenants from the premises, for at least 30 consecutive days without notice to Landlord. If Tenant abandons the premises while the rent is outstanding for more than 15 days and there is no reasonable evidence, other than the presence of the Tenants' personal property, that the Tenant is occupying the unit, Landlord may at Landlord's option terminate this agreement and regain possession in the manner prescribed by law. Landlord will dispose of all abandoned personal property on the Premises in any manner allowed by law.
@@ -329,6 +379,9 @@ In the event Tenant will be away from the premises for more than 30 consecutive 
 \section{23. SECURITY}
 Tenant understands that Landlord does not provide any security alarm system or other security for Tenant or the Premises. In the event any alarm system is provided, Tenant understands that such alarm system is not warranted to be complete in all respects or to be sufficient to protect Tenant or the Premises. Tenant releases Landlord from any loss, damage, claim or injury resulting from the failure of any alarm system, security or from the lack of any alarm system or security.
 
+\subsection{23.1 NO REPRESENTATIONS}
+Tenant acknowledges that Landlord has not made any representations, written or oral, concerning the safety of the community or the effectiveness or operability of any security devices or security measures. Tenant acknowledges that Landlord does not warrant or guarantee the safety or security of Tenant or his or her guests or invitees against the criminal or wrongful acts of third parties. Each Tenant, guest, invitee and Additional Occupant(s) is responsible for protecting his or her own person and property.
+
 \section{24. SEVERABILITY}
 If any part or parts of this Lease shall be held unenforceable for any reason, the remainder of this Agreement shall continue in full force and effect. If any provision of this Lease is deemed invalid or unenforceable by any court of competent jurisdiction, and if limiting such provision would make the provision valid, then such provision shall be deemed to be construed as so limited.
 
@@ -338,11 +391,16 @@ Landlord and Tenant shall each be responsible to maintain appropriate insurance 
 \section{26. BINDING EFFECT}
 This Lease binds the parties and their heirs/successors.
 
+\subsection{26.1 SUBORDINATION OF LEASE}
+This Lease and Tenant's interest hereunder are, and shall be, subordinate, junior, and inferior to any and all mortgages, liens, or encumbrances now or hereafter placed on the Premises by Landlord, all advances made under any such mortgages, liens, or encumbrances (including, but not limited to, future advances), the interest payable on such mortgages, liens, or encumbrances and any and all renewals, extensions, or modifications of such mortgages, liens, or encumbrances.
+
 \section{27. GOVERNING LAW}
-Governed by the laws of the State of ''' + lease_data.get("state", "Nebraska") + r'''.
+This Lease shall be governed by and construed in accordance with the laws of the State of ''' + ("Nebraska" if lease_data.get("state") == "NE" else "Missouri") + r'''. All Parties to this Lease, including Third Party Guarantors, if any, expressly consent to the venue of the courts of the county in which the Premises is located.
 
 \section{28. ENTIRE AGREEMENT}
 This Lease constitutes the entire agreement between the parties and supersedes any prior understanding or representation of any kind preceding the date of this Agreement. There are no other promises, conditions, understandings or other agreements, whether oral or written, relating to the subject matter of this Lease. This Lease may be modified in writing and must be signed by both Landlord and Tenant.
+
+Further, Tenant represents that he or she has relied solely on his or her own judgment, experience, and expertise in entering into this Agreement with Landlord.
 
 \section{29. NOTICE}
 Any notice required or otherwise given pursuant to this Lease shall be in writing and mailed certified return receipt requested, postage prepaid, or delivered by overnight delivery service, if to Tenant, at the Premise and if to Landlord, at the address for payment of rent. Either party may change such addresses from time to time by providing notice as set forth above.
@@ -355,10 +413,13 @@ Any notice required or otherwise given pursuant to this Lease shall be in writin
 Landlord's rights are cumulative and not exclusive.
 
 \section{31. WAIVER}
-Failure to enforce a provision does not waive the right to enforce it later.
+Failure to enforce a provision does not waive the right to enforce it later. No indulgence, waiver, election, or non-election by Landlord under this Lease shall affect Tenant's duties and liabilities hereunder.
 
 \section{32. DISPLAY OF SIGNS}
 Landlord may display ``For Rent'' signs during the last 60 days of the Lease.
+
+\subsection{32.1 TIME}
+Time is of the essence to the terms of this Lease.
 
 \section{33. PARKING}
 '''
@@ -448,6 +509,17 @@ In the event of any legal action by the parties arising out of this Lease, the l
             latex += r'''    \item \textbf{Garage Outlets:} Tenant is strictly prohibited from using the electrical outlets in the garage for any purpose.
 '''
         
+        # Add Omaha-specific requirements if property is in Omaha
+        property_city = property_data.get("city", "").lower()
+        property_address = property_data.get("address", "").lower()
+        is_omaha = (property_city == "omaha" or "omaha" in property_address) and lease_data.get("state") == "NE"
+        
+        if is_omaha:
+            latex += r'''    \item \textbf{Omaha Landlord Registration:} This rental property is registered with the City of Omaha as required by Omaha Municipal Code. Landlord confirms compliance with all local registration requirements.
+    \item \textbf{Omaha Fair Housing:} This Lease complies with Omaha's Fair Housing Ordinance, which extends protections beyond federal and Nebraska state law to include sexual orientation and gender identity. Landlord and Tenant acknowledge compliance with Omaha's expanded anti-discrimination protections.
+    \item \textbf{Smoke Detectors:} Omaha Municipal Code requires specific smoke detector installation and maintenance. Tenant agrees to: (1) test smoke detectors monthly, (2) notify Landlord immediately if any smoke detector is not functioning, (3) not remove, disable, or tamper with smoke detectors, and (4) allow Landlord access for smoke detector inspection and maintenance as required by law.
+'''
+        
         latex += r'''\end{itemize}
 '''
         
@@ -499,6 +571,10 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
 \vspace{2em}
 
 \noindent\textbf{SIGNATURES}
+
+\vspace{1em}
+
+\noindent THE TENANT UNDERSTANDS THAT THE EXECUTION OF THIS LEASE ENTAILS AN IMPORTANT DECISION THAT HAS LEGAL IMPLICATIONS. TENANT IS ADVISED TO SEEK HIS OR HER OWN COUNSEL, LEGAL OR OTHERWISE, REGARDING THE EXECUTION OF THIS LEASE. TENANT HEREBY ACKNOWLEDGES THAT HE OR SHE HAS READ THIS LEASE, UNDERSTANDS IT, AGREES TO IT, AND HAS BEEN GIVEN A COPY. ELECTRONIC SIGNATURES MAY BE USED TO EXECUTE THIS LEASE. IF USED, THE PARTIES ACKNOWLEDGE THAT ONCE THE ELECTRONIC SIGNATURE PROCESS IS COMPLETED, THE ELECTRONIC SIGNATURES ON THIS LEASE WILL BE AS BINDING AS IF THE SIGNATURES WERE PHYSICALLY SIGNED BY HAND.
 
 \vspace{1em}
 
