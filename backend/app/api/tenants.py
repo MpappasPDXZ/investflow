@@ -77,11 +77,17 @@ async def list_tenants(
     limit: int = Query(100, ge=1, le=1000)
 ):
     """List all tenants for the current user"""
+    import time
+    endpoint_start = time.time()
+    logger.info(f"⏱️ [PERF] list_tenants started")
+    
     try:
         user_id = current_user["sub"]
         
         # Read tenants table
+        read_start = time.time()
         df = read_table(NAMESPACE, TABLE_NAME)
+        logger.info(f"⏱️ [PERF] read_table(tenants) took {time.time() - read_start:.2f}s")
         
         # Filter by user and non-deleted
         mask = (df["user_id"] == user_id) & (~df["is_deleted"])
@@ -98,13 +104,16 @@ async def list_tenants(
         filtered_df = df[mask].head(limit)
         
         # Get landlord references count for each tenant
+        ref_start = time.time()
         try:
             ref_df = read_table(NAMESPACE, "tenant_landlord_references")
             ref_df = ref_df[ref_df["user_id"] == user_id]
         except:
             ref_df = pd.DataFrame()  # Table might not exist yet
+        logger.info(f"⏱️ [PERF] read_table(tenant_landlord_references) took {time.time() - ref_start:.2f}s")
         
         # Convert to list of dicts
+        convert_start = time.time()
         tenants = []
         for _, row in filtered_df.iterrows():
             tenant_dict = row.to_dict()
@@ -154,11 +163,16 @@ async def list_tenants(
                 tenant_dict["landlord_references_passed"] = 0
             
             tenants.append(TenantResponse(**tenant_dict))
+        logger.info(f"⏱️ [PERF] Converting to TenantResponse objects took {time.time() - convert_start:.2f}s")
+        
+        total_time = time.time() - endpoint_start
+        logger.info(f"⏱️ [PERF] list_tenants completed in {total_time:.2f}s")
         
         return TenantListResponse(tenants=tenants, total=len(filtered_df))
         
     except Exception as e:
-        logger.error(f"Error listing tenants: {e}", exc_info=True)
+        total_time = time.time() - endpoint_start
+        logger.error(f"⏱️ [PERF] list_tenants failed after {total_time:.2f}s: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error listing tenants: {str(e)}")
 
 

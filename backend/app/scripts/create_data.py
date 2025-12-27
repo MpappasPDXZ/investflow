@@ -240,13 +240,14 @@ def create_leases_schema() -> pa.Schema:
     """Create PyArrow schema for leases table - mapped to NE_res_agreement.tex"""
     return pa.schema([
         # Primary identifiers
-        pa.field("id", pa.string(), nullable=False),
+        pa.field("id", pa.string(), nullable=False),  # PRIMARY KEY - used for upserts (lease_id)
         pa.field("user_id", pa.string(), nullable=False),  # Landlord
         pa.field("property_id", pa.string(), nullable=False),
         pa.field("unit_id", pa.string(), nullable=True),
         
         # Status
         pa.field("status", pa.string(), nullable=False),  # "draft", "pending_signature", "active", "expired", "terminated"
+        pa.field("lease_number", pa.int32(), nullable=False),  # Auto-incrementing per user (1, 2, 3, ...) - PRIMARY KEY for identification
         pa.field("lease_version", pa.int32(), nullable=False),
         pa.field("state", pa.string(), nullable=False),  # "NE", "MO"
         
@@ -264,6 +265,7 @@ def create_leases_schema() -> pa.Schema:
         pa.field("rent_due_by_time", pa.string(), nullable=True),  # "6pm"
         pa.field("payment_method", pa.string(), nullable=True),
         pa.field("prorated_first_month_rent", pa.decimal128(10, 2), nullable=True),
+        pa.field("show_prorated_rent", pa.bool_(), nullable=True),
         
         # Late Charges (Section 4)
         pa.field("late_fee_day_1_10", pa.decimal128(10, 2), nullable=True),
@@ -276,7 +278,12 @@ def create_leases_schema() -> pa.Schema:
         
         # Security Deposit (Section 6)
         pa.field("security_deposit", pa.decimal128(10, 2), nullable=False),
-        pa.field("deposit_return_days", pa.int32(), nullable=True),  # 14 (NE) or 30 (MO)
+        # deposit_return_days removed - calculated dynamically in LaTeX based on state (NE: 14, MO: 30)
+        
+        # Holding Fee (used in LaTeX)
+        pa.field("include_holding_fee_addendum", pa.bool_(), nullable=True),
+        pa.field("holding_fee_amount", pa.decimal128(10, 2), nullable=True),
+        pa.field("holding_fee_date", pa.string(), nullable=True),
         
         # Occupants (Section 11)
         pa.field("max_occupants", pa.int32(), nullable=True),
@@ -286,23 +293,26 @@ def create_leases_schema() -> pa.Schema:
         # Utilities (Section 15)
         pa.field("utilities_tenant", pa.string(), nullable=True),
         pa.field("utilities_landlord", pa.string(), nullable=True),
+        pa.field("utilities_provided_by_owner_city", pa.string(), nullable=True),  # Text field for utilities provided by owner or city
         
         # Pets (Section 16)
         pa.field("pets_allowed", pa.bool_(), nullable=True),
-        pa.field("pet_fee_one", pa.decimal128(10, 2), nullable=True),
-        pa.field("pet_fee_two", pa.decimal128(10, 2), nullable=True),
-        pa.field("pet_deposit_total", pa.decimal128(10, 2), nullable=True),  # NEW: Total pet deposit
-        pa.field("pet_description", pa.string(), nullable=True),  # NEW: e.g., "2 cats and 1 50lb dog"
+        pa.field("pet_fee", pa.decimal128(10, 2), nullable=True),  # Total pet fee (not deposits - state regulated)
+        pa.field("pet_description", pa.string(), nullable=True),  # e.g., "2 cats and 1 50lb dog"
         pa.field("max_pets", pa.int32(), nullable=True),
+        pa.field("pets", pa.string(), nullable=True),  # JSON array of pets: [{type: "dog"|"cat"|"other", name, breed (if dog), weight}]
         
         # Parking (Section 33)
         pa.field("parking_spaces", pa.int32(), nullable=True),
         pa.field("parking_small_vehicles", pa.int32(), nullable=True),
         pa.field("parking_large_trucks", pa.int32(), nullable=True),
+        pa.field("garage_spaces", pa.int32(), nullable=True),  # Garage parking spaces
+        pa.field("offstreet_parking_spots", pa.int32(), nullable=True),  # Off-street parking spots
         
         # Keys (Section 34)
         pa.field("front_door_keys", pa.int32(), nullable=True),
         pa.field("back_door_keys", pa.int32(), nullable=True),
+        pa.field("garage_back_door_keys", pa.int32(), nullable=True),  # 3rd door (garage back door)
         pa.field("key_replacement_fee", pa.decimal128(10, 2), nullable=True),
         
         # Shared Driveway (Section 19)
@@ -310,9 +320,16 @@ def create_leases_schema() -> pa.Schema:
         pa.field("shared_driveway_with", pa.string(), nullable=True),
         pa.field("snow_removal_responsibility", pa.string(), nullable=True),
         
+        # Tenant Maintenance Responsibilities (used in LaTeX)
+        pa.field("tenant_lawn_mowing", pa.bool_(), nullable=True),
+        pa.field("tenant_snow_removal", pa.bool_(), nullable=True),
+        pa.field("tenant_lawn_care", pa.bool_(), nullable=True),
+        
         # Garage (Section 38)
         pa.field("has_garage", pa.bool_(), nullable=True),
         pa.field("garage_outlets_prohibited", pa.bool_(), nullable=True),
+        pa.field("has_garage_door_opener", pa.bool_(), nullable=True),  # Garage door opener available
+        pa.field("garage_door_opener_fee", pa.decimal128(10, 2), nullable=True),  # Replacement fee for garage door opener
         
         # Special Spaces (Section 38)
         pa.field("has_attic", pa.bool_(), nullable=True),
@@ -341,7 +358,7 @@ def create_leases_schema() -> pa.Schema:
         pa.field("owner_address", pa.string(), nullable=True),
         pa.field("manager_name", pa.string(), nullable=True),
         pa.field("manager_address", pa.string(), nullable=True),
-        pa.field("deposit_account_info", pa.string(), nullable=True),
+        # deposit_account_info removed - not used in LaTeX
         pa.field("moveout_inspection_rights", pa.bool_(), nullable=True),
         pa.field("military_termination_days", pa.int32(), nullable=True),
         

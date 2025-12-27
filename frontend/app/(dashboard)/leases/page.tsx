@@ -29,6 +29,17 @@ export default function LeasesPage() {
   const { data: leasesData, refetch: refetchLeases } = useLeasesList();
   const { createLease, updateLease, generatePDF, getLease, deleteLease } = useLeases();
   
+  // Performance logging - track when page becomes interactive
+  useEffect(() => {
+    const pageLoadStart = performance.now();
+    console.log(`⏱️ [PERF] Leases page component mounted at ${pageLoadStart.toFixed(2)}ms`);
+    
+    return () => {
+      const pageLoadEnd = performance.now();
+      console.log(`⏱️ [PERF] Leases page component unmounted after ${(pageLoadEnd - pageLoadStart).toFixed(2)}ms`);
+    };
+  }, []);
+  
   // View state
   const [isTableExpanded, setIsTableExpanded] = useState(true);
   const [isEditingLease, setIsEditingLease] = useState(false);
@@ -50,6 +61,8 @@ export default function LeasesPage() {
   // PDF viewer expanded state (for full-width PDF viewing)
   const [isPdfExpanded, setIsPdfExpanded] = useState(false);
   const [isParamsExpanded, setIsParamsExpanded] = useState(false);
+  // Additional fields section (collapsed by default)
+  const [isAdditionalFieldsExpanded, setIsAdditionalFieldsExpanded] = useState(false);
   
   // Extract data from responses
   const properties = propertiesData?.items || [];
@@ -105,6 +118,7 @@ export default function LeasesPage() {
     property_id: propertyIdFromUrl || '',
     unit_id: '',
     state: 'NE' as 'NE' | 'MO',
+    lease_date: new Date().toISOString().split('T')[0], // Date lease is entered into (signing date)
     commencement_date: defaultStartDate,
     termination_date: calculateEndDate(defaultStartDate, 12),
     lease_duration_months: 12,
@@ -128,6 +142,7 @@ export default function LeasesPage() {
     pets: [] as Array<{ type: string; breed?: string; name?: string; weight?: string }>,
     utilities_tenant: 'Gas, Sewer, Water, Electricity',
     utilities_landlord: 'Trash',
+    utilities_provided_by_owner_city: '',
     parking_spaces: 2,
     parking_small_vehicles: 2,
     parking_large_trucks: 1,
@@ -139,11 +154,14 @@ export default function LeasesPage() {
     has_back_door: true,
     front_door_keys: 1,
     back_door_keys: 1,
+    garage_back_door_keys: 0,
     key_replacement_fee: '86',
     has_shared_driveway: false,
     shared_driveway_with: '',
     has_garage: false,
     garage_outlets_prohibited: false,
+    has_garage_door_opener: false,
+    garage_door_opener_fee: '100',
     has_attic: false,
     attic_usage: '',
     has_basement: false,
@@ -173,12 +191,29 @@ export default function LeasesPage() {
     methamphetamine_disclosure: false,
     owner_name: 'S&M Axios Heartland Holdings, LLC',
     owner_address: 'c/o Sarah Pappas, 1606 S 208th St, Elkhorn, NE 68022',
+    manager_name: '',
+    manager_address: '',
     moveout_inspection_rights: false,
     notes: '',
+    // Additional LaTeX fields (collapsed by default)
+    rent_due_day: 1,
+    rent_due_by_day: 5,
+    rent_due_by_time: '6pm',
+    late_fee_day_1_10: '',
+    late_fee_day_11: '',
+    late_fee_day_16: '',
+    late_fee_day_21: '',
+    nsf_fee: '',
+    max_children: true,
+    pet_description: '',
+    prorated_first_month_rent: '',
+    early_termination_fee_amount: '',
+    military_termination_days: '',
+    signed_date: '',
   });
   
   // Fetch units for selected property
-  const { data: unitsData } = useUnits(formData.property_id || '');
+  const { data: unitsData } = useUnits(formData.property_id || undefined);
   
   // Find selected property
   const selectedProperty = formData.property_id 
@@ -197,8 +232,9 @@ export default function LeasesPage() {
     if (formData.property_id && properties.length > 0) {
       const prop = properties.find((p: any) => p.id === formData.property_id);
       if (prop) {
+        const newState = (prop.state || 'NE') as 'NE' | 'MO';
         const updates: any = {
-          state: (prop.state || 'NE') as 'NE' | 'MO',
+          state: newState,
           lead_paint_year_built: prop.year_built?.toString() || '',
         };
         
@@ -206,6 +242,23 @@ export default function LeasesPage() {
         if (prop.property_type !== 'multi_family' && prop.current_monthly_rent) {
           updates.monthly_rent = prop.current_monthly_rent.toString();
           updates.security_deposit = prop.current_monthly_rent.toString();
+        }
+        
+        // Populate late fee defaults based on state (only if fields are empty)
+        if (!formData.late_fee_day_1_10 && !formData.late_fee_day_11 && !formData.late_fee_day_16 && !formData.late_fee_day_21) {
+          if (newState === 'NE') {
+            updates.late_fee_day_1_10 = '75';
+            updates.late_fee_day_11 = '150';
+            updates.late_fee_day_16 = '225';
+            updates.late_fee_day_21 = '300';
+            updates.nsf_fee = '60';
+          } else if (newState === 'MO') {
+            updates.late_fee_day_1_10 = '75';
+            updates.late_fee_day_11 = '150';
+            updates.late_fee_day_16 = '';
+            updates.late_fee_day_21 = '';
+            updates.nsf_fee = '50';
+          }
         }
         
         setFormData(prev => ({ ...prev, ...updates }));
@@ -373,6 +426,7 @@ export default function LeasesPage() {
       property_id: propertyIdFromUrl || '',
       unit_id: '',
       state: 'NE',
+      lease_date: new Date().toISOString().split('T')[0], // Date lease is entered into (signing date)
       commencement_date: newStartDate,
       termination_date: calculateEndDate(newStartDate, 12),
       lease_duration_months: 12,
@@ -396,6 +450,7 @@ export default function LeasesPage() {
       pets: [],
       utilities_tenant: 'Gas, Sewer, Water, Electricity',
       utilities_landlord: 'Trash',
+      utilities_provided_by_owner_city: '',
       parking_spaces: 2,
       parking_small_vehicles: 2,
       parking_large_trucks: 1,
@@ -407,11 +462,14 @@ export default function LeasesPage() {
       has_back_door: true,
       front_door_keys: 1,
       back_door_keys: 1,
+      garage_back_door_keys: 0,
       key_replacement_fee: '50',
       has_shared_driveway: false,
       shared_driveway_with: '',
       has_garage: false,
       garage_outlets_prohibited: false,
+      has_garage_door_opener: false,
+      garage_door_opener_fee: '100',
       has_attic: false,
       attic_usage: '',
       has_basement: false,
@@ -440,8 +498,26 @@ export default function LeasesPage() {
       methamphetamine_disclosure: false,
       owner_name: 'S&M Axios Heartland Holdings, LLC',
       owner_address: 'c/o Sarah Pappas, 1606 S 208th St, Elkhorn, NE 68022',
+      manager_name: '',
+      manager_address: '',
       moveout_inspection_rights: false,
       notes: '',
+      // Additional LaTeX fields (collapsed by default)
+      rent_due_day: 1,
+      rent_due_by_day: 5,
+      rent_due_by_time: '6pm',
+      // Default late fees for NE (will be updated when state is set)
+      late_fee_day_1_10: '75',
+      late_fee_day_11: '150',
+      late_fee_day_16: '225',
+      late_fee_day_21: '300',
+      nsf_fee: '60',
+      max_children: true,
+      pet_description: '',
+      prorated_first_month_rent: '',
+      early_termination_fee_amount: '',
+      military_termination_days: '',
+      signed_date: '',
     });
   };
   
@@ -462,6 +538,7 @@ export default function LeasesPage() {
         property_id: fullLease.property_id,
         unit_id: fullLease.unit_id || '',
         state: fullLease.state as 'NE' | 'MO',
+        lease_date: fullLease.lease_date || new Date().toISOString().split('T')[0],
         commencement_date: fullLease.commencement_date,
         termination_date: fullLease.termination_date,
         lease_duration_months: (fullLease as any).lease_duration_months || 12,
@@ -496,6 +573,7 @@ export default function LeasesPage() {
         })(),
         utilities_tenant: fullLease.utilities_tenant || '',
         utilities_landlord: fullLease.utilities_landlord || '',
+        utilities_provided_by_owner_city: (fullLease as any).utilities_provided_by_owner_city || '',
         parking_spaces: fullLease.parking_spaces || 0,
         parking_small_vehicles: fullLease.parking_small_vehicles || 0,
         parking_large_trucks: fullLease.parking_large_trucks || 0,
@@ -507,11 +585,14 @@ export default function LeasesPage() {
         has_back_door: (fullLease as any).has_back_door ?? true,
         front_door_keys: fullLease.front_door_keys || 0,
         back_door_keys: fullLease.back_door_keys || 0,
+        garage_back_door_keys: (fullLease as any).garage_back_door_keys || 0,
         key_replacement_fee: fullLease.key_replacement_fee?.toString() || '',
         has_shared_driveway: fullLease.has_shared_driveway || false,
         shared_driveway_with: fullLease.shared_driveway_with || '',
         has_garage: fullLease.has_garage || false,
         garage_outlets_prohibited: fullLease.garage_outlets_prohibited || false,
+        has_garage_door_opener: (fullLease as any).has_garage_door_opener || false,
+        garage_door_opener_fee: (fullLease as any).garage_door_opener_fee?.toString() || '',
         has_attic: fullLease.has_attic || false,
         attic_usage: fullLease.attic_usage || '',
         has_basement: fullLease.has_basement || false,
@@ -529,8 +610,26 @@ export default function LeasesPage() {
         methamphetamine_disclosure: fullLease.methamphetamine_disclosure || false,
         owner_name: fullLease.owner_name || 'S&M Axios Heartland Holdings, LLC',
         owner_address: fullLease.owner_address || 'c/o Sarah Pappas, 1606 S 208th St, Elkhorn, NE 68022',
+        manager_name: (fullLease as any).manager_name || '',
+        manager_address: (fullLease as any).manager_address || '',
         moveout_inspection_rights: fullLease.moveout_inspection_rights || false,
         notes: fullLease.notes || '',
+        // Additional LaTeX fields
+        rent_due_day: (fullLease as any).rent_due_day || 1,
+        rent_due_by_day: (fullLease as any).rent_due_by_day || 5,
+        rent_due_by_time: (fullLease as any).rent_due_by_time || '6pm',
+        // Populate late fees - use defaults if missing based on state
+        late_fee_day_1_10: (fullLease as any).late_fee_day_1_10?.toString() || (fullLease.state === 'NE' ? '75' : fullLease.state === 'MO' ? '75' : ''),
+        late_fee_day_11: (fullLease as any).late_fee_day_11?.toString() || (fullLease.state === 'NE' ? '150' : fullLease.state === 'MO' ? '150' : ''),
+        late_fee_day_16: (fullLease as any).late_fee_day_16?.toString() || (fullLease.state === 'NE' ? '225' : ''),
+        late_fee_day_21: (fullLease as any).late_fee_day_21?.toString() || (fullLease.state === 'NE' ? '300' : ''),
+        nsf_fee: (fullLease as any).nsf_fee?.toString() || (fullLease.state === 'NE' ? '60' : fullLease.state === 'MO' ? '50' : ''),
+        max_children: (fullLease as any).max_children ?? true,
+        pet_description: (fullLease as any).pet_description || '',
+        prorated_first_month_rent: (fullLease as any).prorated_first_month_rent?.toString() || '',
+        early_termination_fee_amount: (fullLease as any).early_termination_fee_amount?.toString() || '',
+        military_termination_days: (fullLease as any).military_termination_days?.toString() || '',
+        signed_date: (fullLease as any).signed_date || '',
       });
       
       // Set PDF URL if exists
@@ -557,6 +656,7 @@ export default function LeasesPage() {
         property_id: formData.property_id,
         unit_id: formData.unit_id || undefined,
         state: formData.state,
+        lease_date: formData.lease_date || undefined,
         commencement_date: formData.commencement_date,
         termination_date: formData.termination_date,
         lease_duration_months: formData.lease_duration_months,
@@ -580,6 +680,7 @@ export default function LeasesPage() {
         pets: formData.pets,
         utilities_tenant: formData.utilities_tenant,
         utilities_landlord: formData.utilities_landlord,
+        utilities_provided_by_owner_city: formData.utilities_provided_by_owner_city || undefined,
         parking_spaces: formData.parking_spaces,
         parking_small_vehicles: formData.parking_small_vehicles,
         parking_large_trucks: formData.parking_large_trucks,
@@ -591,11 +692,18 @@ export default function LeasesPage() {
         has_back_door: formData.has_back_door,
         front_door_keys: formData.front_door_keys,
         back_door_keys: formData.back_door_keys,
+        garage_back_door_keys: formData.garage_back_door_keys !== undefined ? formData.garage_back_door_keys : undefined,
         key_replacement_fee: formData.key_replacement_fee ? parseFloat(formData.key_replacement_fee) : undefined,
         has_shared_driveway: formData.has_shared_driveway,
         shared_driveway_with: formData.shared_driveway_with,
         has_garage: formData.has_garage,
         garage_outlets_prohibited: formData.garage_outlets_prohibited,
+        has_garage_door_opener: formData.has_garage_door_opener,
+        garage_door_opener_fee: formData.has_garage_door_opener 
+          ? (formData.garage_door_opener_fee && formData.garage_door_opener_fee.trim() !== '' 
+              ? parseFloat(formData.garage_door_opener_fee) 
+              : 0)
+          : undefined,
         has_attic: formData.has_attic,
         attic_usage: formData.attic_usage,
         has_basement: formData.has_basement,
@@ -616,8 +724,25 @@ export default function LeasesPage() {
         methamphetamine_disclosure: formData.methamphetamine_disclosure,
         owner_name: formData.owner_name,
         owner_address: formData.owner_address,
+        manager_name: formData.manager_name || undefined,
+        manager_address: formData.manager_address || undefined,
         moveout_inspection_rights: formData.moveout_inspection_rights,
         notes: formData.notes,
+        // Additional LaTeX fields
+        rent_due_day: formData.rent_due_day,
+        rent_due_by_day: formData.rent_due_by_day,
+        rent_due_by_time: formData.rent_due_by_time,
+        late_fee_day_1_10: formData.late_fee_day_1_10 ? parseFloat(formData.late_fee_day_1_10) : undefined,
+        late_fee_day_11: formData.late_fee_day_11 ? parseFloat(formData.late_fee_day_11) : undefined,
+        late_fee_day_16: formData.late_fee_day_16 ? parseFloat(formData.late_fee_day_16) : undefined,
+        late_fee_day_21: formData.late_fee_day_21 ? parseFloat(formData.late_fee_day_21) : undefined,
+        nsf_fee: formData.nsf_fee ? parseFloat(formData.nsf_fee) : undefined,
+        max_children: formData.max_children,
+        pet_description: formData.pet_description || undefined,
+        prorated_first_month_rent: formData.prorated_first_month_rent ? parseFloat(formData.prorated_first_month_rent) : undefined,
+        early_termination_fee_amount: formData.early_termination_fee_amount ? parseFloat(formData.early_termination_fee_amount) : undefined,
+        military_termination_days: formData.military_termination_days ? parseInt(formData.military_termination_days) : undefined,
+        signed_date: formData.signed_date || undefined,
       };
       
       console.log('📤 [LEASE] Payload to send:', JSON.stringify(payload, null, 2));
@@ -800,7 +925,6 @@ export default function LeasesPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs w-16">Lease #</TableHead>
-                    <TableHead className="text-xs w-16">Official</TableHead>
                     <TableHead className="text-xs">Property</TableHead>
                     <TableHead className="text-xs">Tenants</TableHead>
                     <TableHead className="text-xs">Term</TableHead>
@@ -812,7 +936,7 @@ export default function LeasesPage() {
                 <TableBody>
                   {leases.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-gray-500 text-sm">
+                      <TableCell colSpan={7} className="text-center py-8 text-gray-500 text-sm">
                         No leases yet. Click "New Lease" to create one.
                       </TableCell>
                     </TableRow>
@@ -823,22 +947,7 @@ export default function LeasesPage() {
                         className={`cursor-pointer hover:bg-gray-50 ${currentLeaseId === lease.id ? 'bg-blue-50' : ''}`}
                         onClick={() => handleEditLease(lease)}
                       >
-                        <TableCell className="text-xs font-semibold">#{lease.lease_number}</TableCell>
-                        <TableCell className="text-xs">
-                          <Checkbox
-                            checked={lease.is_official}
-                            onClick={(e) => e.stopPropagation()}
-                            onCheckedChange={async (checked) => {
-                              try {
-                                await updateLease(lease.id, { is_official: checked as boolean });
-                                refetchLeases();
-                              } catch (err) {
-                                console.error('Error updating official status:', err);
-                              }
-                            }}
-                            className="h-4 w-4"
-                          />
-                        </TableCell>
+                        <TableCell className="text-xs font-semibold">{lease.id}</TableCell>
                         <TableCell className="text-xs">{getPropertyName(lease.property_id)}</TableCell>
                         <TableCell className="text-xs">{getTenantNames(lease.tenants)}</TableCell>
                         <TableCell className="text-xs">
@@ -998,7 +1107,29 @@ export default function LeasesPage() {
                   
                   <Select
                     value={formData.state}
-                    onValueChange={(value) => setFormData({ ...formData, state: value as 'NE' | 'MO' })}
+                    onValueChange={(value) => {
+                      const newState = value as 'NE' | 'MO';
+                      const updates: any = { state: newState };
+                      
+                      // Populate late fee defaults when state changes (only if fields are empty)
+                      if (!formData.late_fee_day_1_10 && !formData.late_fee_day_11 && !formData.late_fee_day_16 && !formData.late_fee_day_21) {
+                        if (newState === 'NE') {
+                          updates.late_fee_day_1_10 = '75';
+                          updates.late_fee_day_11 = '150';
+                          updates.late_fee_day_16 = '225';
+                          updates.late_fee_day_21 = '300';
+                          updates.nsf_fee = '60';
+                        } else if (newState === 'MO') {
+                          updates.late_fee_day_1_10 = '75';
+                          updates.late_fee_day_11 = '150';
+                          updates.late_fee_day_16 = '';
+                          updates.late_fee_day_21 = '';
+                          updates.nsf_fee = '50';
+                        }
+                      }
+                      
+                      setFormData({ ...formData, ...updates });
+                    }}
                   >
                     <SelectTrigger className="text-sm h-9">
                       <SelectValue />
@@ -1015,7 +1146,17 @@ export default function LeasesPage() {
                 {/* Lease Duration & Terms */}
                 <div className="space-y-2">
                   <Label className="text-xs font-semibold">Lease Duration</Label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                      <Label className="text-xs">Lease Date <span className="text-gray-400">(entered into)</span></Label>
+                      <Input
+                        type="date"
+                        value={formData.lease_date}
+                        onChange={(e) => setFormData({ ...formData, lease_date: e.target.value })}
+                        className="text-sm h-9"
+                        title="Date the lease agreement is entered into (signing date)"
+                      />
+                    </div>
                     <div>
                       <Label className="text-xs">Start Date</Label>
                       <Input
@@ -1490,6 +1631,25 @@ export default function LeasesPage() {
                 
                 <Separator />
                 
+                {/* Utilities Provided by Owner/City */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold">Utilities Provided by Owner/City</Label>
+                  <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                    <Label className="text-xs text-blue-800 mb-1 block">List utilities provided by owner or city (e.g., "City-provided trash" for Omaha, NE)</Label>
+                    <textarea
+                      value={formData.utilities_provided_by_owner_city}
+                      onChange={(e) => setFormData({ ...formData, utilities_provided_by_owner_city: e.target.value })}
+                      className="w-full px-2 py-1 border border-blue-300 rounded-md text-xs h-16 resize-none bg-white"
+                      placeholder="e.g., City-provided trash (Omaha, NE)"
+                    />
+                    <p className="text-[10px] text-blue-600 mt-1">
+                      This will be included in Section 15 (Utilities and Services) of the lease.
+                    </p>
+                  </div>
+                </div>
+                
+                <Separator />
+                
                 {/* Parking */}
                 <div className="space-y-2">
                   <Label className="text-xs font-semibold">Parking</Label>
@@ -1711,6 +1871,21 @@ export default function LeasesPage() {
                           />
                           <Label htmlFor="has_back_door" className="text-xs text-blue-800">Back Door</Label>
                         </div>
+                        <div className="flex items-center gap-1.5">
+                          <Checkbox 
+                            id="has_garage_back_door" 
+                            checked={formData.garage_back_door_keys > 0} 
+                            onCheckedChange={(checked) => {
+                              const hasGarageBack = checked as boolean;
+                              setFormData({ 
+                                ...formData, 
+                                garage_back_door_keys: hasGarageBack ? formData.tenants.length || 1 : 0
+                              });
+                            }}
+                            className="h-3.5 w-3.5" 
+                          />
+                          <Label htmlFor="has_garage_back_door" className="text-xs text-blue-800">Garage Back Door</Label>
+                        </div>
                       </div>
                       
                       {/* Key Counts & Fee */}
@@ -1751,6 +1926,24 @@ export default function LeasesPage() {
                             </Select>
                           </div>
                         )}
+                        {formData.garage_back_door_keys > 0 && (
+                          <div>
+                            <Label className="text-xs text-blue-800">Garage Back Keys</Label>
+                            <Select
+                              value={formData.garage_back_door_keys.toString()}
+                              onValueChange={(value) => setFormData({ ...formData, garage_back_door_keys: parseInt(value) })}
+                            >
+                              <SelectTrigger className="text-xs h-7 bg-white">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {[1,2,3,4,5,6].map((n) => (
+                                  <SelectItem key={n} value={n.toString()}>{n}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
                         <div>
                           <Label className="text-xs text-blue-800">Lost Key Fee</Label>
                           <div className="relative">
@@ -1768,9 +1961,11 @@ export default function LeasesPage() {
                       {/* Summary */}
                       <p className="text-[10px] text-blue-600 leading-relaxed">
                         {formData.has_front_door && `${formData.front_door_keys} front key${formData.front_door_keys !== 1 ? 's' : ''}`}
-                        {formData.has_front_door && formData.has_back_door && ' + '}
+                        {formData.has_front_door && (formData.has_back_door || formData.garage_back_door_keys > 0) && ' + '}
                         {formData.has_back_door && `${formData.back_door_keys} back key${formData.back_door_keys !== 1 ? 's' : ''}`}
-                        {(formData.has_front_door || formData.has_back_door) && ` (1 per adult). Lost key: $${formData.key_replacement_fee}`}
+                        {formData.has_back_door && formData.garage_back_door_keys > 0 && ' + '}
+                        {formData.garage_back_door_keys > 0 && `${formData.garage_back_door_keys} garage back key${formData.garage_back_door_keys !== 1 ? 's' : ''}`}
+                        {(formData.has_front_door || formData.has_back_door || formData.garage_back_door_keys > 0) && ` (1 per adult). Lost key: $${formData.key_replacement_fee}`}
                       </p>
                     </div>
                   )}
@@ -1783,10 +1978,42 @@ export default function LeasesPage() {
                   <Label className="text-xs font-semibold">Property Features</Label>
                   <div className="flex flex-wrap gap-3">
                     {formData.garage_spaces > 0 && (
-                      <div className="flex items-center space-x-1.5">
-                        <Checkbox id="garage" checked={true} disabled className="h-3.5 w-3.5" />
-                        <Label htmlFor="garage" className="text-xs text-gray-500">Garage ({formData.garage_spaces} space{formData.garage_spaces !== 1 ? 's' : ''})</Label>
-                      </div>
+                      <>
+                        <div className="flex items-center space-x-1.5">
+                          <Checkbox id="garage" checked={true} disabled className="h-3.5 w-3.5" />
+                          <Label htmlFor="garage" className="text-xs text-gray-500">Garage ({formData.garage_spaces} space{formData.garage_spaces !== 1 ? 's' : ''})</Label>
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          <Checkbox 
+                            id="garage_door_opener" 
+                            checked={formData.has_garage_door_opener} 
+                            onCheckedChange={(checked) => {
+                              setFormData({ 
+                                ...formData, 
+                                has_garage_door_opener: checked as boolean,
+                                garage_door_opener_fee: checked ? (formData.garage_door_opener_fee || '100') : formData.garage_door_opener_fee
+                              });
+                            }} 
+                            className="h-3.5 w-3.5" 
+                          />
+                          <Label htmlFor="garage_door_opener" className="text-xs">Garage Door Opener</Label>
+                        </div>
+                        {formData.has_garage_door_opener && (
+                          <div className="flex items-center space-x-1.5">
+                            <Label className="text-xs text-gray-600">Opener Fee:</Label>
+                            <div className="relative">
+                              <span className="absolute left-1 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+                              <Input
+                                type="number"
+                                value={formData.garage_door_opener_fee}
+                                onChange={(e) => setFormData({ ...formData, garage_door_opener_fee: e.target.value })}
+                                className="text-xs h-6 w-24 pl-4 bg-white"
+                                placeholder="100"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                     <div className="flex items-center space-x-1.5">
                       <Checkbox id="attic" checked={formData.has_attic} onCheckedChange={(checked) => setFormData({ ...formData, has_attic: checked as boolean })} className="h-3.5 w-3.5" />
@@ -1829,6 +2056,209 @@ export default function LeasesPage() {
                         <FileText className="h-3 w-3" />
                         View Lead Paint Disclosure Form (PDF)
                       </a>
+                    </div>
+                  )}
+                </div>
+                
+                <Separator />
+                
+                {/* Additional LaTeX Fields (Collapsed by Default) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">Additional Lease Terms</Label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsAdditionalFieldsExpanded(!isAdditionalFieldsExpanded)}
+                      className="h-6 text-xs px-2"
+                    >
+                      {isAdditionalFieldsExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </Button>
+                  </div>
+                  
+                  {isAdditionalFieldsExpanded && (
+                    <div className="space-y-3 p-3 border rounded-md bg-muted/30">
+                      {/* Rent Due Settings */}
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold">Rent Due Settings</Label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <Label className="text-xs">Rent Due Day</Label>
+                            <Input
+                              type="number"
+                              value={formData.rent_due_day}
+                              onChange={(e) => setFormData({ ...formData, rent_due_day: parseInt(e.target.value) || 1 })}
+                              className="text-sm h-9"
+                              min="1"
+                              max="31"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Due By Day</Label>
+                            <Input
+                              type="number"
+                              value={formData.rent_due_by_day}
+                              onChange={(e) => setFormData({ ...formData, rent_due_by_day: parseInt(e.target.value) || 5 })}
+                              className="text-sm h-9"
+                              min="1"
+                              max="31"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Due By Time</Label>
+                            <Input
+                              type="text"
+                              value={formData.rent_due_by_time}
+                              onChange={(e) => setFormData({ ...formData, rent_due_by_time: e.target.value })}
+                              className="text-sm h-9"
+                              placeholder="6pm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Late Fees */}
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold">Late Fees</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">Days 1-10</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={formData.late_fee_day_1_10}
+                              onChange={(e) => setFormData({ ...formData, late_fee_day_1_10: e.target.value })}
+                              className="text-sm h-9"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Day 11</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={formData.late_fee_day_11}
+                              onChange={(e) => setFormData({ ...formData, late_fee_day_11: e.target.value })}
+                              className="text-sm h-9"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Day 16</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={formData.late_fee_day_16}
+                              onChange={(e) => setFormData({ ...formData, late_fee_day_16: e.target.value })}
+                              className="text-sm h-9"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Day 21</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={formData.late_fee_day_21}
+                              onChange={(e) => setFormData({ ...formData, late_fee_day_21: e.target.value })}
+                              className="text-sm h-9"
+                              placeholder="0.00"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* NSF Fee & Deposit Return */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">NSF Fee</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formData.nsf_fee}
+                            onChange={(e) => setFormData({ ...formData, nsf_fee: e.target.value })}
+                            className="text-sm h-9"
+                            placeholder="0.00"
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Pet Fees */}
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold">Pet Fees (Alternative)</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">Pet Description</Label>
+                            <Input
+                              type="text"
+                              value={formData.pet_description}
+                              onChange={(e) => setFormData({ ...formData, pet_description: e.target.value })}
+                              className="text-sm h-9"
+                              placeholder="e.g., 2 cats and 1 50lb dog"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Early Termination */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">Early Termination Fee Amount</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formData.early_termination_fee_amount}
+                            onChange={(e) => setFormData({ ...formData, early_termination_fee_amount: e.target.value })}
+                            className="text-sm h-9"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Military Termination Days</Label>
+                          <Input
+                            type="number"
+                            value={formData.military_termination_days}
+                            onChange={(e) => setFormData({ ...formData, military_termination_days: e.target.value })}
+                            className="text-sm h-9"
+                            placeholder=""
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Other Fields */}
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs">Prorated First Month Rent</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formData.prorated_first_month_rent}
+                            onChange={(e) => setFormData({ ...formData, prorated_first_month_rent: e.target.value })}
+                            className="text-sm h-9"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Max Children (Boolean)</Label>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={formData.max_children}
+                              onCheckedChange={(checked) => setFormData({ ...formData, max_children: checked as boolean })}
+                              className="h-4 w-4"
+                            />
+                            <Label className="text-xs">Allow children</Label>
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-xs">Signed Date</Label>
+                          <Input
+                            type="date"
+                            value={formData.signed_date}
+                            onChange={(e) => setFormData({ ...formData, signed_date: e.target.value })}
+                            className="text-sm h-9"
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1880,6 +2310,14 @@ export default function LeasesPage() {
                       <div>
                         <Label className="text-xs">Owner Address *</Label>
                         <textarea value={formData.owner_address} onChange={(e) => setFormData({ ...formData, owner_address: e.target.value })} className="w-full px-2 py-1 border border-gray-300 rounded-md text-xs h-14" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Manager Name</Label>
+                        <Input value={formData.manager_name} onChange={(e) => setFormData({ ...formData, manager_name: e.target.value })} className="text-xs h-7" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Manager Address</Label>
+                        <textarea value={formData.manager_address} onChange={(e) => setFormData({ ...formData, manager_address: e.target.value })} className="w-full px-2 py-1 border border-gray-300 rounded-md text-xs h-14" />
                       </div>
                     </div>
                   </>

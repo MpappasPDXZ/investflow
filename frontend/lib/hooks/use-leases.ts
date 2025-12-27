@@ -21,6 +21,7 @@ export interface LeaseCreate {
   property_id: string;
   unit_id?: string;
   state: 'NE' | 'MO';
+  lease_date?: string; // Date lease is entered into (signing date)
   commencement_date: string;
   termination_date: string;
   lease_duration_months?: number;
@@ -31,7 +32,6 @@ export interface LeaseCreate {
   holding_fee_amount?: number;
   holding_fee_date?: string;
   tenants: Tenant[];
-  is_official?: boolean;
   auto_convert_month_to_month?: boolean;
   payment_method?: string;
   // Prorated rent
@@ -46,15 +46,14 @@ export interface LeaseCreate {
   // Pets
   pets_allowed?: boolean;
   pet_fee?: number;
-  pet_fee_one?: number;
-  pet_fee_two?: number;
   max_pets?: number;
   pets?: Array<{ type: string; breed?: string; name?: string; weight?: string; isEmotionalSupport?: boolean }>;
   pet_deposit?: number;
   additional_pet_fee?: number;
-  // Utilities
-  utilities_tenant?: string;
-  utilities_landlord?: string;
+    // Utilities
+    utilities_tenant?: string;
+    utilities_landlord?: string;
+    utilities_provided_by_owner_city?: string;
   // Parking
   parking_spaces?: number;
   parking_small_vehicles?: number;
@@ -64,16 +63,19 @@ export interface LeaseCreate {
   shared_parking_arrangement?: string;
   // Keys
   include_keys_clause?: boolean;
-  has_front_door?: boolean;
-  has_back_door?: boolean;
-  front_door_keys?: number;
-  back_door_keys?: number;
-  key_replacement_fee?: number;
+    has_front_door?: boolean;
+    has_back_door?: boolean;
+    front_door_keys?: number;
+    back_door_keys?: number;
+    garage_back_door_keys?: number;
+    key_replacement_fee?: number;
   // Property features
   has_shared_driveway?: boolean;
   shared_driveway_with?: string;
-  has_garage?: boolean;
-  garage_outlets_prohibited?: boolean;
+    has_garage?: boolean;
+    garage_outlets_prohibited?: boolean;
+    has_garage_door_opener?: boolean;
+    garage_door_opener_fee?: number;
   has_attic?: boolean;
   attic_usage?: string;
   has_basement?: boolean;
@@ -95,13 +97,27 @@ export interface LeaseCreate {
   manager_address?: string;
   moveout_inspection_rights?: boolean;
   notes?: string;
+  // Additional LaTeX fields
+  rent_due_day?: number;
+  rent_due_by_day?: number;
+  rent_due_by_time?: string;
+  late_fee_day_1_10?: number;
+  late_fee_day_11?: number;
+  late_fee_day_16?: number;
+  late_fee_day_21?: number;
+  nsf_fee?: number;
+  deposit_account_info?: string;
+  pet_description?: string;
+  prorated_first_month_rent?: number;
+  early_termination_fee_amount?: number;
+  military_termination_days?: number;
+  signed_date?: string;
 }
 
 export interface Lease extends LeaseCreate {
   id: string;
   user_id: string;
   lease_number: number;
-  is_official: boolean;
   status: 'draft' | 'pending_signature' | 'active' | 'expired' | 'terminated';
   lease_version: number;
   created_at: string;
@@ -186,7 +202,8 @@ export function useLeasesList(filters: {
 } = {}) {
   return useQuery<LeaseListResponse>({
     queryKey: ['leases', filters],
-    queryFn: () => {
+    queryFn: async () => {
+      const startTime = performance.now();
       const params = new URLSearchParams();
       if (filters.property_id) params.append('property_id', filters.property_id);
       if (filters.status && filters.status !== 'all') params.append('status', filters.status);
@@ -194,7 +211,16 @@ export function useLeasesList(filters: {
       if (filters.active_only) params.append('active_only', 'true');
       
       console.log(`📤 [LEASES] GET /api/v1/leases?${params} - Request`);
-      return apiClient.get<LeaseListResponse>(`/leases?${params}`);
+      try {
+        const result = await apiClient.get<LeaseListResponse>(`/leases?${params}`);
+        const elapsed = performance.now() - startTime;
+        console.log(`⏱️ [PERF] Leases API call completed in ${elapsed.toFixed(2)}ms`);
+        return result;
+      } catch (error) {
+        const elapsed = performance.now() - startTime;
+        console.log(`⏱️ [PERF] Leases API call failed after ${elapsed.toFixed(2)}ms`);
+        throw error;
+      }
     },
   });
 }

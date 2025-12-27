@@ -26,11 +26,26 @@ export interface UnitListResponse {
 export function useUnits(propertyId?: string) {
   return useQuery<UnitListResponse>({
     queryKey: propertyId ? ['units', propertyId] : ['units'],
-    queryFn: () => {
-      const url = propertyId ? `/units?property_id=${propertyId}` : '/units';
+    queryFn: async () => {
+      if (!propertyId) {
+        // Return empty response if no propertyId provided
+        return Promise.resolve({ items: [], total: 0 });
+      }
+      const startTime = performance.now();
+      const url = `/units?property_id=${propertyId}`;
       console.log(`📤 [UNITS] GET /api/v1${url} - Request`);
-      return apiClient.get<UnitListResponse>(url);
+      try {
+        const result = await apiClient.get<UnitListResponse>(url);
+        const elapsed = performance.now() - startTime;
+        console.log(`⏱️ [PERF] Units API call completed in ${elapsed.toFixed(2)}ms`);
+        return result;
+      } catch (error) {
+        const elapsed = performance.now() - startTime;
+        console.log(`⏱️ [PERF] Units API call failed after ${elapsed.toFixed(2)}ms`);
+        throw error;
+      }
     },
+    enabled: !!propertyId, // Only run query if propertyId is provided
   });
 }
 

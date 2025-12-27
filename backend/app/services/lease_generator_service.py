@@ -75,34 +75,32 @@ class LeaseGeneratorService:
     ) -> str:
         """Build complete LaTeX document from lease data"""
         
-        # Extract data (handle None values with or)
-        monthly_rent = self._format_currency(lease_data.get("monthly_rent") or Decimal("0"))
-        monthly_rent_decimal = Decimal(str(lease_data.get("monthly_rent") or "0"))
-        security_deposit = self._format_currency(lease_data.get("security_deposit") or Decimal("0"))
+        # ============================================================================
+        # EXTRACT ALL VARIABLES - GROUPED BY TYPE
+        # ============================================================================
         
-        # Holding fee info
-        include_holding_fee = lease_data.get("include_holding_fee_addendum", False)
-        holding_fee_amount = self._format_currency(lease_data.get("holding_fee_amount") or Decimal("0"))
-        holding_fee_date = lease_data.get("holding_fee_date", "")
-        
-        late_fee_1 = self._format_currency(lease_data.get("late_fee_day_1_10") or Decimal("0"))
-        late_fee_2 = self._format_currency(lease_data.get("late_fee_day_11") or Decimal("0"))
-        late_fee_3 = self._format_currency(lease_data.get("late_fee_day_16") or Decimal("0"))
-        late_fee_4 = self._format_currency(lease_data.get("late_fee_day_21") or Decimal("0"))
-        nsf_fee = self._format_currency(lease_data.get("nsf_fee") or Decimal("0"))
-        
-        # Tenant names
+        # --- STRING VARIABLES ---
         tenant_names = ", ".join([f"{t.get('first_name', '')} {t.get('last_name', '')}" for t in tenants])
-        
-        # Owner info - escape LaTeX special chars
         owner_name = self._escape_latex(lease_data.get("owner_name", "S&M Axios Heartland Holdings, LLC"))
-        
-        # Property info - address already includes city/state
         full_address = property_data.get("address", "")
-        # For header - just street address without city/state for brevity
-        property_address = full_address
+        property_address = full_address  # For header
+        property_description = property_data.get("description", "Residential property")
+        state = lease_data.get("state", "NE")
+        utilities_tenant = lease_data.get("utilities_tenant", "Gas, Sewer, Water, and Electricity")
+        utilities_provided_by_owner_city = lease_data.get("utilities_provided_by_owner_city", "")
+        shared_driveway_with = lease_data.get("shared_driveway_with", "neighboring property")
+        appliances_provided = lease_data.get("appliances_provided", "")
+        attic_usage = lease_data.get("attic_usage", "")
+        holding_fee_date = lease_data.get("holding_fee_date", "")
+        year_built_raw = property_data.get("year_built", "1978")
+        try:
+            year_built_float = float(year_built_raw)
+            year_built_int = int(year_built_float)
+            year_built_s = str(year_built_int)
+        except (ValueError, TypeError):
+            year_built_s = "1978"
         
-        # Parse dates
+        # --- DATE VARIABLES ---
         commencement_date = self._parse_date(lease_data.get("commencement_date"))
         termination_date = self._parse_date(lease_data.get("termination_date"))
         lease_date = self._parse_date(lease_data.get("lease_date"))
@@ -112,15 +110,102 @@ class LeaseGeneratorService:
         termination_str = termination_date.strftime("%B %d, %Y") if termination_date else "\\underline{\\hspace{3cm}}"
         lease_date_str = lease_date.strftime("%B %d, %Y") if lease_date else "\\underline{\\hspace{3cm}}"
         
+        # --- DECIMAL VARIABLES (for calculations) ---
+        monthly_rent_decimal = Decimal(str(lease_data.get("monthly_rent") or "0"))
+        
         # Calculate prorated rent
-        prorated_rent_str = "\\underline{\\hspace{2cm}}"
+        prorated_rent_decimal = Decimal("0")
         if commencement_date and commencement_date.day != 1:
-            # Days after the 1st = day - 1 (e.g., 3rd = 2 days)
             days_after_first = commencement_date.day - 1
-            # Calculate percentage: (30 - days_after_first) / 30
             prorated_percentage = (Decimal("30") - Decimal(str(days_after_first))) / Decimal("30")
-            prorated_rent = (monthly_rent_decimal * prorated_percentage).quantize(Decimal("0.01"))
-            prorated_rent_str = self._format_currency(prorated_rent)
+            prorated_rent_decimal = (monthly_rent_decimal * prorated_percentage).quantize(Decimal("0.01"))
+        
+        # --- CURRENCY VARIABLES (formatted strings) ---
+        monthly_rent = self._format_currency(lease_data.get("monthly_rent") or Decimal("0"))
+        security_deposit = self._format_currency(lease_data.get("security_deposit") or Decimal("0"))
+        holding_fee_amount = self._format_currency(lease_data.get("holding_fee_amount") or Decimal("0"))
+        # Convert late fees to Decimal, handling strings, numbers, and None
+        def _to_decimal(value):
+            if value is None or value == "" or (isinstance(value, float) and pd.isna(value)):
+                return Decimal("0")
+            try:
+                return Decimal(str(value))
+            except (ValueError, TypeError):
+                return Decimal("0")
+        
+        late_fee_1_val = _to_decimal(lease_data.get("late_fee_day_1_10"))
+        late_fee_2_val = _to_decimal(lease_data.get("late_fee_day_11"))
+        late_fee_3_val = _to_decimal(lease_data.get("late_fee_day_16"))
+        late_fee_4_val = _to_decimal(lease_data.get("late_fee_day_21"))
+        
+        late_fee_1 = self._format_currency(late_fee_1_val)
+        late_fee_2 = self._format_currency(late_fee_2_val)
+        late_fee_3 = self._format_currency(late_fee_3_val)
+        late_fee_4 = self._format_currency(late_fee_4_val)
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"🔍 [LATE FEES] late_fee_1={late_fee_1}, late_fee_2={late_fee_2}, late_fee_3={late_fee_3}, late_fee_4={late_fee_4}")
+        logger.info(f"🔍 [LATE FEES] Using 4-tier structure: {late_fee_3 != '0.00' or late_fee_4 != '0.00'}")
+        nsf_fee = self._format_currency(_to_decimal(lease_data.get("nsf_fee")))
+        prorated_rent_str = self._format_currency(prorated_rent_decimal) if prorated_rent_decimal > 0 else "\\underline{\\hspace{2cm}}"
+        pet_fee = self._format_currency(lease_data.get("pet_fee") or Decimal("0"))
+        key_replacement_fee = self._format_currency(lease_data.get("key_replacement_fee", Decimal("100")))
+        garage_door_opener_fee = self._format_currency(lease_data.get("garage_door_opener_fee") or Decimal("0"))
+        early_termination_fee_amount = self._format_currency(lease_data.get("early_termination_fee_amount", Decimal("0")))
+        
+        # --- INTEGER VARIABLES ---
+        max_occupants = lease_data.get("max_occupants", 3)
+        max_adults = lease_data.get("max_adults", 2)
+        max_pets = lease_data.get("max_pets", 0)
+        deposit_return_days = 30 if state == "MO" else 14
+        front_keys = int(lease_data.get("front_door_keys", 0) or 0)
+        back_keys = int(lease_data.get("back_door_keys", 0) or 0)
+        garage_back_keys = int(lease_data.get("garage_back_door_keys", 0) or 0)
+        garage_spaces = int(lease_data.get("garage_spaces", 0) or 0)
+        offstreet_parking_spots = int(lease_data.get("offstreet_parking_spots", 0) or 0)
+        parking_spaces = int(lease_data.get("parking_spaces", 0) or 0)
+        early_termination_notice_days = lease_data.get("early_termination_notice_days", 60)
+        year_built = lease_data.get("lead_paint_year_built") or property_data.get("year_built") or 1978
+        # Convert year_built to int then string (handle float, string, None, NaN)
+        try:
+            if year_built is None:
+                year_built = "1978"
+            elif hasattr(pd, 'isna') and pd.isna(year_built):
+                year_built = "1978"
+            else:
+                year_built = str(int(float(year_built)))  # Convert to int first, then string to avoid ".0"
+        except (ValueError, TypeError):
+            year_built = "1978"
+        
+        # --- BOOLEAN VARIABLES ---
+        include_holding_fee = lease_data.get("include_holding_fee_addendum", False)
+        pets_allowed = lease_data.get("pets_allowed", False)
+        tenant_mowing = lease_data.get("tenant_lawn_mowing", True)
+        tenant_snow = lease_data.get("tenant_snow_removal", True)
+        tenant_lawn_care = lease_data.get("tenant_lawn_care", False)
+        has_shared_driveway = lease_data.get("has_shared_driveway", False)
+        has_garage_door_opener = bool(lease_data.get("has_garage_door_opener", False))
+        is_multi_family = lease_data.get("unit_id") is not None and lease_data.get("unit_id") != ""
+        show_prorated_rent = lease_data.get("show_prorated_rent", False)
+        early_termination_allowed = lease_data.get("early_termination_allowed", False)
+        garage_outlets_prohibited = lease_data.get("garage_outlets_prohibited", False)
+        lead_paint_disclosure = lease_data.get("lead_paint_disclosure", False)
+        has_attic = lease_data.get("has_attic", False)
+        
+        # Check if property is in Omaha
+        property_city = property_data.get("city", "").lower()
+        property_address_lower = property_data.get("address", "").lower()
+        is_omaha = (property_city == "omaha" or "omaha" in property_address_lower) and state == "NE"
+        
+        # --- LIST/ARRAY VARIABLES ---
+        pets_array = self._parse_pets_array(lease_data.get("pets"))
+        pet_descriptions = self._format_pet_descriptions(pets_array) if pets_array else ""
+        
+        # ============================================================================
+        # BUILD LATEX DOCUMENT USING EXTRACTED VARIABLES
+        # ============================================================================
         
         # Build document
         latex = r'''\documentclass[11pt,letterpaper]{article}
@@ -166,7 +251,7 @@ class LeaseGeneratorService:
 This Lease creates joint and several liability in the case of multiple Tenants. The Parties agree as follows:
 
 \section{1. PREMISES}
-Landlord hereby leases the Premises located at: \textbf{''' + full_address + r'''} (``Premises''). Description: ''' + property_data.get("description", "Residential property") + r'''.
+Landlord hereby leases the Premises located at: \textbf{''' + full_address + r'''} (``Premises''). Description: ''' + property_description + r'''.
 
 \section{2. LEASE TERM AND RENEWAL}
 The Lease shall begin on \textbf{''' + commencement_str + r'''} (``Commencement Date'') and end on \textbf{''' + termination_str + r'''} (``Termination Date'').
@@ -181,16 +266,19 @@ The Lease shall begin on \textbf{''' + commencement_str + r'''} (``Commencement 
 Tenant agrees to pay Landlord as rent for the Premises the amount of \textbf{\$''' + monthly_rent + r'''} per month. Rent is due on the \textbf{1st day of each month}. Rent paid by the \textbf{5th of the month by 6pm} is not considered late.
 \begin{itemize}
     \item \textbf{Payment Method:} Rent shall be paid exclusively via \textbf{TurboTenant}. If Tenant experiences any technical issues with TurboTenant, Tenant must notify Landlord immediately via email or text message. In the event there is a technical issue that cannot be resolved before rent is due, Landlord will accept payment by \textbf{check} made payable to \textbf{''' + owner_name + r'''}.''' + (r'''
-    \item \textbf{Prorated Rent:} If the Commencement Date is not the 1st of the month, the first month's rent shall be prorated based on \$''' + monthly_rent + r''' $\times$ (30 - days after 1st) / 30 (rounded to the nearest cent) to \textbf{\$''' + prorated_rent_str + r'''}. ''' if lease_data.get("show_prorated_rent") else '') + r'''
+    \item \textbf{Prorated Rent:} If the Commencement Date is not the 1st of the month, the first month's rent shall be prorated based on \$''' + monthly_rent + r''' $\times$ (30 - days after 1st) / 30 (rounded to the nearest cent) to \textbf{\$''' + prorated_rent_str + r'''}. ''' if show_prorated_rent else '') + r'''
 \end{itemize}
 
 \section{4. LATE CHARGES}
 '''
         
-        # Add late fee structure based on state
-        if lease_data.get("state") == "NE" and lease_data.get("late_fee_day_16"):
+        # Add late fee structure - show full 4-tier if day 16 or day 21 fees are set, otherwise show 2-tier
+        # This applies to both single-family and multi-family properties
+        if late_fee_3 != "0.00" or late_fee_4 != "0.00":
+            # Full 4-tier structure (NE standard)
             latex += r'''If rent is not paid by the \textbf{5th at 6pm}, a late fee of \textbf{\$''' + late_fee_1 + r'''} will be assessed. If rent and late fee are not paid by the \textbf{11th}, the late fee increases to \textbf{\$''' + late_fee_2 + r'''}. If not paid by the \textbf{16th}, the late fee increases to \textbf{\$''' + late_fee_3 + r'''}. If not paid by the \textbf{21st}, the late fee increases to \textbf{\$''' + late_fee_4 + r'''}. If rent and all late fees are not paid in full prior to the next month's rent due date (the 5th), an automatic eviction notice will be given.'''
         else:
+            # Simplified 2-tier structure (MO or when only first two tiers are set)
             latex += r'''If rent is not paid by the due date, Tenant agrees to pay a late fee of \textbf{\$''' + late_fee_1 + r'''}. If payment remains unpaid after the 11th, an additional late fee of \textbf{\$''' + late_fee_2 + r'''} will be assessed.'''
         
         latex += r'''
@@ -201,7 +289,7 @@ Payments made via \textbf{TurboTenant} are processed electronically and will eit
 \textit{Example: If Tenant pays January rent by check on the 4th and the check is returned for insufficient funds on the 8th, Tenant owes: (1) the original rent amount, (2) the applicable late fee (since rent was not successfully paid by the 5th at 6pm), and (3) the \$''' + nsf_fee + r''' NSF fee.}
 
 \section{6. SECURITY DEPOSIT}
-At the signing of this Lease, Tenant shall deposit with Landlord the sum of \textbf{\$''' + security_deposit + r'''} as a Security Deposit. This deposit secures the performance of this Lease. Landlord may use the deposit to cover unpaid rent or damages beyond normal wear and tear. The deposit shall be returned within ''' + str(lease_data.get("deposit_return_days", 14)) + r''' days after termination of the tenancy, less itemized deductions, per ''' + lease_data.get("state", "NE") + r''' law.''' + (r'''
+At the signing of this Lease, Tenant shall deposit with Landlord the sum of \textbf{\$''' + security_deposit + r'''} as a Security Deposit. This deposit secures the performance of this Lease. Landlord may use the deposit to cover unpaid rent or damages beyond normal wear and tear. The deposit shall be returned within ''' + str(deposit_return_days) + r''' days after termination of the tenancy, less itemized deductions, per ''' + state + r''' law.''' + (r'''
 
 \textit{Note: A Holding Fee of \textbf{\$''' + holding_fee_amount + r'''} was previously collected pursuant to the Holding Fee Agreement dated ''' + (holding_fee_date if holding_fee_date else "prior to lease execution") + r'''. This Holding Fee has been credited in full toward the Security Deposit shown above.}''' if include_holding_fee else "") + r'''
 
@@ -209,7 +297,7 @@ At the signing of this Lease, Tenant shall deposit with Landlord the sum of \tex
 If Tenant fails to perform any obligation under this Lease, Tenant shall be in default.
 \begin{itemize}
     \item \textbf{Non-Payment:} Landlord may deliver a \textbf{7-Day Notice to Pay or Quit}.
-    \item \textbf{Other Breaches:} Landlord may deliver a ''' + (r'''\textbf{30-Day Notice with 14-day cure period}''' if lease_data.get("state") == "NE" else r'''\textbf{14/30 Day Notice}''') + r''' to cure or quit.
+    \item \textbf{Other Breaches:} Landlord may deliver a ''' + (r'''\textbf{30-Day Notice with 14-day cure period}''' if state == "NE" else r'''\textbf{14/30 Day Notice}''') + r''' to cure or quit.
     \item \textbf{Illegal Activity:} Landlord may deliver a \textbf{5-Day Unconditional Notice to Quit}.
 \end{itemize}
 Landlord may re-enter and take possession as permitted by law. Tenant remains liable for unpaid rent and damages.
@@ -225,7 +313,7 @@ Tenant shall be entitled to possession on the first day of the Lease Term. At ex
 \section{10. USE OF PREMISES}
 The Premises shall be used as a private residence only. No business or trade may be conducted without prior written consent. Tenant will comply with all laws, rules, ordinances, statutes and orders regarding the use of the Premises.
 
-\subsection{10.1 COMPLIANCE WITH LAWS}
+\subsection*{10.1 COMPLIANCE WITH LAWS}
 Tenant shall not violate any law or ordinance (federal, state, or local), or commit or permit any waste or nuisance in or about the Premises, or in any way annoy any other person residing within three hundred (300) feet of the Premises. Such actions shall be a material and irreparable violation of the Agreement and good cause for termination of Agreement.
 
 \section{11. OCCUPANTS}
@@ -234,7 +322,7 @@ Tenant agrees that no more than \textbf{''' + str(lease_data.get("max_occupants"
 \section{12. CONDITION OF PREMISES}
 Tenant or Tenant's agent has inspected the Premises, the fixtures, the grounds, building and improvements and acknowledges that the Premises are in good and acceptable condition and are habitable. If at any time during the term of this Lease, in Tenant's opinion, the conditions change, Tenant shall promptly provide reasonable notice to Landlord.''' + (r'''
 
-\textit{Important Nebraska Tenant Rights: Under Nebraska Revised Statutes § 76-1427, Nebraska tenants have explicit statutory rights regarding habitability issues. After providing written notice and allowing reasonable time for the landlord to remedy, tenants may: (1) withhold rent until habitability issues are fixed, or (2) repair and deduct costs from rent (capped at one month's rent per 12-month period). These rights are in addition to any other remedies available under Nebraska law.}''' if lease_data.get("state") == "NE" else "") + r'''
+\textit{Important Nebraska Tenant Rights: Under Nebraska Revised Statutes § 76-1427, Nebraska tenants have explicit statutory rights regarding habitability issues. After providing written notice and allowing reasonable time for the landlord to remedy, tenants may: (1) withhold rent until habitability issues are fixed, or (2) repair and deduct costs from rent (capped at one month's rent per 12-month period). These rights are in addition to any other remedies available under Nebraska law.}''' if state == "NE" else "") + r'''
 
 \section{13. ASSIGNMENT AND SUBLEASE}
 Tenant shall not assign or sublease any interest in this lease without prior written consent of the Landlord, which consent shall not be unreasonably withheld. Any assignment or sublease without Landlord's written prior consent shall, at Landlord's option, terminate this Lease.
@@ -243,20 +331,13 @@ Tenant shall not assign or sublease any interest in this lease without prior wri
 Tenant shall not keep or have on or around the Premises any item of a dangerous, flammable or explosive character that might unreasonably increase the risk of fire or explosion on or around the Premises or that might be considered hazardous by any responsible insurance company.
 
 \section{15. UTILITIES AND SERVICES}
-Tenant will be responsible for all utilities and services required on the Premises (including ''' + lease_data.get("utilities_tenant", "Gas, Sewer, Water, and Electricity") + r'''), except Landlord will provide: \textbf{''' + lease_data.get("utilities_landlord", "Trash") + r'''}.
+Tenant will be responsible for all utilities and services required on the Premises (including ''' + utilities_tenant + r''').''' + (r''' Landlord or City will provide: \textbf{''' + self._escape_latex(utilities_provided_by_owner_city) + r'''}.''' if utilities_provided_by_owner_city else r''' No utilities are provided by Landlord or City.''') + r'''
 
 \section{16. PETS}
 '''
         
         # Add pet section using new pet_fee and pets array format
-        if lease_data.get("pets_allowed") and lease_data.get("max_pets", 0) > 0:
-            pet_fee = self._format_currency(lease_data.get("pet_fee") or lease_data.get("pet_fee_one") or Decimal("0"))
-            max_pets = lease_data.get("max_pets", 0)
-            pets_array = self._parse_pets_array(lease_data.get("pets"))
-            
-            # Build pet descriptions grouped by type
-            pet_descriptions = self._format_pet_descriptions(pets_array)
-            
+        if pets_allowed and max_pets > 0:
             if pet_descriptions:
                 pet_plural_desc = 's' if max_pets != 1 else ''
                 base_desc = (r'''Pet Fee is \textbf{\$''' + pet_fee + r'''} and includes ''' + 
@@ -287,19 +368,10 @@ Tenant will be responsible for all utilities and services required on the Premis
             latex += r'''No pets allowed on the Premises without prior written consent of the Landlord.'''
         
         # Add smoking section
-        smoking_policy = lease_data.get("smoking_policy", "not_permitted")  # Options: not_permitted, permitted, outdoors_only
-        smoking_not_permitted = r'''\cmark''' if smoking_policy == "not_permitted" else r'''\xmark'''
-        smoking_permitted = r'''\cmark''' if smoking_policy == "permitted" else r'''\xmark'''
-        smoking_outdoors_only = r'''\cmark''' if smoking_policy == "outdoors_only" else r'''\xmark'''
-        
         latex += r'''
 
-\subsection{16.1 SMOKING}
-The Premises are designated as a property where smoking is:
-
-''' + smoking_not_permitted + r''' Not Permitted
-''' + smoking_permitted + r''' Permitted
-''' + smoking_outdoors_only + r''' Permitted Outdoors Only
+\subsection*{16.1 SMOKING}
+Smoking is not permitted inside or outside the Premises.
 
 For the purposes of clarifying and restricting its use, the term "Smoking" is defined to include the use of cigarettes, pipes, cigars, electronic vaporizing or aerosol devices, or other devices intended for the inhalation of tobacco, marijuana, or similar substances. Tenant understands and agrees that any damage caused by Smoking shall not constitute ordinary wear and tear. Landlord may deduct from the Security Deposit all damages and/or costs for the cleaning or repairing of any damage caused by or related to Smoking, including but not limited to: deodorizing the Premises, sealing and painting the walls and ceiling, and/or repairing or replacing the carpet and pads.
 
@@ -314,10 +386,6 @@ Tenant will, at Tenant's sole expense, keep and maintain the Premises in good, c
 '''
         
         # Add maintenance responsibilities with checkboxes
-        tenant_mowing = lease_data.get("tenant_lawn_mowing", True)
-        tenant_snow = lease_data.get("tenant_snow_removal", True)
-        tenant_lawn_care = lease_data.get("tenant_lawn_care", False)
-        
         mowing_responsible = "Tenant" if tenant_mowing else "Landlord"
         snow_responsible = "Tenant" if tenant_snow else "Landlord"
         lawn_care_responsible = "Tenant" if tenant_lawn_care else "Landlord"
@@ -332,18 +400,40 @@ Tenant will, at Tenant's sole expense, keep and maintain the Premises in good, c
     \textit{Clear snow and ice from all sidewalks, driveway, and walkways within twenty-four (24) hours of snowfall cessation to ensure safe passage and compliance with local ordinances.}
     
     \item \textbf{Lawn Care:} \cmark\ ''' + lawn_care_responsible + r''' is responsible. \\
-    \textit{General lawn and landscape maintenance including: seasonal activation and winterization of sprinkler/irrigation systems, watering as needed, overseeding bare or damaged areas, and fertilization.}
+    \textit{General lawn and landscape maintenance including: ''' + (r'''seasonal activation and winterization of sprinkler/irrigation systems (if sprinkler system is available), ''' if lawn_care_responsible == "Tenant" else "") + r'''watering as needed, overseeding bare or damaged areas, and fertilization. \textbf{Note:} Lawn care responsibilities do not include lawn mowing, which is addressed separately above.}
 \end{itemize}
 '''
         
         # Add shared driveway notice if applicable
-        if lease_data.get("has_shared_driveway"):
+        if has_shared_driveway:
             latex += r'''
-\textbf{Shared Driveway Notice:} Tenant shall NOT block the shared driveway with ''' + self._escape_latex(lease_data.get("shared_driveway_with", "neighboring property")) + r'''.
+\textbf{Shared Driveway Notice:} Tenant shall NOT block the shared driveway with ''' + self._escape_latex(shared_driveway_with) + r'''.
 '''
         
         # Continue with remaining sections
-        latex += self._generate_remaining_sections(lease_data, property_data)
+        latex += self._generate_remaining_sections(
+            state=state,
+            is_multi_family=is_multi_family,
+            garage_spaces=garage_spaces,
+            offstreet_parking_spots=offstreet_parking_spots,
+            parking_spaces=parking_spaces,
+            front_keys=front_keys,
+            back_keys=back_keys,
+            garage_back_keys=garage_back_keys,
+            key_replacement_fee=key_replacement_fee,
+            has_garage_door_opener=has_garage_door_opener,
+            garage_door_opener_fee=garage_door_opener_fee,
+            appliances_provided=appliances_provided,
+            has_attic=has_attic,
+            attic_usage=attic_usage,
+            lead_paint_disclosure=lead_paint_disclosure,
+            year_built=year_built,
+            early_termination_allowed=early_termination_allowed,
+            early_termination_fee_amount=early_termination_fee_amount,
+            early_termination_notice_days=early_termination_notice_days,
+            garage_outlets_prohibited=garage_outlets_prohibited,
+            is_omaha=is_omaha
+        )
         
         # Add move-out costs section
         latex += self._generate_moveout_section(lease_data)
@@ -364,11 +454,34 @@ The descriptive headings used herein are for convenience of reference only, and 
         
         return latex
     
-    def _generate_remaining_sections(self, lease_data: Dict[str, Any], property_data: Dict[str, Any]) -> str:
+    def _generate_remaining_sections(
+        self,
+        state: str,
+        is_multi_family: bool,
+        garage_spaces: int,
+        offstreet_parking_spots: int,
+        parking_spaces: int,
+        front_keys: int,
+        back_keys: int,
+        garage_back_keys: int,
+        key_replacement_fee: str,
+        has_garage_door_opener: bool,
+        garage_door_opener_fee: str,
+        appliances_provided: str,
+        has_attic: bool,
+        attic_usage: str,
+        lead_paint_disclosure: bool,
+        year_built: str,
+        early_termination_allowed: bool,
+        early_termination_fee_amount: str,
+        early_termination_notice_days: int,
+        garage_outlets_prohibited: bool,
+        is_omaha: bool
+    ) -> str:
         """Generate sections 20-38"""
         latex = r'''
 \section{20. RIGHT OF INSPECTION}
-Tenant agrees to make the premises available to Landlord or Landlord's agents for the purposes of inspection, making repairs or improvements, or to supply agreed services or show the premises to prospective buyers or tenants, or in case of emergency. Except in case of emergency, Landlord shall give Tenant ''' + (r'''at least 24 hours' notice of intent to enter.''' if lease_data.get("state") == "NE" else r'''reasonable notice of intent to enter. For these purposes, twenty-four (24) hour notice shall be deemed reasonable.''') + r''' Tenant shall not, without Landlord's prior written consent, add, alter or re-key any locks to the premises. At all times Landlord shall be provided with a key or keys capable of unlocking all such locks and gaining entry. Tenant further agree to notify Landlord in writing if Tenant installs any burglar alarm system, including instructions on how to disarm it in case of emergency entry.
+Tenant agrees to make the premises available to Landlord or Landlord's agents for the purposes of inspection, making repairs or improvements, or to supply agreed services or show the premises to prospective buyers or tenants, or in case of emergency. Except in case of emergency, Landlord shall give Tenant ''' + (r'''at least 24 hours' notice of intent to enter.''' if state == "NE" else r'''reasonable notice of intent to enter. For these purposes, twenty-four (24) hour notice shall be deemed reasonable.''') + r''' Tenant shall not, without Landlord's prior written consent, add, alter or re-key any locks to the premises. At all times Landlord shall be provided with a key or keys capable of unlocking all such locks and gaining entry. Tenant further agree to notify Landlord in writing if Tenant installs any burglar alarm system, including instructions on how to disarm it in case of emergency entry.
 
 \section{21. ABANDONMENT}
 If Tenant abandons the Premises or any personal property during the term of this Lease, Landlord may at its option enter the Premises by any legal means without liability to Tenant and may at Landlord's option terminate the Lease. Abandonment is defined as absence of the Tenants from the premises, for at least 30 consecutive days without notice to Landlord. If Tenant abandons the premises while the rent is outstanding for more than 15 days and there is no reasonable evidence, other than the presence of the Tenants' personal property, that the Tenant is occupying the unit, Landlord may at Landlord's option terminate this agreement and regain possession in the manner prescribed by law. Landlord will dispose of all abandoned personal property on the Premises in any manner allowed by law.
@@ -379,7 +492,7 @@ In the event Tenant will be away from the premises for more than 30 consecutive 
 \section{23. SECURITY}
 Tenant understands that Landlord does not provide any security alarm system or other security for Tenant or the Premises. In the event any alarm system is provided, Tenant understands that such alarm system is not warranted to be complete in all respects or to be sufficient to protect Tenant or the Premises. Tenant releases Landlord from any loss, damage, claim or injury resulting from the failure of any alarm system, security or from the lack of any alarm system or security.
 
-\subsection{23.1 NO REPRESENTATIONS}
+\subsection*{23.1 NO REPRESENTATIONS}
 Tenant acknowledges that Landlord has not made any representations, written or oral, concerning the safety of the community or the effectiveness or operability of any security devices or security measures. Tenant acknowledges that Landlord does not warrant or guarantee the safety or security of Tenant or his or her guests or invitees against the criminal or wrongful acts of third parties. Each Tenant, guest, invitee and Additional Occupant(s) is responsible for protecting his or her own person and property.
 
 \section{24. SEVERABILITY}
@@ -391,11 +504,11 @@ Landlord and Tenant shall each be responsible to maintain appropriate insurance 
 \section{26. BINDING EFFECT}
 This Lease binds the parties and their heirs/successors.
 
-\subsection{26.1 SUBORDINATION OF LEASE}
+\subsection*{26.1 SUBORDINATION OF LEASE}
 This Lease and Tenant's interest hereunder are, and shall be, subordinate, junior, and inferior to any and all mortgages, liens, or encumbrances now or hereafter placed on the Premises by Landlord, all advances made under any such mortgages, liens, or encumbrances (including, but not limited to, future advances), the interest payable on such mortgages, liens, or encumbrances and any and all renewals, extensions, or modifications of such mortgages, liens, or encumbrances.
 
 \section{27. GOVERNING LAW}
-This Lease shall be governed by and construed in accordance with the laws of the State of ''' + ("Nebraska" if lease_data.get("state") == "NE" else "Missouri") + r'''. All Parties to this Lease, including Third Party Guarantors, if any, expressly consent to the venue of the courts of the county in which the Premises is located.
+This Lease shall be governed by and construed in accordance with the laws of the State of ''' + ("Nebraska" if state == "NE" else "Missouri") + r'''. All Parties to this Lease, including Third Party Guarantors, if any, expressly consent to the venue of the courts of the county in which the Premises is located.
 
 \section{28. ENTIRE AGREEMENT}
 This Lease constitutes the entire agreement between the parties and supersedes any prior understanding or representation of any kind preceding the date of this Agreement. There are no other promises, conditions, understandings or other agreements, whether oral or written, relating to the subject matter of this Lease. This Lease may be modified in writing and must be signed by both Landlord and Tenant.
@@ -418,43 +531,57 @@ Failure to enforce a provision does not waive the right to enforce it later. No 
 \section{32. DISPLAY OF SIGNS}
 Landlord may display ``For Rent'' signs during the last 60 days of the Lease.
 
-\subsection{32.1 TIME}
+\subsection*{32.1 TIME}
 Time is of the essence to the terms of this Lease.
 
 \section{33. PARKING}
 '''
-        
-        # Build parking description dynamically
-        garage_spaces = int(lease_data.get("garage_spaces", 0) or 0)
-        offstreet_spots = int(lease_data.get("offstreet_parking_spots", 0) or 0)
-        total_spaces = int(lease_data.get("parking_spaces", 0) or 0)
-        
-        # Check if this is a multi-family property (has unit_id)
-        is_multi_family = lease_data.get("unit_id") is not None and lease_data.get("unit_id") != ""
         
         # Build assigned spaces description
         parking_parts = []
         if garage_spaces > 0:
             garage_text = f"{garage_spaces} garage space" if garage_spaces == 1 else f"{garage_spaces} garage spaces"
             parking_parts.append(garage_text)
-        if offstreet_spots > 0:
-            offstreet_text = f"{offstreet_spots} off-street parking space" if offstreet_spots == 1 else f"{offstreet_spots} off-street parking spaces"
+        if offstreet_parking_spots > 0:
+            offstreet_text = f"{offstreet_parking_spots} off-street parking space" if offstreet_parking_spots == 1 else f"{offstreet_parking_spots} off-street parking spaces"
             parking_parts.append(offstreet_text)
         
         if parking_parts:
             assigned_spaces = " and ".join(parking_parts)
-        elif total_spaces > 0:
-            assigned_spaces = f"{total_spaces} parking space" if total_spaces == 1 else f"{total_spaces} parking spaces"
+        elif parking_spaces > 0:
+            assigned_spaces = f"{parking_spaces} parking space" if parking_spaces == 1 else f"{parking_spaces} parking spaces"
         else:
             assigned_spaces = "designated parking area"
         
-        latex += r'''\textbf{Assigned Parking:} Tenant is assigned \textbf{''' + assigned_spaces + r'''} for the exclusive use of Tenant's operable, properly registered, and insured motor vehicle(s).
+        # Build parking assignment text based on property type
+        if is_multi_family:
+            latex += r'''\textbf{Assigned Parking:} Tenant is assigned \textbf{''' + assigned_spaces + r'''} for the exclusive use of Tenant's operable, properly registered, and insured motor vehicle(s).'''
+        else:
+            # Single-family: Include garage, driveway, and acknowledge street parking availability
+            parking_location_parts = []
+            if garage_spaces > 0:
+                parking_location_parts.append(f"{garage_spaces} garage space" if garage_spaces == 1 else f"{garage_spaces} garage spaces")
+            parking_location_parts.append("the driveway")
+            parking_location_text = " and ".join(parking_location_parts)
+            latex += r'''\textbf{Assigned Parking:} Tenant is assigned \textbf{''' + parking_location_text + r'''} for the exclusive use of Tenant's operable, properly registered, and insured motor vehicle(s). In addition, Tenant may park on the public street adjacent to the Premises, subject to all applicable municipal parking regulations, restrictions, and time limits. Landlord makes no representation or warranty regarding the availability, legality, or safety of street parking, and Tenant assumes all risk and responsibility for vehicles parked on public streets.'''
+
+        latex += r'''
 
 \textbf{Permitted Vehicles:} Only passenger vehicles, including automobiles, motorcycles, and non-commercial pickup trucks, are permitted. The parking of trailers, boats, campers, recreational vehicles, buses, or commercial vehicles is prohibited without prior written consent from Landlord.
 
 \textbf{Parking Regulations:}
 \begin{itemize}[nosep, leftmargin=2em]
-    \item Tenant shall park only in assigned space(s) and shall not obstruct driveways, fire lanes, sidewalks, or access to other parking spaces.
+'''
+        
+        # Differentiate parking restrictions based on property type
+        if is_multi_family:
+            # Multi-family: Tenant must respect shared spaces and assigned parking
+            latex += r'''    \item Tenant shall park only in assigned space(s) and shall not obstruct shared driveways, fire lanes, sidewalks, or access to other tenants' assigned parking spaces.'''
+        else:
+            # Single-family: Tenant has exclusive use of driveway, can use street parking with municipal compliance
+            latex += r'''    \item Tenant shall park in the assigned garage space(s) and/or driveway. When parking on the public street, Tenant must comply with all municipal parking regulations, including but not limited to time restrictions, permit requirements, and snow removal ordinances. Tenant shall not obstruct fire lanes, sidewalks, or public access areas, whether parking on the Premises or on public streets.'''
+        
+        latex += r'''
     \item Vehicles must be maintained in operable condition and free of fluid leaks. Vehicles with expired registration or in inoperable condition are subject to towing at Tenant's expense.
     \item Vehicle maintenance, repairs, or washing in the parking area is prohibited except for minor cleaning.
 \end{itemize}
@@ -470,7 +597,35 @@ Time is of the essence to the terms of this Lease.
 \textbf{Liability:} Landlord is not responsible for any damage, theft, or loss of vehicles or personal property within the parking area. Tenant assumes all risk associated with parking on the Premises.
 
 \section{34. KEYS}
-Tenant will be given \textbf{''' + str(lease_data.get("front_door_keys", 1)) + r'''} key to the Front Door and \textbf{''' + str(lease_data.get("back_door_keys", 1)) + r'''} key to the Back Door. Mailbox is unlocked and fixed to the dwelling. Tenant shall be charged \textbf{\$''' + self._format_currency(lease_data.get("key_replacement_fee", Decimal("100"))) + r'''} per key if all keys are not returned to Landlord following termination of the Lease.
+'''
+        # Build keys list
+        keys_list = []
+        if front_keys > 0:
+            keys_list.append(r'''\textbf{''' + str(front_keys) + r'''} key to the Front Door''')
+        if back_keys > 0:
+            keys_list.append(r'''\textbf{''' + str(back_keys) + r'''} key to the Back Door''')
+        if garage_back_keys > 0:
+            keys_list.append(r'''\textbf{''' + str(garage_back_keys) + r'''} key to the Garage Back Door''')
+        
+        if keys_list:
+            if len(keys_list) == 1:
+                keys_text = keys_list[0]
+            elif len(keys_list) == 2:
+                keys_text = keys_list[0] + r''' and ''' + keys_list[1]
+            else:
+                keys_text = ", ".join(keys_list[:-1]) + r''', and ''' + keys_list[-1]
+            latex += r'''Tenant will be given ''' + keys_text + r'''. Mailbox is unlocked and fixed to the dwelling. Tenant shall be charged \textbf{\$''' + key_replacement_fee + r'''} per key if all keys are not returned to Landlord following termination of the Lease.'''
+        else:
+            latex += r'''Tenant will be given keys as specified by Landlord. Mailbox is unlocked and fixed to the dwelling. Tenant shall be charged \textbf{\$''' + key_replacement_fee + r'''} per key if all keys are not returned to Landlord following termination of the Lease.'''
+        
+        # Add garage door opener information if applicable
+        if has_garage_door_opener:
+            if garage_door_opener_fee != "0.00":
+                latex += r''' Tenant will be provided with a garage door opener remote. Tenant shall be charged \textbf{\$''' + garage_door_opener_fee + r'''} for replacement of the garage door opener remote if it is not returned to Landlord following termination of the Lease.'''
+            else:
+                latex += r''' Tenant will be provided with a garage door opener remote. Tenant shall return the garage door opener remote to Landlord following termination of the Lease.'''
+        
+        latex += r'''
 
 \section{35. LIQUID-FILLED FURNITURE}
 Tenant shall not use or have any liquid-filled furniture, including but not limited to waterbeds, on the premises without Landlord's prior written consent.
@@ -486,34 +641,27 @@ In the event of any legal action by the parties arising out of this Lease, the l
 '''
         
         # Add additional terms
-        if lease_data.get("appliances_provided"):
-            latex += r'''    \item \textbf{Appliances:} ''' + lease_data.get("appliances_provided") + r'''.
+        if appliances_provided:
+            latex += r'''    \item \textbf{Appliances:} ''' + appliances_provided + r'''.
 '''
-        if lease_data.get("has_attic") and lease_data.get("attic_usage"):
-            latex += r'''    \item \textbf{Attic Usage:} ''' + lease_data.get("attic_usage") + r'''.
+        if has_attic and attic_usage:
+            latex += r'''    \item \textbf{Attic Usage:} ''' + attic_usage + r'''.
 '''
-        if lease_data.get("lead_paint_disclosure"):
-            year_built = lease_data.get("lead_paint_year_built", property_data.get("year_built", 1978))
-            latex += r'''    \item \textbf{Lead-Based Paint:} Housing built before 1978 may contain lead-based paint. The Premises was built in ''' + str(year_built) + r'''. Landlord discloses the known presence of lead-based paint and/or lead-based paint hazards. Tenant acknowledges receipt of the EPA pamphlet ``Protect Your Family from Lead in Your Home''.
+        if lead_paint_disclosure:
+            latex += r'''    \item \textbf{Lead-Based Paint:} Housing built before 1978 may contain lead-based paint. The Premises was built in ''' + year_built + r'''. Landlord discloses the known presence of lead-based paint and/or lead-based paint hazards. Tenant acknowledges receipt of the EPA pamphlet ``Protect Your Family from Lead in Your Home''.
 '''
         latex += r'''    \item \textbf{Tenant Representations:} Application info via MySmartMove.com is warranted as true; falsification is default.
 '''
         
-        if lease_data.get("early_termination_allowed"):
-            early_term_fee = self._format_currency(lease_data.get("early_termination_fee_amount", Decimal("0")))
-            early_term_days = lease_data.get("early_termination_notice_days", 60)
-            latex += r'''    \item \textbf{Early Termination:} Tenant may terminate early with ''' + str(early_term_days) + r''' days' notice AND payment of a 2-month rent fee (\textbf{\$''' + early_term_fee + r'''}). The Security Deposit shall NOT be applied toward this fee.
+        if early_termination_allowed:
+            latex += r'''    \item \textbf{Early Termination:} Tenant may terminate early with ''' + str(early_termination_notice_days) + r''' days' notice AND payment of a 2-month rent fee (\textbf{\$''' + early_termination_fee_amount + r'''}). The Security Deposit shall NOT be applied toward this fee.
 '''
         
-        if lease_data.get("garage_outlets_prohibited"):
+        if garage_outlets_prohibited:
             latex += r'''    \item \textbf{Garage Outlets:} Tenant is strictly prohibited from using the electrical outlets in the garage for any purpose.
 '''
         
         # Add Omaha-specific requirements if property is in Omaha
-        property_city = property_data.get("city", "").lower()
-        property_address = property_data.get("address", "").lower()
-        is_omaha = (property_city == "omaha" or "omaha" in property_address) and lease_data.get("state") == "NE"
-        
         if is_omaha:
             latex += r'''    \item \textbf{Omaha Landlord Registration:} This rental property is registered with the City of Omaha as required by Omaha Municipal Code. Landlord confirms compliance with all local registration requirements.
     \item \textbf{Omaha Fair Housing:} This Lease complies with Omaha's Fair Housing Ordinance, which extends protections beyond federal and Nebraska state law to include sexual orientation and gender identity. Landlord and Tenant acknowledge compliance with Omaha's expanded anti-discrimination protections.

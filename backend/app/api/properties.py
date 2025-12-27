@@ -141,21 +141,32 @@ async def list_properties_endpoint(
     current_user: dict = Depends(get_current_user)
 ):
     """List all properties for the current user from Iceberg (including shared properties)"""
+    import time
+    endpoint_start = time.time()
+    logger.info(f"⏱️ [PERF] list_properties_endpoint started")
+    
     try:
         user_id = current_user["sub"]  # Already a string
         user_email = current_user["email"]
         
+        table_exists_start = time.time()
         if not table_exists(NAMESPACE, TABLE_NAME):
             return PropertyListResponse(items=[], total=0, page=1, limit=limit)
+        logger.info(f"⏱️ [PERF] table_exists took {time.time() - table_exists_start:.2f}s")
         
         # Read all properties
+        read_start = time.time()
         df = read_table(NAMESPACE, TABLE_NAME)
+        logger.info(f"⏱️ [PERF] read_table(properties) took {time.time() - read_start:.2f}s")
         
         # Get shared user IDs (bidirectional)
+        sharing_start = time.time()
         from app.api.sharing_utils import get_shared_user_ids
         shared_user_ids = get_shared_user_ids(user_id, user_email)
+        logger.info(f"⏱️ [PERF] get_shared_user_ids took {time.time() - sharing_start:.2f}s")
         
         # Filter: properties owned by user OR owned by shared users
+        filter_start = time.time()
         if len(shared_user_ids) > 0:
             user_properties = df[
                 ((df["user_id"] == user_id) | (df["user_id"].isin(shared_user_ids))) &
@@ -163,6 +174,7 @@ async def list_properties_endpoint(
             ]
         else:
             user_properties = df[(df["user_id"] == user_id) & (df["is_active"] == True)]
+        logger.info(f"⏱️ [PERF] Filtering properties took {time.time() - filter_start:.2f}s")
         
         total = len(user_properties)
         
@@ -170,6 +182,7 @@ async def list_properties_endpoint(
         paginated = user_properties.iloc[skip:skip + limit]
         
         # Convert to PropertyResponse objects
+        convert_start = time.time()
         items = []
         for _, row in paginated.iterrows():
             prop_dict = {
@@ -201,6 +214,10 @@ async def list_properties_endpoint(
                 "updated_at": row["updated_at"] if pd.notna(row.get("updated_at")) else pd.Timestamp.now(),
             }
             items.append(PropertyResponse(**prop_dict))
+        logger.info(f"⏱️ [PERF] Converting to PropertyResponse objects took {time.time() - convert_start:.2f}s")
+        
+        total_time = time.time() - endpoint_start
+        logger.info(f"⏱️ [PERF] list_properties_endpoint completed in {total_time:.2f}s")
         
         return PropertyListResponse(
             items=items,
@@ -209,7 +226,8 @@ async def list_properties_endpoint(
             limit=limit
         )
     except Exception as e:
-        logger.error(f"Error listing properties: {e}", exc_info=True)
+        total_time = time.time() - endpoint_start
+        logger.error(f"⏱️ [PERF] list_properties_endpoint failed after {total_time:.2f}s: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

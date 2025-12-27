@@ -16,7 +16,8 @@ export const tenantKeys = {
 export function useTenants(filters?: { property_id?: string; unit_id?: string; status?: string }) {
   return useQuery<TenantListResponse>({
     queryKey: tenantKeys.list(filters),
-    queryFn: () => {
+    queryFn: async () => {
+      const startTime = performance.now();
       console.log(`📤 [TENANT] GET /api/v1/tenants - Request`, filters);
       const params = new URLSearchParams();
       if (filters?.property_id) params.append('property_id', filters.property_id);
@@ -24,7 +25,16 @@ export function useTenants(filters?: { property_id?: string; unit_id?: string; s
       if (filters?.status) params.append('status', filters.status);
       
       const url = `/tenants${params.toString() ? `?${params.toString()}` : ''}`;
-      return apiClient.get<TenantListResponse>(url);
+      try {
+        const result = await apiClient.get<TenantListResponse>(url);
+        const elapsed = performance.now() - startTime;
+        console.log(`⏱️ [PERF] Tenants API call completed in ${elapsed.toFixed(2)}ms`);
+        return result;
+      } catch (error) {
+        const elapsed = performance.now() - startTime;
+        console.log(`⏱️ [PERF] Tenants API call failed after ${elapsed.toFixed(2)}ms`);
+        throw error;
+      }
     },
   });
 }

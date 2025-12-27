@@ -8,9 +8,19 @@ import type { Property, PropertyListResponse } from '../types';
 export function useProperties() {
   return useQuery<PropertyListResponse>({
     queryKey: ['properties'],
-    queryFn: () => {
+    queryFn: async () => {
+      const startTime = performance.now();
       console.log('📤 [PROPERTIES] GET /api/v1/properties - Request');
-      return apiClient.get<PropertyListResponse>('/properties');
+      try {
+        const result = await apiClient.get<PropertyListResponse>('/properties');
+        const elapsed = performance.now() - startTime;
+        console.log(`⏱️ [PERF] Properties API call completed in ${elapsed.toFixed(2)}ms`);
+        return result;
+      } catch (error) {
+        const elapsed = performance.now() - startTime;
+        console.log(`⏱️ [PERF] Properties API call failed after ${elapsed.toFixed(2)}ms`);
+        throw error;
+      }
     },
   });
 }

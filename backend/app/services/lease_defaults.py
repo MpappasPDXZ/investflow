@@ -20,8 +20,7 @@ BASE_LEASE_DEFAULTS = {
     "max_children": True,
     "pets_allowed": True,
     "max_pets": 2,
-    "pet_fee_one": Decimal("350.00"),
-    "pet_fee_two": Decimal("700.00"),
+    "pet_fee": Decimal("500.00"),  # Total pet fee (not deposits - state regulated)
     "parking_spaces": 2,
     "parking_small_vehicles": 2,
     "parking_large_trucks": 1,

@@ -118,13 +118,11 @@ class LeaseBase(BaseModel):
     # Utilities
     utilities_tenant: Optional[str] = Field(None, max_length=500)
     utilities_landlord: Optional[str] = Field(None, max_length=500)
+    utilities_provided_by_owner_city: Optional[str] = Field(None, max_length=1000, description="Text field for utilities provided by owner or city (e.g., 'City-provided trash' for Omaha, NE)")
     
     # Pets
     pets_allowed: Optional[bool] = True
-    pet_fee: Optional[Decimal] = Field(None, ge=0, description="Total pet fee ($300/pet, max $500)")
-    pet_fee_one: Optional[Decimal] = Field(None, ge=0)
-    pet_fee_two: Optional[Decimal] = Field(None, ge=0)
-    pet_deposit_total: Optional[Decimal] = Field(None, ge=0, description="Total pet deposit amount")
+    pet_fee: Optional[Decimal] = Field(None, ge=0, description="Total pet fee (not deposits - state regulated)")
     pet_description: Optional[str] = Field(None, max_length=500, description="e.g., '2 cats and 1 50lb dog'")
     max_pets: Optional[int] = Field(2, ge=0)
     pets: Optional[List[PetInfo]] = None
@@ -145,6 +143,7 @@ class LeaseBase(BaseModel):
     has_back_door: Optional[bool] = Field(True, description="Property has back door")
     front_door_keys: Optional[int] = Field(1, ge=0)
     back_door_keys: Optional[int] = Field(1, ge=0)
+    garage_back_door_keys: Optional[int] = Field(None, ge=0, description="Number of keys for garage back door (3rd door)")
     key_replacement_fee: Optional[Decimal] = Field(None, ge=0)
     
     # Shared Driveway
@@ -160,6 +159,8 @@ class LeaseBase(BaseModel):
     # Garage
     has_garage: Optional[bool] = False
     garage_outlets_prohibited: Optional[bool] = False
+    has_garage_door_opener: Optional[bool] = Field(False, description="Property has garage door opener")
+    garage_door_opener_fee: Optional[Decimal] = Field(None, ge=0, description="Replacement fee for garage door opener")
     
     # Special Spaces
     has_attic: Optional[bool] = False
@@ -188,7 +189,6 @@ class LeaseBase(BaseModel):
     owner_address: Optional[str] = Field(None, max_length=500)
     manager_name: Optional[str] = Field(None, max_length=200)
     manager_address: Optional[str] = Field(None, max_length=500)
-    deposit_account_info: Optional[str] = Field(None, max_length=500)
     moveout_inspection_rights: Optional[bool] = None
     military_termination_days: Optional[int] = Field(None, ge=0)
     
@@ -244,7 +244,6 @@ class LeaseCreate(LeaseBase):
 class LeaseUpdate(BaseModel):
     """Lease update (all fields optional except cannot change property/state)"""
     # Metadata
-    is_official: Optional[bool] = None
     
     # Dates
     commencement_date: Optional[date] = None
@@ -291,11 +290,9 @@ class LeaseUpdate(BaseModel):
     max_children: Optional[bool] = None
     utilities_tenant: Optional[str] = Field(None, max_length=500)
     utilities_landlord: Optional[str] = Field(None, max_length=500)
+    utilities_provided_by_owner_city: Optional[str] = Field(None, max_length=1000)
     pets_allowed: Optional[bool] = None
     pet_fee: Optional[Decimal] = Field(None, ge=0)
-    pet_fee_one: Optional[Decimal] = Field(None, ge=0)
-    pet_fee_two: Optional[Decimal] = Field(None, ge=0)
-    pet_deposit_total: Optional[Decimal] = Field(None, ge=0)
     pet_description: Optional[str] = Field(None, max_length=500)
     max_pets: Optional[int] = Field(None, ge=0)
     pets: Optional[List[PetInfo]] = None
@@ -312,6 +309,7 @@ class LeaseUpdate(BaseModel):
     has_back_door: Optional[bool] = None
     front_door_keys: Optional[int] = Field(None, ge=0)
     back_door_keys: Optional[int] = Field(None, ge=0)
+    garage_back_door_keys: Optional[int] = Field(None, ge=0)
     key_replacement_fee: Optional[Decimal] = Field(None, ge=0)
     has_shared_driveway: Optional[bool] = None
     shared_driveway_with: Optional[str] = Field(None, max_length=200)
@@ -321,6 +319,8 @@ class LeaseUpdate(BaseModel):
     tenant_lawn_care: Optional[bool] = None
     has_garage: Optional[bool] = None
     garage_outlets_prohibited: Optional[bool] = None
+    has_garage_door_opener: Optional[bool] = None
+    garage_door_opener_fee: Optional[Decimal] = Field(None, ge=0)
     has_attic: Optional[bool] = None
     attic_usage: Optional[str] = Field(None, max_length=500)
     has_basement: Optional[bool] = None
@@ -337,7 +337,6 @@ class LeaseUpdate(BaseModel):
     owner_address: Optional[str] = Field(None, max_length=500)
     manager_name: Optional[str] = Field(None, max_length=200)
     manager_address: Optional[str] = Field(None, max_length=500)
-    deposit_account_info: Optional[str] = Field(None, max_length=500)
     moveout_inspection_rights: Optional[bool] = None
     military_termination_days: Optional[int] = Field(None, ge=0)
     notes: Optional[str] = None
@@ -359,7 +358,6 @@ class LeaseResponse(LeaseBase):
     id: UUID
     user_id: UUID
     lease_number: int = Field(..., description="Auto-incrementing lease number per user")
-    is_official: bool = Field(default=False, description="Mark as official/final version")
     lease_version: int
     property: PropertySummary
     unit: Optional[dict] = None
@@ -383,7 +381,6 @@ class LeaseListItem(BaseModel):
     property_id: UUID
     unit_id: Optional[UUID] = None
     lease_number: int = Field(..., description="Auto-incrementing lease number")
-    is_official: bool = Field(default=False, description="Official/final version flag")
     property: PropertySummary
     tenants: List[dict]  # Just name info
     commencement_date: date
