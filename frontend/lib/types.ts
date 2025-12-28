@@ -200,37 +200,60 @@ export interface ExpenseSummary {
 // Rent types
 export interface RentPayment {
   id: string;
+  // Denormalized fields
+  user_id: string;
+  user_name?: string;
   property_id: string;
+  property_name?: string;
   unit_id?: string;
-  client_id?: string;
-  amount: number;
-  rent_period_month: number;
-  rent_period_year: number;
+  unit_name?: string;
+  tenant_id?: string;
+  tenant_name?: string;
+  // Revenue classification
+  revenue_description?: string;
+  is_non_irs_revenue: boolean;
+  // Rent period
+  is_one_time_fee: boolean;
+  rent_period_month?: number;
+  rent_period_year?: number;
   rent_period_start: string;
   rent_period_end: string;
+  // Payment details
+  amount: number;
   payment_date: string;
   payment_method?: 'check' | 'cash' | 'electronic' | 'money_order' | 'other';
   transaction_reference?: string;
   is_late: boolean;
   late_fee?: number;
   notes?: string;
+  document_storage_id?: string;
   created_at?: string;
   updated_at?: string;
+  // Legacy field (deprecated, use tenant_id)
+  client_id?: string;
 }
 
 export interface RentPaymentCreate {
   property_id: string;
   unit_id?: string;
-  client_id?: string;
+  tenant_id?: string;
   amount: number;
-  rent_period_month: number;
-  rent_period_year: number;
+  revenue_description?: string;
+  is_non_irs_revenue?: boolean;
+  is_one_time_fee?: boolean;
+  rent_period_month?: number;
+  rent_period_year?: number;
+  rent_period_start?: string;
+  rent_period_end?: string;
   payment_date: string;
   payment_method?: 'check' | 'cash' | 'electronic' | 'money_order' | 'other';
   transaction_reference?: string;
   is_late?: boolean;
   late_fee?: number;
   notes?: string;
+  document_storage_id?: string;
+  // Legacy field (deprecated, use tenant_id)
+  client_id?: string;
 }
 
 export interface RentListResponse {
@@ -240,30 +263,7 @@ export interface RentListResponse {
   limit: number;
 }
 
-// Financial Performance types
-export interface FinancialPerformance {
-  property_id: string;
-  ytd_rent: number;
-  ytd_expenses: number;
-  ytd_profit_loss: number;
-  ytd_piti: number;
-  ytd_utilities: number;
-  ytd_maintenance: number;
-  ytd_capex: number;
-  ytd_insurance: number;
-  ytd_property_management: number;
-  ytd_other: number;
-  cumulative_rent: number;
-  cumulative_expenses: number;
-  cumulative_profit_loss: number;
-  cumulative_piti: number;
-  cumulative_utilities: number;
-  cumulative_maintenance: number;
-  cumulative_capex: number;
-  cumulative_insurance: number;
-  cumulative_property_management: number;
-  cumulative_other: number;
-  cash_on_cash: number | null;
-  last_calculated_at: string;
-}
+// Financial Performance types - exported from use-financial-performance.ts hook
+// Re-exported here for convenience
+export type { FinancialPerformance } from '@/lib/hooks/use-financial-performance';
 

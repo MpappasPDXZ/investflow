@@ -800,11 +800,44 @@ export default function PropertyDetailPage() {
                   </div>
                 )}
                 
-                {/* YTD Profit/Loss */}
+                {/* Financial Metrics */}
                 {financialPerformance && (
-                  <div className="col-span-2 pt-4 border-t mt-2">
+                  <div className="col-span-2 pt-4 border-t mt-2 space-y-2">
                     <div className="flex justify-between items-center">
-                      <div className="text-sm text-gray-600">YTD Profit / (Loss)</div>
+                      <div className="text-sm text-gray-600">Total Revenue</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        }).format(financialPerformance.ytd_total_revenue || 0)}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <div className="text-sm text-gray-600">IRS Revenue</div>
+                      <div className="text-sm font-medium text-blue-900">
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        }).format(financialPerformance.ytd_rent)}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <div className="text-sm text-gray-600">YTD Cost</div>
+                      <div className="text-sm font-medium text-red-600">
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        }).format(financialPerformance.ytd_expenses)}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t">
+                      <div className="text-sm font-semibold text-gray-700">YTD IRS Profit / (Loss)</div>
                       <div className={`text-lg font-bold ${
                         financialPerformance.ytd_profit_loss >= 0 ? 'text-green-600' : 'text-red-600'
                       }`}>
@@ -814,6 +847,21 @@ export default function PropertyDetailPage() {
                           minimumFractionDigits: 0,
                           maximumFractionDigits: 0,
                         }).format(financialPerformance.ytd_profit_loss)}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <div className="text-sm text-gray-600">Cash Position</div>
+                      <div className={`text-sm font-medium ${
+                        ((financialPerformance.ytd_total_revenue || 0) - financialPerformance.ytd_expenses) >= 0 
+                          ? 'text-blue-600' 
+                          : 'text-red-600'
+                      }`}>
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        }).format((financialPerformance.ytd_total_revenue || 0) - financialPerformance.ytd_expenses)}
                       </div>
                     </div>
                   </div>

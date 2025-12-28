@@ -3,7 +3,8 @@ import { apiClient } from '../api-client';
 
 export interface FinancialPerformance {
   property_id: string;
-  ytd_rent: number;
+  ytd_total_revenue?: number;  // Total revenue including deposits
+  ytd_rent: number;  // IRS revenue only (excludes deposits)
   ytd_expenses: number;
   ytd_profit_loss: number;
   ytd_piti: number;

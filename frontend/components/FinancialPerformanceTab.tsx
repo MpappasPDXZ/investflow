@@ -89,88 +89,26 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             <CardTitle className="text-sm font-bold">Year-to-Date ({new Date().getFullYear()})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {/* Rent Collected */}
+            {/* Total Revenue */}
             <div className="flex justify-between items-center py-1.5 border-b">
-              <span className="text-xs text-gray-600">Rent Collected</span>
-              <span className="text-xs font-medium text-gray-900">{formatCurrency(performance.ytd_rent)}</span>
+              <span className="text-xs text-gray-600">Total Revenue</span>
+              <span className="text-xs font-medium text-gray-900">{formatCurrency(performance.ytd_total_revenue || 0)}</span>
             </div>
             
-            {/* Minus label */}
-            <div className="flex items-center gap-1.5 py-0.5">
-              <Minus className="h-2.5 w-2.5 text-gray-400" />
-              <span className="text-[10px] text-gray-500 font-medium">Less: Expenses</span>
+            {/* IRS Revenue */}
+            <div className="flex justify-between items-center py-1.5 border-b">
+              <span className="text-xs text-gray-600">IRS Revenue</span>
+              <span className="text-xs font-medium text-blue-900">{formatCurrency(performance.ytd_rent)}</span>
             </div>
             
-            {/* PITI */}
-            {performance.ytd_piti > 0 && (
-              <div className="flex justify-between items-center pl-4">
-                <span className="text-xs text-gray-600">PITI</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_piti)})</span>
-              </div>
-            )}
-            
-            {/* Utilities */}
-            {performance.ytd_utilities > 0 && (
-              <div className="flex justify-between items-center pl-4">
-                <span className="text-xs text-gray-600">Utilities</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_utilities)})</span>
-              </div>
-            )}
-            
-            {/* Maintenance */}
-            {performance.ytd_maintenance > 0 && (
-              <div className="flex justify-between items-center pl-4">
-                <span className="text-xs text-gray-600">Maintenance</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_maintenance)})</span>
-              </div>
-            )}
-            
-            {/* CapEx */}
-            {performance.ytd_capex > 0 && (
-              <div className="flex justify-between items-center pl-4">
-                <span className="text-xs text-gray-600">CapEx</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_capex)})</span>
-              </div>
-            )}
-            
-            {/* Insurance */}
-            {performance.ytd_insurance > 0 && (
-              <div className="flex justify-between items-center pl-4">
-                <span className="text-xs text-gray-600">Insurance</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_insurance)})</span>
-              </div>
-            )}
-            
-            {/* Property Management */}
-            {performance.ytd_property_management > 0 && (
-              <div className="flex justify-between items-center pl-4">
-                <span className="text-xs text-gray-600">Property Mgmt</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_property_management)})</span>
-              </div>
-            )}
-            
-            {/* Other */}
-            {performance.ytd_other > 0 && (
-              <div className="flex justify-between items-center pl-4">
-                <span className="text-xs text-gray-600">Other</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.ytd_other)})</span>
-              </div>
-            )}
-            
-            {/* Total Expenses */}
+            {/* YTD Cost */}
             <div className="flex justify-between items-center py-1.5 border-t border-b font-medium">
-              <span className="text-xs text-gray-700">Total Expenses</span>
+              <span className="text-xs text-gray-700">YTD Cost</span>
               <span className="text-xs text-red-600">({formatCurrency(performance.ytd_expenses)})</span>
             </div>
             
-            {/* Equals label */}
-            <div className="flex items-center gap-1.5 py-0.5">
-              <Equal className="h-2.5 w-2.5 text-gray-400" />
-              <span className="text-[10px] text-gray-500 font-medium">Equals:</span>
-            </div>
-            
-            {/* Profit/Loss */}
-            <div className={`flex justify-between items-center p-2 rounded ${
+            {/* YTD IRS Profit / Loss */}
+            <div className={`flex justify-between items-center p-2 rounded mt-2 ${
               performance.ytd_profit_loss >= 0
                 ? 'bg-green-50 border border-green-200'
                 : 'bg-red-50 border border-red-200'
@@ -178,7 +116,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
               <span className={`text-xs font-bold ${
                 performance.ytd_profit_loss >= 0 ? 'text-green-700' : 'text-red-700'
               }`}>
-                Profit / (Loss)
+                YTD IRS Profit / (Loss)
               </span>
               <span className={`text-base font-bold ${
                 performance.ytd_profit_loss >= 0 ? 'text-green-900' : 'text-red-900'
@@ -303,6 +241,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             <CardTitle className="text-sm font-bold">Cash on Cash Return</CardTitle>
           </CardHeader>
           <CardContent>
+
             <div className="space-y-3">
               {/* Main Value */}
               <div className="flex justify-between items-center pb-2 border-b">

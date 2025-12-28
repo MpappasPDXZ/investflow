@@ -44,9 +44,10 @@ class FinancialPerformanceSummary(BaseModel):
     property_id: UUID
     
     # YTD aggregates (property-level sum)
-    ytd_rent: Decimal
+    ytd_total_revenue: Decimal = Decimal("0")  # Total revenue including deposits
+    ytd_rent: Decimal  # IRS revenue only (excludes deposits)
     ytd_expenses: Decimal
-    ytd_profit_loss: Decimal
+    ytd_profit_loss: Decimal  # IRS revenue - expenses
     
     # YTD expense breakdown by type
     ytd_piti: Decimal = Decimal("0")  # Principal, Interest, Tax, Insurance
