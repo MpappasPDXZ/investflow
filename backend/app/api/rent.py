@@ -546,8 +546,33 @@ async def update_rent_endpoint(
                 period_start = rent_data.rent_period_start
                 period_end = rent_data.rent_period_start
             else:
-                period_start = existing_rent["rent_period_start"]
-                period_end = existing_rent["rent_period_start"]
+                # Get existing dates, handling pandas Timestamps
+                existing_start = existing_rent.get("rent_period_start")
+                if pd.notna(existing_start):
+                    if isinstance(existing_start, pd.Timestamp):
+                        period_start = existing_start.date()
+                    elif isinstance(existing_start, (datetime, date)):
+                        period_start = existing_start.date() if isinstance(existing_start, datetime) else existing_start
+                    elif isinstance(existing_start, str):
+                        period_start = datetime.fromisoformat(existing_start.split('T')[0]).date()
+                    else:
+                        period_start = existing_start
+                    period_end = period_start
+                else:
+                    # Fallback to payment_date if rent_period_start is missing
+                    payment_dt = existing_rent.get("payment_date")
+                    if pd.notna(payment_dt):
+                        if isinstance(payment_dt, pd.Timestamp):
+                            period_start = payment_dt.date()
+                        elif isinstance(payment_dt, (datetime, date)):
+                            period_start = payment_dt.date() if isinstance(payment_dt, datetime) else payment_dt
+                        elif isinstance(payment_dt, str):
+                            period_start = datetime.fromisoformat(payment_dt.split('T')[0]).date()
+                        else:
+                            period_start = payment_dt
+                    else:
+                        period_start = date.today()
+                    period_end = period_start
             rent_period_month = None
             rent_period_year = None
         else:
@@ -557,10 +582,38 @@ async def update_rent_endpoint(
             elif rent_data.rent_period_month and rent_data.rent_period_year:
                 period_start, period_end = get_rent_period_dates(rent_data.rent_period_year, rent_data.rent_period_month)
             else:
-                period_start = existing_rent["rent_period_start"]
-                period_end = existing_rent["rent_period_end"]
-            rent_period_month = rent_data.rent_period_month if rent_data.rent_period_month is not None else existing_rent.get("rent_period_month")
-            rent_period_year = rent_data.rent_period_year if rent_data.rent_period_year is not None else existing_rent.get("rent_period_year")
+                # Get existing dates, handling pandas Timestamps
+                existing_start = existing_rent.get("rent_period_start")
+                existing_end = existing_rent.get("rent_period_end")
+                
+                if pd.notna(existing_start):
+                    if isinstance(existing_start, pd.Timestamp):
+                        period_start = existing_start.date()
+                    elif isinstance(existing_start, (datetime, date)):
+                        period_start = existing_start.date() if isinstance(existing_start, datetime) else existing_start
+                    elif isinstance(existing_start, str):
+                        period_start = datetime.fromisoformat(existing_start.split('T')[0]).date()
+                    else:
+                        period_start = existing_start
+                else:
+                    # Fallback - shouldn't happen but handle gracefully
+                    period_start = date.today()
+                
+                if pd.notna(existing_end):
+                    if isinstance(existing_end, pd.Timestamp):
+                        period_end = existing_end.date()
+                    elif isinstance(existing_end, (datetime, date)):
+                        period_end = existing_end.date() if isinstance(existing_end, datetime) else existing_end
+                    elif isinstance(existing_end, str):
+                        period_end = datetime.fromisoformat(existing_end.split('T')[0]).date()
+                    else:
+                        period_end = existing_end
+                else:
+                    # Fallback - shouldn't happen but handle gracefully
+                    period_end = date.today()
+            
+            rent_period_month = rent_data.rent_period_month if rent_data.rent_period_month is not None else (int(existing_rent.get("rent_period_month")) if pd.notna(existing_rent.get("rent_period_month")) else None)
+            rent_period_year = rent_data.rent_period_year if rent_data.rent_period_year is not None else (int(existing_rent.get("rent_period_year")) if pd.notna(existing_rent.get("rent_period_year")) else None)
         
         # Build update dict with all fields
         update_dict = {
