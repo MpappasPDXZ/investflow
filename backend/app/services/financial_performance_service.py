@@ -137,11 +137,13 @@ class FinancialPerformanceService:
             for _, row in rent_df.iterrows():
                 rent_payments.append({
                     'amount': row['amount'],
-                    'payment_date': row['payment_date']
+                    'payment_date': row['payment_date'],
+                    'is_non_irs_revenue': row.get('is_non_irs_revenue', False) if pd.notna(row.get('is_non_irs_revenue')) else False
                 })
         
         # Calculate YTD with breakdowns
-        ytd_rent = Decimal("0")
+        ytd_rent = Decimal("0")  # IRS revenue only (excludes deposits)
+        ytd_total_revenue = Decimal("0")  # Total revenue (includes deposits)
         ytd_expenses = Decimal("0")
         ytd_breakdown = {
             'piti': Decimal("0"),
@@ -155,10 +157,23 @@ class FinancialPerformanceService:
         
         for rent in rent_payments:
             payment_date = rent['payment_date']
-            if isinstance(payment_date, str):
+            # Handle pandas Timestamp, string, or date objects
+            if isinstance(payment_date, pd.Timestamp):
+                payment_date = payment_date.date()
+            elif isinstance(payment_date, str):
                 payment_date = datetime.fromisoformat(payment_date.split('T')[0]).date()
+            elif isinstance(payment_date, datetime):
+                payment_date = payment_date.date()
+            # If it's already a date, use it as-is
+            
             if payment_date >= ytd_start:
-                ytd_rent += Decimal(str(rent['amount']))
+                # Add to total revenue (all rent including deposits)
+                ytd_total_revenue += Decimal(str(rent['amount']))
+                
+                # Only add to IRS revenue if it's not non-IRS revenue (deposits)
+                is_non_irs = rent.get('is_non_irs_revenue', False)
+                if not is_non_irs:
+                    ytd_rent += Decimal(str(rent['amount']))
         
         for expense in expenses:
             expense_date = expense['date']
@@ -189,7 +204,12 @@ class FinancialPerformanceService:
         ytd_profit_loss = ytd_rent - ytd_expenses
         
         # Calculate cumulative (all-time) with breakdowns
-        cumulative_rent = sum(Decimal(str(r['amount'])) for r in rent_payments)
+        # Exclude non-IRS revenue (deposits) from cumulative rent as well
+        cumulative_rent = sum(
+            Decimal(str(r['amount'])) 
+            for r in rent_payments 
+            if not r.get('is_non_irs_revenue', False)
+        )
         cumulative_expenses = Decimal("0")
         cumulative_breakdown = {
             'piti': Decimal("0"),
@@ -250,7 +270,8 @@ class FinancialPerformanceService:
         
         return FinancialPerformanceSummary(
             property_id=property_id,
-            ytd_rent=ytd_rent,
+            ytd_total_revenue=ytd_total_revenue,
+            ytd_rent=ytd_rent,  # IRS revenue only
             ytd_expenses=ytd_expenses,
             ytd_profit_loss=ytd_profit_loss,
             ytd_piti=ytd_breakdown['piti'],

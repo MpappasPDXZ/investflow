@@ -47,6 +47,18 @@ export function useCreateRent() {
   });
 }
 
+export function useCreateRentWithReceipt() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (formData: FormData) => 
+      apiClient.upload<RentPayment>('/rent/with-receipt', formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rents'] });
+    },
+  });
+}
+
 export function useUpdateRent() {
   const queryClient = useQueryClient();
   
