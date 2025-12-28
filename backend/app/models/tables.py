@@ -1,5 +1,6 @@
 """SQLAlchemy models"""
 import uuid
+from datetime import date
 from sqlalchemy import (
     Column, String, Integer, Numeric, Boolean, Date, Text, 
     ForeignKey, UniqueConstraint, Index, Enum as SQLEnum
@@ -268,7 +269,7 @@ class Walkthrough(Base, TimestampMixin):
     """Property walkthrough inspection model"""
     __tablename__ = "walkthroughs"
     
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
     unit_id = Column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="SET NULL"), nullable=True)
@@ -284,10 +285,10 @@ class Walkthrough(Base, TimestampMixin):
     landlord_signed = Column(Boolean, default=False, nullable=False)
     landlord_signature_date = Column(Date, nullable=True)
     
-    overall_condition = Column(String(50), nullable=False, default="good")  # excellent, good, fair, poor
     notes = Column(Text, nullable=True)
     
     generated_pdf_blob_name = Column(String(500), nullable=True)  # ADLS blob name
+    is_active = Column(Boolean, default=True, nullable=False)
     
     # Relationships
     user = relationship("User")
@@ -304,14 +305,15 @@ class WalkthroughArea(Base, TimestampMixin):
     """Individual area within a walkthrough inspection"""
     __tablename__ = "walkthrough_areas"
     
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    walkthrough_id = Column(String, ForeignKey("walkthroughs.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    walkthrough_id = Column(UUID(as_uuid=True), ForeignKey("walkthroughs.id", ondelete="CASCADE"), nullable=False, index=True)
     
     floor = Column(String(100), nullable=False)  # "Basement", "Floor 1", "Floor 2"
     area_name = Column(String(100), nullable=False)  # "Living Room", "Kitchen", "Bathroom"
     area_order = Column(Integer, nullable=False, default=1)
-    condition = Column(String(50), nullable=False, default="good")  # excellent, good, fair, poor
-    notes = Column(Text, nullable=True)
+    inspection_status = Column(String(50), nullable=False, default="no_issues")  # no_issues, issue_noted_as_is, issue_landlord_to_fix
+    notes = Column(Text, nullable=True)  # General notes (available for all statuses)
+    landlord_fix_notes = Column(Text, nullable=True)  # Required notes when landlord will fix (only for issue_landlord_to_fix)
     
     # Issues stored as JSON array
     issues = Column(Text, nullable=True)  # JSON: [{"description": "...", "severity": "minor", "estimated_cost": 50.00}]
