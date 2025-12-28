@@ -1,6 +1,6 @@
 """Pydantic schemas for rent-related API requests and responses"""
 from pydantic import BaseModel, Field
-from typing import Optional, Literal, List
+from typing import Optional, Literal, List, Union
 from datetime import date
 from uuid import UUID
 from decimal import Decimal
@@ -54,7 +54,7 @@ class RentUpdate(BaseModel):
     is_late: Optional[bool] = Field(None, description="Whether payment was late")
     late_fee: Optional[Decimal] = Field(None, ge=0, description="Late fee amount if applicable")
     notes: Optional[str] = Field(None, description="Additional notes")
-    document_storage_id: Optional[UUID] = Field(None, description="Document storage ID for receipt/image")
+    document_storage_id: Optional[Union[UUID, str]] = Field(None, description="Document storage ID for receipt/image (or empty string '' to delete existing document)")
 
 
 class RentResponse(BaseModel):

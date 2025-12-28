@@ -41,8 +41,10 @@ export function useCreateRent() {
   return useMutation({
     mutationFn: (data: RentPaymentCreate) => 
       apiClient.post<RentPayment>('/rent', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rents'] });
+    onSuccess: async () => {
+      // Invalidate and refetch to ensure fresh data
+      await queryClient.invalidateQueries({ queryKey: ['rents'] });
+      await queryClient.refetchQueries({ queryKey: ['rents'] });
     },
   });
 }
@@ -53,8 +55,10 @@ export function useCreateRentWithReceipt() {
   return useMutation({
     mutationFn: (formData: FormData) => 
       apiClient.upload<RentPayment>('/rent/with-receipt', formData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rents'] });
+    onSuccess: async () => {
+      // Invalidate and refetch to ensure fresh data
+      await queryClient.invalidateQueries({ queryKey: ['rents'] });
+      await queryClient.refetchQueries({ queryKey: ['rents'] });
     },
   });
 }
@@ -65,9 +69,11 @@ export function useUpdateRent() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<RentPaymentCreate> }) =>
       apiClient.put<RentPayment>(`/rent/${id}`, data),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['rents'] });
-      queryClient.invalidateQueries({ queryKey: ['rent', variables.id] });
+    onSuccess: async (_, variables) => {
+      // Invalidate and refetch to ensure fresh data
+      await queryClient.invalidateQueries({ queryKey: ['rents'] });
+      await queryClient.invalidateQueries({ queryKey: ['rent', variables.id] });
+      await queryClient.refetchQueries({ queryKey: ['rents'] });
     },
   });
 }
@@ -77,8 +83,10 @@ export function useDeleteRent() {
   
   return useMutation({
     mutationFn: (rentId: string) => apiClient.delete(`/rent/${rentId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rents'] });
+    onSuccess: async () => {
+      // Invalidate and refetch to ensure fresh data
+      await queryClient.invalidateQueries({ queryKey: ['rents'] });
+      await queryClient.refetchQueries({ queryKey: ['rents'] });
     },
   });
 }

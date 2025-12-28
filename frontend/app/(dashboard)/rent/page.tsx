@@ -319,8 +319,8 @@ export default function RentPage() {
                         ) : (
                           <ChevronRight className="h-3 w-3 text-gray-400" />
                         )}
-                        <span className="font-medium text-xs">{year}</span>
-                        <span className="text-[10px] text-gray-500">({yearRents.length})</span>
+                        <span className="font-medium text-xs text-gray-900">{year}</span>
+                        <span className="text-[10px] text-gray-700">({yearRents.length})</span>
                         <span className="ml-auto font-semibold text-xs">
                           ${yearTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
@@ -361,19 +361,19 @@ export default function RentPage() {
                               className="px-3 py-2 flex items-center gap-2 hover:bg-gray-50"
                             >
                               {/* Date */}
-                              <span className="text-[10px] text-gray-500 w-16 shrink-0">
+                              <span className="text-[10px] text-gray-800 w-16 shrink-0">
                                 {format(new Date(rent.payment_date), 'MM/dd')}
                               </span>
                               
                               {/* Period */}
-                              <span className="text-[10px] text-gray-600 w-20 shrink-0">
+                              <span className="text-[10px] text-gray-800 w-20 shrink-0">
                                 {rent.rent_period_month 
                                   ? `${MONTHS[rent.rent_period_month - 1]} ${rent.rent_period_year}`
                                   : 'One-time'}
                               </span>
                               
                               {/* Tenant */}
-                              <span className="text-[10px] text-gray-600 w-24 truncate shrink-0">
+                              <span className="text-[10px] text-gray-800 w-24 truncate shrink-0">
                                 {rent.tenant_name || '-'}
                               </span>
                               
@@ -388,7 +388,7 @@ export default function RentPage() {
                               </span>
                               
                               {/* Description */}
-                              <span className="text-xs truncate flex-1">
+                              <span className="text-xs text-gray-900 truncate flex-1">
                                 {rent.property_name || getPropertyName(rent.property_id)}
                                 {rent.unit_name && ` - Unit ${rent.unit_name}`}
                               </span>

@@ -2,16 +2,18 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Home, Save, Calendar, DollarSign, ArrowLeft, Camera, Upload, X, FileText } from 'lucide-react';
+import { Home, Save, Calendar, DollarSign, ArrowLeft, Camera, Upload, X, FileText, Check, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { useCreateRent, useCreateRentWithReceipt, useUpdateRent, useRent } from '@/lib/hooks/use-rent';
 import { useTenants } from '@/lib/hooks/use-tenants';
 import { useSearchParams } from 'next/navigation';
+import { ReceiptViewer } from '@/components/ReceiptViewer';
 
 interface Property {
   id: string;
@@ -48,6 +50,7 @@ const FILE_ACCEPT = 'image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.he
 
 export default function LogRentPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const rentId = searchParams.get('id');
   const isEditing = !!rentId;
@@ -68,6 +71,7 @@ export default function LogRentPage() {
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [removeDocument, setRemoveDocument] = useState(false);
   
   // Default to current month
   const currentDate = new Date();
@@ -183,6 +187,10 @@ export default function LogRentPage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
     setFile(selectedFile);
+    // Reset removeDocument flag when a new file is selected
+    if (selectedFile) {
+      setRemoveDocument(false);
+    }
   };
 
   const clearFile = () => {
@@ -265,14 +273,19 @@ export default function LogRentPage() {
         ? -amountValue  // Make negative if positive amount entered for payout/deduction
         : amountValue;
       
+      // Build payload in same order as backend build_rent_dict function
+      // Order: property_id, unit_id, tenant_id, revenue_description, is_non_irs_revenue, 
+      //        is_one_time_fee, amount, rent_period_month, rent_period_year, rent_period_start,
+      //        rent_period_end, payment_date, payment_method, transaction_reference, 
+      //        is_late, late_fee, notes, document_storage_id
       const payload = {
         property_id: formData.property_id,
         unit_id: formData.unit_id || undefined,
         tenant_id: formData.tenant_id || undefined,
-        amount: finalAmount,
         revenue_description: revenueDescription,
         is_non_irs_revenue: isNonIrsRevenue,
         is_one_time_fee: formData.is_one_time_fee,
+        amount: finalAmount,
         rent_period_month: rentPeriodMonth,
         rent_period_year: rentPeriodYear,
         rent_period_start: rentPeriodStart,
@@ -305,13 +318,21 @@ export default function LogRentPage() {
           
           const docResponse = await apiClient.upload<{ document: { id: string } }>('/documents/upload', formDataToSend);
           
-          // Update rent with document_storage_id
+          // Update rent with new document_storage_id
           await updateRent.mutateAsync({ 
             id: rentId, 
             data: { ...payload, document_storage_id: docResponse.document.id }
           });
         } else {
-          await updateRent.mutateAsync({ id: rentId, data: payload });
+          // Handle document deletion or preservation
+          // Add document_storage_id in same position as backend (after notes)
+          const updatePayload = {
+            ...payload,
+            document_storage_id: removeDocument 
+              ? ""  // Empty string = delete
+              : (existingRent?.document_storage_id || undefined),  // Preserve existing or undefined
+          };
+          await updateRent.mutateAsync({ id: rentId, data: updatePayload });
         }
       } else {
         // For creates, use with-receipt endpoint if file is provided
@@ -342,6 +363,12 @@ export default function LogRentPage() {
           await createRent.mutateAsync(payload);
         }
       }
+      
+      // Manually invalidate and refetch all rent queries to ensure fresh data
+      await queryClient.invalidateQueries({ queryKey: ['rents'] });
+      await queryClient.refetchQueries({ queryKey: ['rents'] });
+      
+      // Navigate to rent list page
       router.push('/rent');
     } catch (err) {
       console.error('Error logging rent:', err);
@@ -662,16 +689,18 @@ export default function LogRentPage() {
                 value={formData.revenue_description}
                 onValueChange={(value) => {
                   const isDeposit = value === 'Deposit' || value === 'Deposit Payout' || value === 'Exit Deposit Deduction';
-                  // Auto-set as one-time fee for Exit Deposit Deduction
-                  const isOneTimeFee = value === 'Exit Deposit Deduction' || 
+                  // Auto-set as one-time fee for Deposit, Deposit Payout, Exit Deposit Deduction, and other one-time fees
+                  const isOneTimeFee = value === 'Deposit' || 
+                                      value === 'Deposit Payout' || 
+                                      value === 'Exit Deposit Deduction' || 
                                       value === 'One Time Pet Fee' || 
                                       value === 'One Time Application Fee';
                   
-                  setFormData({ 
-                    ...formData, 
+                  setFormData({
+                    ...formData,
                     revenue_description: value,
                     is_non_irs_revenue: isDeposit ? true : formData.is_non_irs_revenue, // Auto-check for Deposit/Deposit Payout/Exit Deposit Deduction
-                    is_one_time_fee: isOneTimeFee ? true : formData.is_one_time_fee,
+                    is_one_time_fee: isOneTimeFee ? true : formData.is_one_time_fee, // Auto-check for Deposit and other one-time fees (but still editable)
                   });
                 }}
               >
@@ -886,6 +915,63 @@ export default function LogRentPage() {
                       </Button>
                     </div>
                   </div>
+                ) : existingRent?.document_storage_id && !removeDocument ? (
+                  <div className="border-2 border-gray-200 bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs text-green-700">
+                        <Check className="h-4 w-4" />
+                        <span>Receipt attached</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <ReceiptViewer 
+                          documentId={existingRent.document_storage_id}
+                          fileName={existingRent.revenue_description || 'Rent Receipt'}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setRemoveDocument(true)}
+                          className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="h-3 w-3 mr-1" />
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-gray-200">
+                      <p className="text-[10px] text-gray-500 mb-1">Replace with new file:</p>
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        className="border border-dashed border-gray-300 rounded-lg p-2 text-center cursor-pointer hover:border-gray-400 active:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <Upload className="h-3 w-3 text-gray-600" />
+                          <p className="text-[10px] font-medium text-gray-700">
+                            Tap to upload new file
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : removeDocument ? (
+                  <div className="border-2 border-red-200 bg-red-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs text-red-700">
+                        <X className="h-4 w-4" />
+                        <span>Document will be removed on save</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRemoveDocument(false)}
+                        className="h-7 px-2 text-xs text-gray-600 hover:text-gray-700"
+                      >
+                        Undo
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <div
                     onClick={() => fileInputRef.current?.click()}
@@ -937,17 +1023,26 @@ export default function LogRentPage() {
             <div className="flex gap-2 pt-3 border-t border-gray-200">
               <Button
                 type="submit"
-                disabled={createRent.isPending}
-                className="bg-black text-white hover:bg-gray-800 h-8 text-xs px-4"
+                disabled={createRent.isPending || updateRent.isPending || createRentWithReceipt.isPending}
+                className="bg-black text-white hover:bg-gray-800 h-8 text-xs px-4 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Save className="h-3 w-3 mr-1.5" />
-                {createRent.isPending ? 'Saving...' : 'Log Rent Payment'}
+                {(createRent.isPending || updateRent.isPending || createRentWithReceipt.isPending) ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                    {isEditing ? 'Updating...' : 'Saving...'}
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-3 w-3 mr-1.5" />
+                    {isEditing ? 'Update Rent Payment' : 'Log Rent Payment'}
+                  </>
+                )}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => router.back()}
-                disabled={createRent.isPending}
+                disabled={createRent.isPending || updateRent.isPending || createRentWithReceipt.isPending}
                 className="h-8 text-xs"
               >
                 Cancel

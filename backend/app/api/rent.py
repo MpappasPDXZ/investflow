@@ -83,6 +83,145 @@ def _invalidate_financial_performance_cache(property_id: UUID, user_id: str, uni
         logger.warning(f"Failed to invalidate financial performance cache: {e}")
 
 
+def build_rent_dict(
+    rent_id: str,
+    user_id: str,
+    user_name: Optional[str],
+    property_id: str,
+    property_name: Optional[str],
+    unit_id: Optional[str],
+    unit_name: Optional[str],
+    tenant_id: Optional[str],
+    tenant_name: Optional[str],
+    revenue_description: Optional[str],
+    is_non_irs_revenue: bool,
+    is_one_time_fee: bool,
+    amount: Decimal,
+    rent_period_month: Optional[int],
+    rent_period_year: Optional[int],
+    rent_period_start: date,
+    rent_period_end: date,
+    payment_date: date,
+    payment_method: Optional[str],
+    transaction_reference: Optional[str],
+    is_late: bool,
+    late_fee: Optional[Decimal],
+    notes: Optional[str],
+    document_storage_id: Optional[str],
+    now: pd.Timestamp,
+    existing_rent: Optional[pd.Series] = None,
+    is_update: bool = False
+) -> dict:
+    """
+    Build rent dict for create or update operations.
+    
+    Args:
+        existing_rent: Optional existing rent record (for updates)
+        is_update: If True, preserve created_at/created_by_user_id from existing_rent
+    """
+    rent_dict = {
+        "id": str(rent_id),
+        "user_id": str(user_id),
+        "user_name": user_name,
+        "property_id": str(property_id),
+        "property_name": property_name,
+        "unit_id": str(unit_id) if unit_id else None,
+        "unit_name": unit_name,
+        "tenant_id": str(tenant_id) if tenant_id else None,
+        "tenant_name": tenant_name,
+        "revenue_description": revenue_description,
+        "is_non_irs_revenue": is_non_irs_revenue,
+        "is_one_time_fee": is_one_time_fee,
+        "amount": amount,
+        "rent_period_month": rent_period_month,
+        "rent_period_year": rent_period_year,
+        "rent_period_start": parse_date_midday(rent_period_start),
+        "rent_period_end": parse_date_midday(rent_period_end),
+        "payment_date": parse_date_midday(payment_date),
+        "payment_method": payment_method if payment_method else None,
+        "transaction_reference": transaction_reference,
+        "is_late": is_late if is_late else False,
+        "late_fee": Decimal(str(late_fee)) if late_fee else None,
+        "notes": notes,
+        "document_storage_id": document_storage_id,
+        "updated_at": now,
+    }
+    
+    if is_update and existing_rent is not None:
+        # Preserve created_at and created_by_user_id for updates
+        rent_dict["created_at"] = existing_rent.get("created_at")
+        rent_dict["created_by_user_id"] = existing_rent.get("created_by_user_id")
+    else:
+        # Set new timestamps for creates
+        rent_dict["created_at"] = now
+    
+    return rent_dict
+
+
+def prepare_rent_dataframe(rent_dict: dict) -> pd.DataFrame:
+    """
+    Prepare DataFrame for rent data with correct types to match table schema.
+    This ensures required fields are not optional and types match exactly.
+    Uses explicit dtype specification to prevent pandas from inferring optional types.
+    """
+    # Create DataFrame with explicit dtype=object to prevent type inference
+    # Then we'll explicitly convert each column to the correct type
+    df = pd.DataFrame([rent_dict], dtype=object)
+    
+    # Ensure required string fields are strings and not None
+    required_string_fields = ["id", "user_id", "property_id"]
+    for field in required_string_fields:
+        if field in df.columns:
+            # Convert to string, ensuring no None values
+            df[field] = df[field].astype(str)
+            if df[field].isna().any() or (df[field] == 'None').any() or (df[field] == 'nan').any():
+                raise ValueError(f"Required field {field} cannot be None")
+    
+    # Ensure required date fields are not None (already pd.Timestamp from parse_date_midday)
+    required_date_fields = ["rent_period_start", "rent_period_end", "payment_date"]
+    for field in required_date_fields:
+        if field in df.columns:
+            if df[field].isna().any():
+                raise ValueError(f"Required field {field} cannot be None")
+    
+    # Ensure required decimal field is Decimal and not None
+    if "amount" in df.columns:
+        if df["amount"].isna().any():
+            raise ValueError("Required field amount cannot be None")
+        # Convert to Decimal explicitly
+        df["amount"] = df["amount"].apply(lambda x: Decimal(str(x)) if pd.notna(x) and x is not None else None)
+        if df["amount"].isna().any():
+            raise ValueError("Required field amount cannot be None after conversion")
+    
+    # Convert nullable integer fields to Int32 (not Int64/long) - schema expects int32
+    # Use pd.to_numeric first to handle any string/int conversions, then Int32
+    if "rent_period_month" in df.columns:
+        df["rent_period_month"] = pd.to_numeric(df["rent_period_month"], errors='coerce').astype("Int32")
+    if "rent_period_year" in df.columns:
+        df["rent_period_year"] = pd.to_numeric(df["rent_period_year"], errors='coerce').astype("Int32")
+    
+    # Ensure optional string fields are strings (not object/unknown)
+    optional_string_fields = ["user_name", "property_name", "unit_id", "unit_name", "tenant_id", 
+                             "tenant_name", "revenue_description", "payment_method", 
+                             "transaction_reference", "notes", "document_storage_id", "created_by_user_id"]
+    for field in optional_string_fields:
+        if field in df.columns:
+            # Convert None/NaN to None, otherwise to string
+            df[field] = df[field].apply(lambda x: str(x) if pd.notna(x) and x is not None and str(x) != 'nan' else None)
+    
+    # Ensure boolean fields are booleans
+    boolean_fields = ["is_non_irs_revenue", "is_one_time_fee", "is_late"]
+    for field in boolean_fields:
+        if field in df.columns:
+            df[field] = df[field].astype(bool)
+    
+    # Ensure optional Decimal field is Decimal
+    if "late_fee" in df.columns:
+        df["late_fee"] = df["late_fee"].apply(lambda x: Decimal(str(x)) if pd.notna(x) and x is not None else None)
+    
+    return df
+
+
 def get_rent_period_dates(year: int, month: int) -> tuple[date, date]:
     """Get start and end dates for a rent period (month)"""
     start = date(year, month, 1)
@@ -234,42 +373,42 @@ async def create_rent_endpoint(
         if revenue_description in ("Deposit", "Deposit Payout", "Exit Deposit Deduction"):
             is_non_irs_revenue = True
         
-        # Create rent record with denormalized fields
-        rent_dict = {
-            "id": rent_id,
-            "user_id": user_id,
-            "user_name": user_name,
-            "property_id": str(rent_data.property_id),
-            "property_name": property_name,
-            "unit_id": str(rent_data.unit_id) if rent_data.unit_id else None,
-            "unit_name": unit_name,
-            "tenant_id": str(rent_data.tenant_id) if rent_data.tenant_id else None,
-            "tenant_name": tenant_name,
-            "revenue_description": revenue_description,
-            "is_non_irs_revenue": is_non_irs_revenue,
-            "is_one_time_fee": is_one_time_fee,
-            "amount": Decimal(str(rent_data.amount)),
-            "rent_period_month": rent_period_month,
-            "rent_period_year": rent_period_year,
-            "rent_period_start": parse_date_midday(period_start),
-            "rent_period_end": parse_date_midday(period_end),
-            "payment_date": parse_date_midday(rent_data.payment_date),
-            "payment_method": rent_data.payment_method if rent_data.payment_method else None,
-            "transaction_reference": rent_data.transaction_reference,
-            "is_late": rent_data.is_late if rent_data.is_late else False,
-            "late_fee": Decimal(str(rent_data.late_fee)) if rent_data.late_fee else None,
-            "notes": rent_data.notes,
-            "document_storage_id": str(rent_data.document_storage_id) if rent_data.document_storage_id else None,
-            "created_at": now,
-            "updated_at": now,
-        }
+        # Create rent record with denormalized fields using shared helper
+        rent_dict = build_rent_dict(
+            rent_id=rent_id,
+            user_id=user_id,
+            user_name=user_name,
+            property_id=str(rent_data.property_id),
+            property_name=property_name,
+            unit_id=str(rent_data.unit_id) if rent_data.unit_id else None,
+            unit_name=unit_name,
+            tenant_id=str(rent_data.tenant_id) if rent_data.tenant_id else None,
+            tenant_name=tenant_name,
+            revenue_description=revenue_description,
+            is_non_irs_revenue=is_non_irs_revenue,
+            is_one_time_fee=is_one_time_fee,
+            amount=Decimal(str(rent_data.amount)),
+            rent_period_month=rent_period_month,
+            rent_period_year=rent_period_year,
+            rent_period_start=period_start,
+            rent_period_end=period_end,
+            payment_date=rent_data.payment_date,
+            payment_method=rent_data.payment_method,
+            transaction_reference=rent_data.transaction_reference,
+            is_late=rent_data.is_late if rent_data.is_late else False,
+            late_fee=rent_data.late_fee,
+            notes=rent_data.notes,
+            document_storage_id=str(rent_data.document_storage_id) if rent_data.document_storage_id else None,
+            now=now,
+            is_update=False
+        )
         
         # Log the rent_dict being saved
         logger.info(f"💾 Saving rent payment with rent_period_year={rent_period_year}, rent_period_month={rent_period_month}")
         logger.debug(f"Full rent_dict: {rent_dict}")
         
-        # Append to Iceberg table
-        df = pd.DataFrame([rent_dict])
+        # Prepare DataFrame with correct types (shared helper)
+        df = prepare_rent_dataframe(rent_dict)
         append_data(NAMESPACE, TABLE_NAME, df)
         
         logger.info(f"Created rent payment {rent_id} for property {rent_data.property_id}")
@@ -615,40 +754,98 @@ async def update_rent_endpoint(
             rent_period_month = rent_data.rent_period_month if rent_data.rent_period_month is not None else (int(existing_rent.get("rent_period_month")) if pd.notna(existing_rent.get("rent_period_month")) else None)
             rent_period_year = rent_data.rent_period_year if rent_data.rent_period_year is not None else (int(existing_rent.get("rent_period_year")) if pd.notna(existing_rent.get("rent_period_year")) else None)
         
-        # Build update dict with all fields
-        update_dict = {
-            "id": str(rent_id),
-            "user_id": user_id,
-            "user_name": user_name,
-            "property_id": property_id,
-            "property_name": property_name,
-            "unit_id": unit_id,
-            "unit_name": unit_name,
-            "tenant_id": tenant_id,
-            "tenant_name": tenant_name,
-            "revenue_description": revenue_description,
-            "is_non_irs_revenue": is_non_irs_revenue,
-            "is_one_time_fee": is_one_time_fee,
-            "amount": Decimal(str(rent_data.amount)) if rent_data.amount is not None else Decimal(str(existing_rent["amount"])),
-            "rent_period_month": rent_period_month,
-            "rent_period_year": rent_period_year,
-            "rent_period_start": parse_date_midday(period_start),
-            "rent_period_end": parse_date_midday(period_end),
-            "payment_date": parse_date_midday(rent_data.payment_date) if rent_data.payment_date else parse_date_midday(existing_rent["payment_date"]),
-            "payment_method": rent_data.payment_method if rent_data.payment_method is not None else existing_rent.get("payment_method"),
-            "transaction_reference": rent_data.transaction_reference if rent_data.transaction_reference is not None else existing_rent.get("transaction_reference"),
-            "is_late": rent_data.is_late if rent_data.is_late is not None else existing_rent.get("is_late", False),
-            "late_fee": Decimal(str(rent_data.late_fee)) if rent_data.late_fee is not None else (Decimal(str(existing_rent["late_fee"])) if pd.notna(existing_rent.get("late_fee")) else None),
-            "notes": rent_data.notes if rent_data.notes is not None else existing_rent.get("notes"),
-            "document_storage_id": str(rent_data.document_storage_id) if rent_data.document_storage_id is not None else (str(existing_rent.get("document_storage_id")) if pd.notna(existing_rent.get("document_storage_id")) else None),
-            "created_at": existing_rent.get("created_at"),
-            "updated_at": now,
-            "created_by_user_id": existing_rent.get("created_by_user_id"),
-        }
+        # Ensure required fields are present and correctly typed
+        # Get existing values for required fields if not provided
+        existing_user_id = str(existing_rent.get("user_id", ""))
+        existing_property_id = str(existing_rent.get("property_id", ""))
+        existing_amount = Decimal(str(existing_rent["amount"])) if pd.notna(existing_rent.get("amount")) else Decimal("0")
+        existing_payment_date = existing_rent.get("payment_date")
+        if pd.notna(existing_payment_date):
+            if isinstance(existing_payment_date, pd.Timestamp):
+                existing_payment_date = existing_payment_date.date()
+            elif isinstance(existing_payment_date, (datetime, date)):
+                existing_payment_date = existing_payment_date.date() if isinstance(existing_payment_date, datetime) else existing_payment_date
+            elif isinstance(existing_payment_date, str):
+                existing_payment_date = datetime.fromisoformat(existing_payment_date.split('T')[0]).date()
         
-        # Upsert the updated record
-        df_update = pd.DataFrame([update_dict])
-        upsert_data(NAMESPACE, TABLE_NAME, df_update)
+        # Build update dict using shared helper - handle fallbacks to existing values
+        # Handle document_storage_id deletion (empty string sentinel)
+        doc_storage_id = None
+        if rent_data.document_storage_id == "":  # Empty string = delete
+            doc_storage_id = None
+        elif rent_data.document_storage_id is not None:
+            doc_storage_id = str(rent_data.document_storage_id)
+        elif pd.notna(existing_rent.get("document_storage_id")):
+            doc_storage_id = str(existing_rent.get("document_storage_id"))
+        
+        update_dict = build_rent_dict(
+            rent_id=str(rent_id),
+            user_id=str(user_id) if user_id else str(existing_user_id),
+            user_name=user_name if user_name is not None else existing_rent.get("user_name"),
+            property_id=str(property_id) if property_id else str(existing_property_id),
+            property_name=property_name if property_name is not None else existing_rent.get("property_name"),
+            unit_id=str(unit_id) if unit_id else (str(existing_rent.get("unit_id")) if pd.notna(existing_rent.get("unit_id")) else None),
+            unit_name=unit_name if unit_name is not None else existing_rent.get("unit_name"),
+            tenant_id=str(tenant_id) if tenant_id else (str(existing_rent.get("tenant_id")) if pd.notna(existing_rent.get("tenant_id")) else None),
+            tenant_name=tenant_name if tenant_name is not None else existing_rent.get("tenant_name"),
+            revenue_description=revenue_description if revenue_description is not None else existing_rent.get("revenue_description"),
+            is_non_irs_revenue=is_non_irs_revenue if is_non_irs_revenue is not None else (bool(existing_rent.get("is_non_irs_revenue")) if pd.notna(existing_rent.get("is_non_irs_revenue")) else False),
+            is_one_time_fee=is_one_time_fee if is_one_time_fee is not None else (bool(existing_rent.get("is_one_time_fee")) if pd.notna(existing_rent.get("is_one_time_fee")) else False),
+            amount=Decimal(str(rent_data.amount)) if rent_data.amount is not None else existing_amount,
+            rent_period_month=rent_period_month,
+            rent_period_year=rent_period_year,
+            rent_period_start=period_start,
+            rent_period_end=period_end,
+            payment_date=rent_data.payment_date if rent_data.payment_date else existing_payment_date,
+            payment_method=rent_data.payment_method if rent_data.payment_method is not None else existing_rent.get("payment_method"),
+            transaction_reference=rent_data.transaction_reference if rent_data.transaction_reference is not None else existing_rent.get("transaction_reference"),
+            is_late=rent_data.is_late if rent_data.is_late is not None else (bool(existing_rent.get("is_late")) if pd.notna(existing_rent.get("is_late")) else False),
+            late_fee=rent_data.late_fee if rent_data.late_fee is not None else (existing_rent.get("late_fee") if pd.notna(existing_rent.get("late_fee")) else None),
+            notes=rent_data.notes if rent_data.notes is not None else existing_rent.get("notes"),
+            document_storage_id=doc_storage_id,
+            now=now,
+            existing_rent=existing_rent,
+            is_update=True
+        )
+        
+        # Update the record using delete + append pattern (like expenses) to avoid pandas type inference issues
+        # Get table reference
+        table = load_table(NAMESPACE, TABLE_NAME)
+        schema = table.schema().as_arrow()
+        
+        # Delete existing record
+        table.delete(EqualTo("id", str(rent_id)))
+        
+        # Convert dates/timestamps to proper Python types for PyArrow
+        import pyarrow as pa
+        
+        # Convert date fields (pa.date32()) from pd.Timestamp to date objects
+        for key in ["rent_period_start", "rent_period_end", "payment_date"]:
+            if key in update_dict and isinstance(update_dict[key], pd.Timestamp):
+                update_dict[key] = update_dict[key].date()
+            elif key in update_dict and isinstance(update_dict[key], datetime):
+                update_dict[key] = update_dict[key].date()
+        
+        # Convert timestamp fields (pa.timestamp("us")) from pd.Timestamp to datetime objects
+        for key in ["created_at", "updated_at"]:
+            if key in update_dict and isinstance(update_dict[key], pd.Timestamp):
+                update_dict[key] = update_dict[key].to_pydatetime()
+        
+        # Ensure Decimal fields are Decimal (not float)
+        for key in ["amount", "late_fee"]:
+            if key in update_dict and update_dict[key] is not None:
+                if not isinstance(update_dict[key], Decimal):
+                    update_dict[key] = Decimal(str(update_dict[key]))
+        
+        # Ensure integer fields are int (not long)
+        for key in ["rent_period_month", "rent_period_year"]:
+            if key in update_dict and update_dict[key] is not None:
+                if not isinstance(update_dict[key], int):
+                    update_dict[key] = int(update_dict[key])
+        
+        # Create PyArrow table directly from dict with schema (avoids pandas type inference)
+        arrow_table = pa.Table.from_pylist([update_dict], schema=schema)
+        table.append(arrow_table)
         
         logger.info(f"Updated rent payment {rent_id}")
         
