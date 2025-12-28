@@ -26,6 +26,14 @@ from app.models.base import Base
 setup_logging()
 logger = get_logger(__name__)
 
+# Import walkthroughs with error handling
+try:
+    from app.api import walkthroughs
+    logger.info("✅ Successfully imported walkthroughs module")
+except Exception as e:
+    logger.error(f"❌ Failed to import walkthroughs module: {e}", exc_info=True)
+    walkthroughs = None
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
@@ -156,6 +164,11 @@ app.include_router(shares.router, prefix=settings.API_V1_PREFIX)
 app.include_router(leases.router, prefix=settings.API_V1_PREFIX)
 app.include_router(tenants.router, prefix=settings.API_V1_PREFIX)
 app.include_router(landlord_references.router, prefix=settings.API_V1_PREFIX)
+if walkthroughs:
+    app.include_router(walkthroughs.router, prefix=settings.API_V1_PREFIX)
+    logger.info("✅ Successfully registered walkthroughs router")
+else:
+    logger.warning("⚠️  walkthroughs router not registered - module import failed")
 app.include_router(rent.router, prefix=settings.API_V1_PREFIX)
 app.include_router(expenses.router, prefix=settings.API_V1_PREFIX)
 app.include_router(documents.router, prefix=settings.API_V1_PREFIX)
