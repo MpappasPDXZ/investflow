@@ -113,8 +113,10 @@ export default function InspectionsPage() {
   const [shouldLoadTenants, setShouldLoadTenants] = useState(false)
   
   // Conditionally fetch properties and tenants - disabled by default
-  const { data: propertiesData } = useProperties({ enabled: shouldLoadProperties })
-  const { data: tenantsData } = useTenants({ enabled: shouldLoadTenants })
+  const propertiesQueryOptions = shouldLoadProperties ? undefined : { enabled: false } as { enabled?: boolean } | undefined
+  const tenantsQueryOptions = shouldLoadTenants ? undefined : { enabled: false } as { enabled?: boolean } | undefined
+  const { data: propertiesData } = useProperties(propertiesQueryOptions)
+  const { data: tenantsData } = useTenants(tenantsQueryOptions)
   
   const properties = propertiesData?.items || []
   const tenantProfiles = tenantsData?.tenants || []

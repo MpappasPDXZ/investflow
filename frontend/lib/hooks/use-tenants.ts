@@ -13,9 +13,11 @@ export const tenantKeys = {
 };
 
 // Fetch all tenants
-export function useTenants(filters?: { property_id?: string; unit_id?: string; status?: string }) {
+export function useTenants(filters?: { property_id?: string; unit_id?: string; status?: string; enabled?: boolean }) {
+  const { enabled, ...filterParams } = filters || {}
   return useQuery<TenantListResponse>({
-    queryKey: tenantKeys.list(filters),
+    queryKey: tenantKeys.list(filterParams),
+    enabled: enabled !== false, // Default to true for backward compatibility
     queryFn: async () => {
       const startTime = performance.now();
       console.log(`📤 [TENANT] GET /api/v1/tenants - Request`, filters);

@@ -5,9 +5,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api-client';
 import type { Property, PropertyListResponse } from '../types';
 
-export function useProperties() {
+export function useProperties(options?: { enabled?: boolean }) {
   return useQuery<PropertyListResponse>({
     queryKey: ['properties'],
+    enabled: options?.enabled !== false, // Default to true for backward compatibility
     queryFn: async () => {
       const startTime = performance.now();
       console.log('📤 [PROPERTIES] GET /api/v1/properties - Request');
