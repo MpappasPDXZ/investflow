@@ -263,37 +263,7 @@ export interface RentListResponse {
   limit: number;
 }
 
-<<<<<<< HEAD
 // Financial Performance types - exported from use-financial-performance.ts hook
 // Re-exported here for convenience
 export type { FinancialPerformance } from '@/lib/hooks/use-financial-performance';
-=======
-// Financial Performance types
-export interface FinancialPerformance {
-  property_id: string;
-  ytd_total_revenue?: number;  // Total revenue including deposits
-  ytd_rent: number;  // IRS revenue only (excludes deposits)
-  ytd_expenses: number;
-  ytd_profit_loss: number;
-  ytd_piti: number;
-  ytd_utilities: number;
-  ytd_maintenance: number;
-  ytd_capex: number;
-  ytd_insurance: number;
-  ytd_property_management: number;
-  ytd_other: number;
-  cumulative_rent: number;
-  cumulative_expenses: number;
-  cumulative_profit_loss: number;
-  cumulative_piti: number;
-  cumulative_utilities: number;
-  cumulative_maintenance: number;
-  cumulative_capex: number;
-  cumulative_insurance: number;
-  cumulative_property_management: number;
-  cumulative_other: number;
-  cash_on_cash: number | null;
-  last_calculated_at: string;
-}
->>>>>>> 24d4efe22a82494048d1297eebf0e113d42263c6
 
