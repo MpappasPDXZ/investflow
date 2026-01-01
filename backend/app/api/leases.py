@@ -1,8 +1,10 @@
 """API routes for lease management"""
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from typing import List, Optional, Union
 from uuid import UUID
 import uuid
+import io
 import pandas as pd
 import pyarrow as pa
 from decimal import Decimal
@@ -1201,6 +1203,79 @@ async def delete_lease_pdf(
     except Exception as e:
         logger.error(f"Error deleting lease PDF: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error deleting lease PDF: {str(e)}")
+
+
+@router.get("/{lease_id}/pdf/proxy")
+async def proxy_lease_pdf_download(
+    lease_id: UUID,
+    document_type: str = Query("lease", description="Type of document: 'lease' or 'holding_fee'"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Proxy download for lease PDF or holding fee addendum (forces actual download instead of opening in browser - IE compatible)"""
+    try:
+        user_id = current_user["sub"]
+        
+        # Get lease
+        leases_df = read_table(NAMESPACE, LEASES_TABLE)
+        lease_rows = leases_df[leases_df["id"] == str(lease_id)]
+        
+        if len(lease_rows) == 0:
+            raise HTTPException(status_code=404, detail="Lease not found")
+        
+        # Get the latest version
+        lease_rows = lease_rows.sort_values("updated_at", ascending=False)
+        lease = lease_rows.iloc[0]
+        
+        # Verify ownership
+        if lease["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        
+        # Determine which PDF to download
+        if document_type == "holding_fee":
+            # For holding fee, we need to get it from the generate response
+            # Since it's not stored in the lease record, we'll need to reconstruct the blob name
+            # Holding fee PDFs are stored in the same location as lease PDFs with a different name
+            lease_pdf_blob = lease.get("generated_pdf_document_id")
+            if not lease_pdf_blob:
+                raise HTTPException(status_code=404, detail="Lease PDF not found - generate lease PDF first")
+            
+            # Holding fee PDF follows naming pattern: replace lease PDF name with holding fee name
+            # Format: leases/generated/{user_id}/{lease_id}_holding_fee_addendum.pdf
+            pdf_blob = lease_pdf_blob.replace('.pdf', '_holding_fee_addendum.pdf')
+            download_filename = "Holding_Fee_Addendum.pdf"
+        else:
+            # Default to lease PDF
+            pdf_blob = lease.get("generated_pdf_document_id")
+            if not pdf_blob:
+                raise HTTPException(status_code=404, detail="PDF not generated for this lease")
+            
+            # Use lease number and property address for filename if available
+            property_summary = _get_property_summary(lease["property_id"], lease.get("unit_id"))
+            property_address = property_summary.get("address", "property") if property_summary else "property"
+            # Sanitize filename
+            safe_address = "".join(c for c in property_address if c.isalnum() or c in (' ', '-', '_')).strip()[:50]
+            lease_number = lease.get("lease_number", "")
+            download_filename = f"Lease_{lease_number}_{safe_address}.pdf" if lease_number else f"Lease_{safe_address}.pdf"
+        
+        if not adls_service.blob_exists(pdf_blob):
+            raise HTTPException(status_code=404, detail="PDF file not found")
+        
+        # Download blob content
+        blob_content, content_type, filename = adls_service.download_blob(pdf_blob)
+        
+        # Return as streaming response with Content-Disposition header to force download
+        return StreamingResponse(
+            io.BytesIO(blob_content),
+            media_type=content_type or "application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{download_filename}"'
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proxying lease PDF download: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error downloading lease PDF: {str(e)}")
 
 
 @router.delete("/{lease_id}", status_code=204)
