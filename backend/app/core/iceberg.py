@@ -1,5 +1,6 @@
 """PyIceberg helper for direct Iceberg table operations"""
 from typing import Optional, Tuple, List
+from datetime import datetime, date
 import pandas as pd
 import pyarrow as pa
 from pyiceberg.catalog import Catalog
@@ -297,12 +298,37 @@ def upsert_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame,
         table = load_table(namespace, table_name)
         current_schema = table.schema()
         
-        # Convert timestamp columns from ns to us precision
+        # CRITICAL FIX: Convert timestamp columns IMMEDIATELY after copying the DataFrame
+        # Pandas creates timestamp[ns] by default, but Iceberg only supports timestamp[us]
         df = data.copy()
-        for col in df.columns:
-            if df[col].dtype == 'datetime64[ns]':
-                df[col] = df[col].astype('datetime64[us]')
         
+        # Get schema first to know which columns are timestamps vs dates
+        table_schema = table.schema().as_arrow()
+        schema_field_types = {field.name: field.type for field in table_schema}
+        
+        # Convert all datetime columns based on their schema type BEFORE any other operations
+        for col in df.columns:
+            if col in schema_field_types:
+                field_type = schema_field_types[col]
+                # If schema expects a timestamp, convert ns to us
+                if pa.types.is_timestamp(field_type):
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        logger.info(f"Converting timestamp column {col} from ns to us")
+                        df[col] = df[col].astype('datetime64[us]')
+                # If schema expects a date, convert to date objects
+                elif pa.types.is_date(field_type):
+                    logger.info(f"Converting date column {col} - current dtype: {df[col].dtype}")
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        logger.info(f"  Column {col} is datetime64, converting to date objects")
+                        df[col] = pd.to_datetime(df[col]).dt.date
+                    # Ensure column stays as object dtype with date values
+                    # Force conversion even if already looks like dates
+                    if df[col].dtype != object:
+                        logger.info(f"  Forcing {col} to object dtype")
+                        df[col] = df[col].astype(object)
+                    logger.info(f"  Final dtype for {col}: {df[col].dtype}, sample value: {df[col].iloc[0] if len(df) > 0 and pd.notna(df[col].iloc[0]) else 'None'}")
+        
+        # Remove old conversion logic - now handled above
         # Convert date columns to date32 if schema expects it
         from pyiceberg.types import DateType
         for field in current_schema.fields:
@@ -394,21 +420,31 @@ def upsert_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame,
         
         # Convert timestamp columns from nanoseconds to microseconds (Iceberg requirement)
         # Pandas defaults to timestamp[ns] but Iceberg only supports timestamp[us]
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                # Convert to datetime64[us] (microseconds) instead of datetime64[ns] (nanoseconds)
-                df[col] = df[col].astype('datetime64[us]')
-        
-        # Convert to PyArrow table and cast to table schema
-        arrow_table = pa.Table.from_pandas(df, preserve_index=False)
-        
-        # Cast to table schema to ensure exact type match
+        # Note: Only convert actual timestamp columns, not date columns (date32)
         table_schema = table.schema().as_arrow()
-        try:
-            arrow_table = arrow_table.cast(table_schema)
-        except Exception as cast_error:
-            logger.warning(f"Could not cast to table schema: {cast_error}")
-            # Continue with inferred schema
+        schema_field_types = {field.name: field.type for field in table_schema}
+        
+        for col in df.columns:
+            if col in schema_field_types:
+                field_type = schema_field_types[col]
+                # Check if this is a timestamp field (not a date field)
+                if pa.types.is_timestamp(field_type):
+                    # Only convert if it's actually a datetime/timestamp column
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        # Convert to datetime64[us] (microseconds) instead of datetime64[ns] (nanoseconds)
+                        df[col] = df[col].astype('datetime64[us]')
+                elif pa.types.is_date(field_type):
+                    # Ensure date columns stay as dates (not timestamps)
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        # Convert timestamp to date
+                        df[col] = pd.to_datetime(df[col]).dt.date
+                    # If column is None/NaN, force to object dtype to prevent timestamp[ns] inference
+                    elif df[col].isna().all() or df[col].dtype != 'object':
+                        # Force to object dtype to hold date objects (not timestamp[ns])
+                        df[col] = df[col].astype('object')
+        
+        # Convert to PyArrow table - let pandas handle type inference
+        arrow_table = pa.Table.from_pandas(df, preserve_index=False)
         
         # Perform upsert
         table.upsert(arrow_table, join_cols=join_cols)

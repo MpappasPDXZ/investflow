@@ -83,6 +83,94 @@ def _deserialize_moveout_costs(moveout_costs_json: str) -> List[MoveOutCostItem]
         return []
 
 
+
+def _prepare_lease_for_iceberg(lease_dict: dict, table_schema) -> dict:
+    """
+    Prepare lease dict for Iceberg by converting all values to proper types.
+    This is the SINGLE place where all data conversions happen uniformly.
+    
+    Args:
+        lease_dict: Raw dictionary with mixed types
+        table_schema: PyArrow schema from the Iceberg table
+        
+    Returns:
+        Dictionary with properly typed values ready for DataFrame creation
+    """
+    import json
+    from datetime import date as date_type, datetime as datetime_type
+    
+    prepared = {}
+    
+    for field in table_schema:
+        col_name = field.name
+        if col_name not in lease_dict:
+            continue
+            
+        value = lease_dict[col_name]
+        field_type = field.type
+        
+        # Handle None/NaN uniformly
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            prepared[col_name] = None
+            continue
+        
+        # Date fields (date32) - convert timestamps to date objects
+        if pa.types.is_date(field_type):
+            if isinstance(value, (datetime_type, pd.Timestamp)):
+                prepared[col_name] = value.date()
+            elif isinstance(value, date_type):
+                prepared[col_name] = value
+            elif isinstance(value, str):
+                prepared[col_name] = datetime_type.fromisoformat(value).date()
+            else:
+                prepared[col_name] = None
+                
+        # Timestamp fields (timestamp[us]) - ensure datetime objects
+        elif pa.types.is_timestamp(field_type):
+            if isinstance(value, pd.Timestamp):
+                prepared[col_name] = value.to_pydatetime()
+            elif isinstance(value, datetime_type):
+                prepared[col_name] = value
+            elif isinstance(value, str):
+                prepared[col_name] = pd.to_datetime(value).to_pydatetime()
+            else:
+                prepared[col_name] = value
+                
+        # String fields (utf8/large_utf8) - handle lists/dicts by JSON encoding
+        elif pa.types.is_string(field_type) or pa.types.is_large_string(field_type):
+            if isinstance(value, (list, dict)):
+                # JSON-encode lists/dicts for string fields
+                prepared[col_name] = json.dumps(value) if value else None
+            elif isinstance(value, str):
+                prepared[col_name] = value
+            else:
+                prepared[col_name] = str(value) if value is not None else None
+                
+        # Decimal fields - ensure Decimal type
+        elif pa.types.is_decimal(field_type):
+            if value is not None:
+                prepared[col_name] = Decimal(str(value))
+            else:
+                prepared[col_name] = None
+                
+        # Integer fields
+        elif pa.types.is_integer(field_type):
+            if value is not None:
+                prepared[col_name] = int(value)
+            else:
+                prepared[col_name] = None
+                
+        # Boolean fields
+        elif pa.types.is_boolean(field_type):
+            prepared[col_name] = bool(value) if value is not None else None
+            
+        # Everything else - pass through
+        else:
+            prepared[col_name] = value
+    
+    return prepared
+
+
 def _serialize_pets(pets: Optional[List[dict]]) -> Optional[str]:
     """Convert pets list to JSON string for storage"""
     if not pets:
@@ -309,21 +397,64 @@ async def create_lease(
         lease_dict["commencement_date"] = parse_date_midday(lease_data.commencement_date)
         lease_dict["termination_date"] = parse_date_midday(lease_data.termination_date)
         lease_dict["lease_date"] = parse_date_midday(lease_data.lease_date) if lease_data.lease_date else None
-        lease_dict["signed_date"] = None
+        # Handle signed_date - it's a date field, not a timestamp
+        # Check if signed_date exists in the request (it might be in lease_data as an attribute)
+        signed_date_value = getattr(lease_data, 'signed_date', None)
+        if signed_date_value:
+            # Parse as date (not timestamp) - use date part only
+            if isinstance(signed_date_value, str):
+                signed_date_value = datetime.strptime(signed_date_value, "%Y-%m-%d").date()
+            elif isinstance(signed_date_value, (datetime, pd.Timestamp)):
+                signed_date_value = signed_date_value.date() if hasattr(signed_date_value, 'date') else signed_date_value
+            lease_dict["signed_date"] = signed_date_value
+        else:
+            lease_dict["signed_date"] = None
         
         # Append to Iceberg leases table
-        df = pd.DataFrame([lease_dict])
-        
-        # OPTIMIZATION: Use upsert_data instead of append_data for better performance
-        # Get column order from table schema instead of reading all data
-        schema_start = time.time()
+        # CRITICAL: Get table schema FIRST, then prepare data according to schema
         table = load_table(NAMESPACE, LEASES_TABLE)
-        schema_columns = [field.name for field in table.schema().fields]
-        df = df.reindex(columns=schema_columns, fill_value=None)
-        logger.info(f"⏱️ [PERF] Getting schema columns took {time.time() - schema_start:.2f}s")
+        table_schema = table.schema().as_arrow()
+        
+        # Use the unified preparation function to convert ALL data properly
+        prepared_lease = _prepare_lease_for_iceberg(lease_dict, table_schema)
+        
+        # Create PyArrow table DIRECTLY from prepared data with explicit schema
+        # Build a single record (dictionary) with all fields in schema order
+        record = {}
+        for field in table_schema:
+            col_name = field.name
+            value = prepared_lease.get(col_name)
+            field_type = field.type
+            
+            # CRITICAL: For date fields, ensure date objects (not datetime/timestamp)
+            if pa.types.is_date(field_type):
+                if value is None:
+                    record[col_name] = None
+                elif isinstance(value, (datetime, pd.Timestamp)):
+                    record[col_name] = value.date()
+                elif isinstance(value, date):
+                    record[col_name] = value
+                else:
+                    record[col_name] = None
+            # For timestamp fields, ensure datetime objects
+            elif pa.types.is_timestamp(field_type):
+                if value is None:
+                    record[col_name] = None
+                elif isinstance(value, pd.Timestamp):
+                    record[col_name] = value.to_pydatetime()
+                elif isinstance(value, datetime):
+                    record[col_name] = value
+                else:
+                    record[col_name] = value
+            else:
+                record[col_name] = value
+        
+        # Create table from single record with explicit schema - this ensures exact types
+        arrow_table = pa.Table.from_pylist([record], schema=table_schema)
         
         upsert_start = time.time()
-        upsert_data(NAMESPACE, LEASES_TABLE, df, join_cols=["id"])
+        # Pass PyArrow table directly to avoid pandas type inference issues
+        table.upsert(arrow_table, join_cols=["id"])
         logger.info(f"⏱️ [PERF] upsert_data(leases) took {time.time() - upsert_start:.2f}s")
         
         # Create tenants
