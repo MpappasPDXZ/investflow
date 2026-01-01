@@ -229,6 +229,13 @@ def append_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame)
         # Reorder to match schema order
         df = df[schema_column_order]
         
+        # Convert timestamp columns from nanoseconds to microseconds (Iceberg requirement)
+        # Pandas defaults to timestamp[ns] but Iceberg only supports timestamp[us]
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                # Convert to datetime64[us] (microseconds) instead of datetime64[ns] (nanoseconds)
+                df[col] = df[col].astype('datetime64[us]')
+        
         # Convert pandas DataFrame to PyArrow table without schema first
         arrow_table = pa.Table.from_pandas(df)
         
@@ -384,6 +391,13 @@ def upsert_data(namespace: Tuple[str, ...], table_name: str, data: pd.DataFrame,
                 if col not in df.columns:
                     df[col] = None
             df = df[schema_column_order]
+        
+        # Convert timestamp columns from nanoseconds to microseconds (Iceberg requirement)
+        # Pandas defaults to timestamp[ns] but Iceberg only supports timestamp[us]
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                # Convert to datetime64[us] (microseconds) instead of datetime64[ns] (nanoseconds)
+                df[col] = df[col].astype('datetime64[us]')
         
         # Convert to PyArrow table and cast to table schema
         arrow_table = pa.Table.from_pandas(df, preserve_index=False)
