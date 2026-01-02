@@ -684,6 +684,83 @@ async def download_walkthrough_pdf(
         raise HTTPException(status_code=500, detail=f"Error getting PDF download URL: {str(e)}")
 
 
+@router.get("/{walkthrough_id}/pdf/proxy")
+async def proxy_walkthrough_pdf_download(
+    walkthrough_id: UUID,
+    current_user: dict = Depends(get_current_user)
+):
+    """Proxy download for walkthrough PDF (forces actual download instead of opening in browser - IE compatible)"""
+    try:
+        from fastapi.responses import StreamingResponse
+        import io
+        
+        user_id = current_user["sub"]
+        
+        # Get walkthrough
+        if not table_exists(NAMESPACE, WALKTHROUGHS_TABLE):
+            raise HTTPException(status_code=404, detail="Walkthrough not found")
+        
+        walkthroughs_df = read_table_filtered(
+            NAMESPACE,
+            WALKTHROUGHS_TABLE,
+            EqualTo("id", str(walkthrough_id))
+        )
+        
+        if len(walkthroughs_df) == 0:
+            raise HTTPException(status_code=404, detail="Walkthrough not found")
+        
+        walkthrough = walkthroughs_df.iloc[0]
+        
+        # Verify ownership
+        if walkthrough["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        
+        # Get PDF blob name
+        pdf_blob_name = walkthrough.get("generated_pdf_blob_name")
+        if not pdf_blob_name:
+            raise HTTPException(status_code=404, detail="PDF not generated for this walkthrough")
+        
+        if not adls_service.blob_exists(pdf_blob_name):
+            raise HTTPException(status_code=404, detail="PDF file not found")
+        
+        # Download blob content
+        blob_content, content_type, filename = adls_service.download_blob(pdf_blob_name)
+        
+        # Use property name and date for filename if available
+        property_name = walkthrough.get("property_display_name", "Property")
+        inspection_date = walkthrough.get("inspection_date")
+        if inspection_date:
+            try:
+                from datetime import datetime
+                if isinstance(inspection_date, str):
+                    date_obj = datetime.fromisoformat(inspection_date.replace('Z', '+00:00'))
+                else:
+                    date_obj = inspection_date
+                date_str = date_obj.strftime("%Y-%m-%d")
+                download_filename = f"Inspection_{property_name}_{date_str}.pdf"
+            except:
+                download_filename = f"Inspection_{property_name}.pdf"
+        else:
+            download_filename = f"Inspection_{property_name}.pdf"
+        
+        # Sanitize filename
+        download_filename = "".join(c for c in download_filename if c.isalnum() or c in (' ', '-', '_', '.')).strip()
+        
+        # Return as streaming response with Content-Disposition header to force download
+        return StreamingResponse(
+            io.BytesIO(blob_content),
+            media_type=content_type or "application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{download_filename}"'
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proxying walkthrough PDF download: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error downloading walkthrough PDF: {str(e)}")
+
+
 
 
 @router.put("/{walkthrough_id}", response_model=WalkthroughResponse)
