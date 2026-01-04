@@ -31,22 +31,7 @@ class WalkthroughAreaBase(BaseModel):
         description="Inspection status: no_issues, issue_noted_as_is, or issue_landlord_to_fix"
     )
     notes: Optional[str] = Field(None, max_length=2000, description="General notes (available for all statuses)")
-    landlord_fix_notes: Optional[str] = Field(
-        None, 
-        max_length=2000, 
-        description="Required notes when landlord will fix the issue (only for issue_landlord_to_fix)"
-    )
     issues: List[WalkthroughAreaIssue] = Field(default_factory=list)
-    
-    @model_validator(mode='after')
-    def validate_landlord_fix_notes(self):
-        """Require landlord_fix_notes when inspection_status is issue_landlord_to_fix
-        Note: This validation is lenient for draft saves - we allow saving without notes
-        and will validate more strictly when finalizing/signing the walkthrough.
-        """
-        # For now, we allow saving without fix notes (draft mode)
-        # This will be validated more strictly when finalizing the walkthrough
-        return self
 
 
 class WalkthroughAreaCreate(WalkthroughAreaBase):
@@ -80,9 +65,7 @@ class WalkthroughBase(BaseModel):
     walkthrough_date: date = Field(default_factory=date.today)
     inspector_name: Optional[str] = Field(None, max_length=200, description="Inspector/Landlord name")
     tenant_name: Optional[str] = Field(None, max_length=200, description="Tenant present during inspection")
-    tenant_signed: bool = Field(default=False)
     tenant_signature_date: Optional[date] = None
-    landlord_signed: bool = Field(default=False)
     landlord_signature_date: Optional[date] = None
     notes: Optional[str] = Field(None, max_length=5000)
 
@@ -97,9 +80,7 @@ class WalkthroughUpdate(BaseModel):
     walkthrough_date: Optional[date] = None
     inspector_name: Optional[str] = Field(None, max_length=200)
     tenant_name: Optional[str] = Field(None, max_length=200)
-    tenant_signed: Optional[bool] = None
     tenant_signature_date: Optional[date] = None
-    landlord_signed: Optional[bool] = None
     landlord_signature_date: Optional[date] = None
     notes: Optional[str] = None
 
@@ -107,7 +88,6 @@ class WalkthroughUpdate(BaseModel):
 class WalkthroughResponse(WalkthroughBase):
     """Walkthrough response"""
     id: UUID
-    user_id: str  # User.id is String, not UUID
     status: Literal["draft", "pending_signature", "completed"] = Field(default="draft")
     generated_pdf_blob_name: Optional[str] = None
     pdf_url: Optional[str] = None
@@ -122,7 +102,6 @@ class WalkthroughResponse(WalkthroughBase):
 class WalkthroughListItem(BaseModel):
     """Simplified walkthrough for list view (no areas)"""
     id: UUID
-    user_id: str
     property_id: UUID
     unit_id: Optional[UUID] = None
     property_display_name: Optional[str] = None

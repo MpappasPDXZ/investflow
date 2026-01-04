@@ -143,7 +143,17 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
 
   const handleCreate = async () => {
     try {
-      const payload = {
+      // Build payload in EXACT backend field order (matching COMPS_FIELD_ORDER)
+      const BACKEND_FIELD_ORDER = [
+        "property_id", "unit_id", "address", "city", "state", "zip_code",
+        "property_type", "is_furnished", "bedrooms", "bathrooms", "square_feet",
+        "asking_price", "has_fence", "has_solid_flooring", "has_quartz_granite",
+        "has_ss_appliances", "has_shaker_cabinets", "has_washer_dryer", "garage_spaces",
+        "date_listed", "date_rented", "contacts", "is_rented", "last_rented_price",
+        "last_rented_year", "is_subject_property", "notes"
+      ];
+      
+      const payload: any = {
         property_id: propertyId,
         unit_id: unitId || undefined,
         address: form.address,
@@ -172,7 +182,18 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
         is_subject_property: form.is_subject_property,
         notes: form.notes || undefined,
       };
-      await apiClient.post('/comparables', payload);
+      
+      // Build ordered payload respecting backend field order
+      const orderedPayload: any = {};
+      for (const field of BACKEND_FIELD_ORDER) {
+        if (field in payload) {
+          orderedPayload[field] = payload[field];
+        }
+      }
+      
+      console.log('📝 [COMPS] Creating comparable with ordered payload:', orderedPayload);
+      console.log('📝 [COMPS] Payload field order:', Object.keys(orderedPayload));
+      await apiClient.post('/comparables', orderedPayload);
       resetForm();
       fetchComparables();
     } catch (err) {
@@ -183,7 +204,17 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
 
   const handleUpdate = async (id: string) => {
     try {
-      const payload = {
+      // Build payload in EXACT backend field order (matching COMPS_FIELD_ORDER)
+      const BACKEND_FIELD_ORDER = [
+        "address", "city", "state", "zip_code", "property_type", "is_furnished",
+        "bedrooms", "bathrooms", "square_feet", "asking_price", "has_fence",
+        "has_solid_flooring", "has_quartz_granite", "has_ss_appliances",
+        "has_shaker_cabinets", "has_washer_dryer", "garage_spaces",
+        "date_listed", "date_rented", "contacts", "is_rented", "last_rented_price",
+        "last_rented_year", "is_subject_property", "notes"
+      ];
+      
+      const payload: any = {
         address: form.address,
         city: form.city || undefined,
         state: form.state || undefined,
@@ -202,6 +233,7 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
         has_washer_dryer: form.has_washer_dryer,
         garage_spaces: form.garage_spaces,
         date_listed: form.date_listed,
+        date_rented: form.date_rented || undefined,
         contacts: form.is_rented ? undefined : form.contacts,  // Contacts null if rented (not listed)
         is_rented: form.is_rented,
         last_rented_price: form.last_rented_price ? parseFloat(form.last_rented_price) : undefined,
@@ -209,7 +241,18 @@ export default function ComparablesTab({ propertyId, unitId }: Props) {
         is_subject_property: form.is_subject_property,
         notes: form.notes || undefined,
       };
-      await apiClient.put(`/comparables/${id}`, payload);
+      
+      // Build ordered payload respecting backend field order
+      const orderedPayload: any = {};
+      for (const field of BACKEND_FIELD_ORDER) {
+        if (field in payload) {
+          orderedPayload[field] = payload[field];
+        }
+      }
+      
+      console.log('📝 [COMPS] Updating comparable with ordered payload:', orderedPayload);
+      console.log('📝 [COMPS] Payload field order:', Object.keys(orderedPayload));
+      await apiClient.put(`/comparables/${id}`, orderedPayload);
       resetForm();
       fetchComparables();
     } catch (err) {

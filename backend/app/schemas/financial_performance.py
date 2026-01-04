@@ -50,7 +50,8 @@ class FinancialPerformanceSummary(BaseModel):
     ytd_profit_loss: Decimal  # IRS revenue - expenses
     
     # YTD expense breakdown by type
-    ytd_piti: Decimal = Decimal("0")  # Principal, Interest, Tax, Insurance
+    ytd_piti: Decimal = Decimal("0")  # Principal, Interest
+    ytd_tax: Decimal = Decimal("0")  # Property taxes
     ytd_utilities: Decimal = Decimal("0")
     ytd_maintenance: Decimal = Decimal("0")
     ytd_capex: Decimal = Decimal("0")
@@ -65,6 +66,7 @@ class FinancialPerformanceSummary(BaseModel):
     
     # Cumulative expense breakdown by type
     cumulative_piti: Decimal = Decimal("0")
+    cumulative_tax: Decimal = Decimal("0")  # Property taxes
     cumulative_utilities: Decimal = Decimal("0")
     cumulative_maintenance: Decimal = Decimal("0")
     cumulative_capex: Decimal = Decimal("0")
@@ -73,6 +75,7 @@ class FinancialPerformanceSummary(BaseModel):
     cumulative_other: Decimal = Decimal("0")
     
     # Cash on cash
+    cash_invested: Optional[Decimal] = None
     cash_on_cash: Optional[Decimal] = None
     
     # Unit-level breakdowns (if multi-unit)

@@ -5,13 +5,15 @@ from uuid import UUID
 import uuid
 import pandas as pd
 from decimal import Decimal
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
+import pyarrow as pa
+from pyiceberg.expressions import EqualTo
 
 from app.core.dependencies import get_current_user
 from app.schemas.property import (
     PropertyCreate, PropertyUpdate, PropertyResponse, PropertyListResponse
 )
-from app.core.iceberg import read_table, append_data, table_exists, load_table, upsert_data
+from app.core.iceberg import get_catalog, read_table, read_table_filtered, table_exists
 from app.core.logging import get_logger
 from app.api.vacancy_utils import create_or_update_vacancy_expenses
 from app.api.tax_savings_utils import create_or_update_tax_savings
@@ -21,6 +23,292 @@ TABLE_NAME = "properties"
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 logger = get_logger(__name__)
+
+# Strict field order for properties table (must match Iceberg schema exactly)
+PROPERTIES_FIELD_ORDER = [
+    "id",
+    "user_id",
+    "display_name",
+    "property_status",
+    "purchase_date",
+    "monthly_rent_to_income_ratio",
+    "address_line1",
+    "address_line2",
+    "city",
+    "state",
+    "zip_code",
+    "property_type",
+    "has_units",
+    "notes",
+    "is_active",
+    "purchase_price",
+    "square_feet",
+    "down_payment",
+    "cash_invested",
+    "current_market_value",
+    "vacancy_rate",
+    "unit_count",
+    "bedrooms",
+    "bathrooms",
+    "year_built",
+    "current_monthly_rent",
+    "created_at",
+    "updated_at",
+]
+
+
+# ========== DEDICATED PROPERTIES ICEBERG FUNCTIONS ==========
+
+def _load_properties_table():
+    """Load the properties Iceberg table (dedicated function)"""
+    catalog = get_catalog()
+    table_identifier = (*NAMESPACE, TABLE_NAME)
+    return catalog.load_table(table_identifier)
+
+
+def _read_properties_table() -> pd.DataFrame:
+    """Read all properties from Iceberg table (dedicated function)"""
+    try:
+        table = _load_properties_table()
+        scan = table.scan()
+        arrow_table = scan.to_arrow()
+        return arrow_table.to_pandas()
+    except Exception as e:
+        logger.error(f"Failed to read properties table: {e}", exc_info=True)
+        raise
+
+
+def _append_property(property_dict: dict):
+    """Append a property with strict field ordering (dedicated function)"""
+    try:
+        logger.info(f"📋 [PROPERTY] _append_property: Starting append with property_dict keys: {list(property_dict.keys())}")
+        table = _load_properties_table()
+        current_schema = table.schema()
+        
+        # Build DataFrame with fields in exact order
+        ordered_dict = {}
+        for field_name in PROPERTIES_FIELD_ORDER:
+            if field_name in property_dict:
+                ordered_dict[field_name] = property_dict[field_name]
+            else:
+                ordered_dict[field_name] = None
+        
+        df = pd.DataFrame([ordered_dict])
+        logger.info(f"📋 [PROPERTY] _append_property: Initial DataFrame dtypes: {df.dtypes.to_dict()}")
+        
+        # Ensure DataFrame columns are in exact order
+        df = df[PROPERTIES_FIELD_ORDER]
+        
+        # Convert timestamp columns to microseconds
+        for col in ['created_at', 'updated_at']:
+            if col in df.columns:
+                try:
+                    # If already a Timestamp, ensure it's timezone-naive and in microseconds
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        # Already datetime64, just ensure microseconds precision
+                        df[col] = pd.to_datetime(df[col], utc=True).dt.tz_localize(None).dt.floor('us')
+                    else:
+                        # Try to convert to datetime, handling various input types
+                        df[col] = pd.to_datetime(df[col], errors='coerce', utc=True)
+                        if df[col].notna().any():
+                            df[col] = df[col].dt.tz_localize(None).dt.floor('us')
+                except Exception as e:
+                    logger.error(f"❌ [PROPERTY] Error converting timestamp column {col}: {e}", exc_info=True)
+                    raise
+        
+        # Convert date columns to date objects
+        if 'purchase_date' in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df['purchase_date']):
+                df['purchase_date'] = pd.to_datetime(df['purchase_date']).dt.date
+            elif df['purchase_date'].dtype == 'object':
+                # Already date objects
+                pass
+        
+        # Convert decimal columns to proper types
+        from decimal import Decimal as PythonDecimal
+        decimal_cols = ['monthly_rent_to_income_ratio', 'vacancy_rate', 'bathrooms', 'current_monthly_rent']
+        for col in decimal_cols:
+            if col in df.columns:
+                def to_decimal(x):
+                    if pd.isna(x) or x is None:
+                        return None
+                    try:
+                        return PythonDecimal(str(float(x)))
+                    except (ValueError, TypeError):
+                        return None
+                df[col] = df[col].apply(to_decimal)
+        
+        # Convert long/integer columns
+        long_cols = ['purchase_price', 'square_feet', 'down_payment', 'cash_invested', 'current_market_value', 'unit_count', 'bedrooms', 'year_built']
+        for col in long_cols:
+            if col in df.columns:
+                def to_long(x):
+                    if pd.isna(x) or x is None:
+                        return None
+                    try:
+                        # Convert Decimal to int
+                        if isinstance(x, PythonDecimal):
+                            return int(x)
+                        return int(float(x))
+                    except (ValueError, TypeError):
+                        return None
+                df[col] = df[col].apply(to_long)
+        
+        # Convert boolean columns
+        if 'has_units' in df.columns:
+            df['has_units'] = df['has_units'].astype(bool) if pd.notna(df['has_units']).any() else False
+        if 'is_active' in df.columns:
+            df['is_active'] = df['is_active'].astype(bool) if pd.notna(df['is_active']).any() else True
+        
+        # Ensure DataFrame columns match schema order and all schema columns are present
+        schema_column_order = [field.name for field in current_schema.fields]
+        schema_field_names = set(schema_column_order)
+        
+        # Add missing columns with None values
+        for col in schema_column_order:
+            if col not in df.columns:
+                df[col] = None
+        
+        # Remove any columns that don't exist in schema
+        columns_to_remove = [col for col in df.columns if col not in schema_field_names]
+        if columns_to_remove:
+            logger.warning(f"Removing columns from DataFrame that don't exist in table schema: {columns_to_remove}")
+            df = df.drop(columns=columns_to_remove)
+        
+        # Reorder to match schema order
+        df = df[schema_column_order]
+        
+        # Final timestamp conversion check - ensure microseconds precision
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                # Convert to datetime64[us] (microseconds) instead of datetime64[ns] (nanoseconds)
+                df[col] = df[col].astype('datetime64[us]')
+        
+        logger.info(f"📋 [PROPERTY] _append_property: Final DataFrame dtypes before PyArrow: {df.dtypes.to_dict()}")
+        
+        # Convert to PyArrow and cast to schema
+        arrow_table = pa.Table.from_pandas(df, preserve_index=False)
+        table_schema = table.schema().as_arrow()
+        logger.info(f"📋 [PROPERTY] _append_property: PyArrow table created, casting to schema")
+        arrow_table = arrow_table.cast(table_schema)
+        
+        logger.info(f"📋 [PROPERTY] _append_property: Appending to table")
+        table.append(arrow_table)
+        logger.info(f"✅ [PROPERTY] _append_property: Successfully appended property")
+    except Exception as e:
+        logger.error(f"Failed to append property: {e}", exc_info=True)
+        raise
+
+
+def _upsert_property(property_df: pd.DataFrame):
+    """Upsert a property with strict field ordering (dedicated function)"""
+    try:
+        table = _load_properties_table()
+        current_schema = table.schema()
+        
+        logger.info(f"📋 [PROPERTY] _upsert_property: Input DataFrame columns: {list(property_df.columns)}")
+        logger.info(f"📋 [PROPERTY] _upsert_property: Expected field order: {PROPERTIES_FIELD_ORDER}")
+        
+        # Ensure DataFrame has all required fields in exact order
+        for field_name in PROPERTIES_FIELD_ORDER:
+            if field_name not in property_df.columns:
+                property_df[field_name] = None
+        
+        # Reorder columns to match exact schema order
+        property_df = property_df[PROPERTIES_FIELD_ORDER]
+        logger.info(f"📋 [PROPERTY] _upsert_property: Reordered columns: {list(property_df.columns)}")
+        
+        # Convert timestamp columns to microseconds
+        for col in ['created_at', 'updated_at']:
+            if col in property_df.columns:
+                try:
+                    # If already a Timestamp, ensure it's timezone-naive and in microseconds
+                    if pd.api.types.is_datetime64_any_dtype(property_df[col]):
+                        # Already datetime64, just ensure microseconds precision
+                        property_df[col] = pd.to_datetime(property_df[col], utc=True).dt.tz_localize(None).dt.floor('us')
+                    else:
+                        # Try to convert to datetime, handling various input types
+                        property_df[col] = pd.to_datetime(property_df[col], errors='coerce', utc=True)
+                        if property_df[col].notna().any():
+                            property_df[col] = property_df[col].dt.tz_localize(None).dt.floor('us')
+                except Exception as e:
+                    logger.error(f"❌ [PROPERTY] Error converting timestamp column {col}: {e}", exc_info=True)
+                    raise
+        
+        # Convert date columns to date objects
+        if 'purchase_date' in property_df.columns:
+            try:
+                if pd.api.types.is_datetime64_any_dtype(property_df['purchase_date']):
+                    property_df['purchase_date'] = pd.to_datetime(property_df['purchase_date']).dt.date
+                elif isinstance(property_df['purchase_date'].iloc[0] if len(property_df) > 0 else None, pd.Timestamp):
+                    property_df['purchase_date'] = property_df['purchase_date'].dt.date
+                # If already date objects, leave as is
+            except Exception as e:
+                logger.warning(f"⚠️ [PROPERTY] Error converting date column purchase_date: {e}")
+        
+        # Convert decimal columns
+        from decimal import Decimal as PythonDecimal
+        decimal_cols = ['monthly_rent_to_income_ratio', 'vacancy_rate', 'bathrooms', 'current_monthly_rent']
+        for col in decimal_cols:
+            if col in property_df.columns:
+                try:
+                    property_df[col] = pd.to_numeric(property_df[col], errors='coerce')
+                    def to_decimal(x):
+                        if pd.isna(x) or x is None:
+                            return None
+                        try:
+                            return PythonDecimal(str(float(x)))
+                        except (ValueError, TypeError):
+                            return None
+                    property_df[col] = property_df[col].apply(to_decimal)
+                except Exception as e:
+                    logger.warning(f"⚠️ [PROPERTY] Error converting decimal column {col}: {e}")
+        
+        # Convert long/integer columns
+        long_cols = ['purchase_price', 'square_feet', 'down_payment', 'cash_invested', 'current_market_value', 'unit_count', 'bedrooms', 'year_built']
+        for col in long_cols:
+            if col in property_df.columns:
+                try:
+                    def to_long(x):
+                        if pd.isna(x) or x is None:
+                            return None
+                        try:
+                            if isinstance(x, PythonDecimal):
+                                return int(x)
+                            if isinstance(x, (int, float)):
+                                return int(x)
+                            return int(float(x))
+                        except (ValueError, TypeError):
+                            return None
+                    property_df[col] = property_df[col].apply(to_long)
+                except Exception as e:
+                    logger.warning(f"⚠️ [PROPERTY] Error converting long column {col}: {e}")
+        
+        # Convert boolean columns
+        if 'has_units' in property_df.columns:
+            try:
+                property_df['has_units'] = property_df['has_units'].astype(bool)
+            except Exception as e:
+                logger.warning(f"⚠️ [PROPERTY] Error converting boolean column has_units: {e}")
+        if 'is_active' in property_df.columns:
+            try:
+                property_df['is_active'] = property_df['is_active'].astype(bool)
+            except Exception as e:
+                logger.warning(f"⚠️ [PROPERTY] Error converting boolean column is_active: {e}")
+        
+        logger.info(f"📋 [PROPERTY] _upsert_property: Final DataFrame dtypes: {property_df.dtypes.to_dict()}")
+        
+        # Convert to PyArrow and cast to schema
+        arrow_table = pa.Table.from_pandas(property_df)
+        table_schema = table.schema().as_arrow()
+        arrow_table = arrow_table.cast(table_schema)
+        
+        logger.info(f"📋 [PROPERTY] _upsert_property: Performing upsert with join_cols=['id']")
+        table.upsert(arrow_table, join_cols=["id"])
+        logger.info(f"✅ [PROPERTY] _upsert_property: Upsert successful")
+    except Exception as e:
+        logger.error(f"❌ [PROPERTY] Failed to upsert property: {e}", exc_info=True)
+        raise
 
 
 def parse_date_midday(date_value: Union[str, date, datetime, pd.Timestamp]) -> pd.Timestamp:
@@ -60,47 +348,165 @@ async def create_property_endpoint(
     try:
         user_id = current_user["sub"]  # Already a string
         property_id = str(uuid.uuid4())
-        now = pd.Timestamp.now()
+        # Use datetime.utcnow() like expenses do
+        now = datetime.utcnow()
         
-        # Create property record
-        property_dict = {
+        # Create property record with strict field ordering
+        purchase_date_value = property_data.purchase_date if property_data.purchase_date else date(2025, 10, 23)
+        
+        # Build record with ALL fields from PROPERTIES_FIELD_ORDER to ensure nothing is missing
+        # Use getattr with defaults to ensure all fields are included even if None
+        record = {
             "id": property_id,
             "user_id": user_id,
-            "display_name": property_data.display_name,
-            "purchase_price": Decimal(str(property_data.purchase_price)),
-            "purchase_date": parse_date_midday(property_data.purchase_date) if property_data.purchase_date else parse_date_midday(date(2025, 10, 23)),
-            "down_payment": Decimal(str(property_data.down_payment)) if property_data.down_payment else None,
-            "cash_invested": Decimal(str(property_data.cash_invested)) if property_data.cash_invested else None,
-            "current_market_value": Decimal(str(property_data.current_market_value)) if property_data.current_market_value else None,
-            "property_status": property_data.property_status if property_data.property_status else "evaluating",
-            "vacancy_rate": Decimal(str(property_data.vacancy_rate)) if property_data.vacancy_rate else Decimal("0.07"),
-            "monthly_rent_to_income_ratio": Decimal(str(property_data.monthly_rent_to_income_ratio)) if property_data.monthly_rent_to_income_ratio else None,
-            "address_line1": property_data.address_line1,
-            "address_line2": property_data.address_line2,
-            "city": property_data.city,
-            "state": property_data.state,
-            "zip_code": property_data.zip_code,
-            "property_type": property_data.property_type,
-            "has_units": property_data.has_units if property_data.has_units is not None else False,
-            "unit_count": property_data.unit_count,
-            "bedrooms": property_data.bedrooms,
-            "bathrooms": Decimal(str(property_data.bathrooms)) if property_data.bathrooms else None,
-            "square_feet": property_data.square_feet,
-            "year_built": property_data.year_built,
-            "current_monthly_rent": Decimal(str(property_data.current_monthly_rent)) if property_data.current_monthly_rent else None,
-            "notes": property_data.notes,
+            "display_name": getattr(property_data, "display_name", None),
+            "property_status": getattr(property_data, "property_status", None) or "evaluating",
+            "purchase_date": purchase_date_value,
+            "monthly_rent_to_income_ratio": Decimal(str(property_data.monthly_rent_to_income_ratio)) if property_data.monthly_rent_to_income_ratio is not None else None,
+            "address_line1": getattr(property_data, "address_line1", None),
+            "address_line2": getattr(property_data, "address_line2", None),
+            "city": getattr(property_data, "city", None),
+            "state": getattr(property_data, "state", None),
+            "zip_code": getattr(property_data, "zip_code", None),
+            "property_type": getattr(property_data, "property_type", None),
+            "has_units": getattr(property_data, "has_units", None) if getattr(property_data, "has_units", None) is not None else False,
+            "notes": getattr(property_data, "notes", None),
+            "is_active": True,
+            "purchase_price": int(property_data.purchase_price) if property_data.purchase_price is not None else None,
+            "square_feet": int(property_data.square_feet) if property_data.square_feet is not None else None,
+            "down_payment": int(property_data.down_payment) if property_data.down_payment is not None else None,
+            "cash_invested": int(property_data.cash_invested) if property_data.cash_invested is not None else None,
+            "current_market_value": int(property_data.current_market_value) if property_data.current_market_value is not None else None,
+            "vacancy_rate": Decimal(str(property_data.vacancy_rate)) if property_data.vacancy_rate is not None else Decimal("0.07"),
+            "unit_count": int(property_data.unit_count) if property_data.unit_count is not None else None,
+            "bedrooms": int(property_data.bedrooms) if property_data.bedrooms is not None else None,
+            "bathrooms": Decimal(str(property_data.bathrooms)) if property_data.bathrooms is not None else None,
+            "year_built": int(property_data.year_built) if property_data.year_built is not None else None,
+            "current_monthly_rent": Decimal(str(property_data.current_monthly_rent)) if property_data.current_monthly_rent is not None else None,
             "created_at": now,
             "updated_at": now,
-            "is_active": True,
         }
         
-        # Append to Iceberg table
-        df = pd.DataFrame([property_dict])
-        append_data(NAMESPACE, TABLE_NAME, df)
+        # Ensure ALL fields from PROPERTIES_FIELD_ORDER are present (even if None)
+        for field_name in PROPERTIES_FIELD_ORDER:
+            if field_name not in record:
+                record[field_name] = None
+        
+        # Write to Iceberg - build record in schema order with proper type conversions
+        table = _load_properties_table()
+        table_schema = table.schema().as_arrow()
+        
+        logger.info(f"📋 [PROPERTY] Schema fields: {[f.name for f in table_schema]}")
+        logger.info(f"📋 [PROPERTY] Record keys: {list(record.keys())}")
+        
+        # Build record in schema order with proper type conversions (like leases do)
+        prepared_record = {}
+        for field in table_schema:
+            col_name = field.name
+            value = record.get(col_name)  # Returns None if key doesn't exist
+            field_type = field.type
+            
+            # If value is missing from record, handle based on nullable requirement
+            if col_name not in record:
+                if not field.nullable:
+                    logger.error(f"❌ [PROPERTY] Missing required field: {col_name}")
+                    logger.error(f"❌ [PROPERTY] Available record keys: {list(record.keys())}")
+                    raise ValueError(f"Missing required field: {col_name}")
+                # For nullable fields, set to None
+                prepared_record[col_name] = None
+                continue
+            
+            # CRITICAL: For date fields, ensure date objects (not datetime/timestamp)
+            if pa.types.is_date(field_type):
+                if value is None:
+                    prepared_record[col_name] = None
+                elif isinstance(value, (datetime, pd.Timestamp)):
+                    prepared_record[col_name] = value.date()
+                elif isinstance(value, date):
+                    prepared_record[col_name] = value
+                else:
+                    logger.warning(f"⚠️ [PROPERTY] Unexpected type for date field {col_name}: {type(value)}")
+                    prepared_record[col_name] = None
+            # For timestamp fields, ensure datetime objects
+            elif pa.types.is_timestamp(field_type):
+                if value is None:
+                    prepared_record[col_name] = None
+                elif isinstance(value, pd.Timestamp):
+                    prepared_record[col_name] = value.to_pydatetime()
+                elif isinstance(value, datetime):
+                    prepared_record[col_name] = value
+                else:
+                    logger.warning(f"⚠️ [PROPERTY] Unexpected type for timestamp field {col_name}: {type(value)}")
+                    prepared_record[col_name] = value
+            # For double/float fields, convert Decimal to float
+            # Check for float64 (double) or float32 - use multiple methods to detect
+            elif (
+                pa.types.is_floating(field_type) or 
+                str(field_type) in ['double', 'float64', 'float32', 'float'] or
+                'float' in str(field_type).lower()
+            ):
+                if value is None:
+                    prepared_record[col_name] = None
+                elif isinstance(value, Decimal):
+                    prepared_record[col_name] = float(value)
+                    logger.info(f"🔧 [PROPERTY] Converted {col_name} from Decimal to float: {value} -> {float(value)}")
+                elif isinstance(value, (int, float)):
+                    prepared_record[col_name] = float(value)
+                else:
+                    prepared_record[col_name] = value
+            # For decimal128 fields, keep as Decimal
+            elif pa.types.is_decimal(field_type):
+                if value is None:
+                    prepared_record[col_name] = None
+                elif isinstance(value, Decimal):
+                    prepared_record[col_name] = value
+                elif isinstance(value, (int, float)):
+                    prepared_record[col_name] = Decimal(str(value))
+                else:
+                    prepared_record[col_name] = value
+            else:
+                prepared_record[col_name] = value
+        
+        logger.info(f"📋 [PROPERTY] Prepared record keys: {list(prepared_record.keys())}")
+        
+        # Validate all schema fields are present
+        schema_field_names = {f.name for f in table_schema}
+        prepared_record_keys = set(prepared_record.keys())
+        missing_fields = schema_field_names - prepared_record_keys
+        extra_fields = prepared_record_keys - schema_field_names
+        
+        if missing_fields:
+            logger.error(f"❌ [PROPERTY] Missing fields in prepared_record: {missing_fields}")
+            logger.error(f"❌ [PROPERTY] Schema fields: {schema_field_names}")
+            logger.error(f"❌ [PROPERTY] Prepared record fields: {prepared_record_keys}")
+            raise ValueError(f"Missing fields in prepared record: {missing_fields}")
+        
+        if extra_fields:
+            logger.warning(f"⚠️ [PROPERTY] Extra fields in prepared_record (will be ignored): {extra_fields}")
+        
+        # Create table from single record with explicit schema - this ensures exact types
+        try:
+            logger.info(f"📋 [PROPERTY] Creating PyArrow table with {len(prepared_record)} fields")
+            arrow_table = pa.Table.from_pylist([prepared_record], schema=table_schema)
+            logger.info(f"✅ [PROPERTY] PyArrow table created successfully")
+        except Exception as e:
+            logger.error(f"❌ [PROPERTY] Failed to create PyArrow table: {e}", exc_info=True)
+            logger.error(f"❌ [PROPERTY] Prepared record types: {[(k, type(v).__name__) for k, v in prepared_record.items()]}")
+            logger.error(f"❌ [PROPERTY] Schema field types: {[(f.name, str(f.type)) for f in table_schema]}")
+            raise
+        
+        try:
+            table.append(arrow_table)
+            logger.info(f"✅ [PROPERTY] Successfully appended to table")
+        except Exception as e:
+            logger.error(f"❌ [PROPERTY] Failed to append to table: {e}", exc_info=True)
+            raise
+        
+        logger.info(f"Created property: {property_id}")
         
         # Create vacancy expenses if square footage is available
         if property_data.square_feet and property_data.square_feet > 0:
-            vacancy_rate = property_dict["vacancy_rate"]
+            vacancy_rate = record["vacancy_rate"]
             await create_or_update_vacancy_expenses(
                 property_id=property_id,
                 square_feet=property_data.square_feet,
@@ -108,15 +514,18 @@ async def create_property_endpoint(
             )
         
         # Create tax savings (depreciation) revenue
-        await create_or_update_tax_savings(
-            property_id=property_id,
-            user_id=user_id,
-            purchase_price=property_data.purchase_price,
-            purchase_date=property_dict["purchase_date"]
-        )
+        # Use current_market_value if available, otherwise fall back to purchase_price
+        property_value = property_data.current_market_value if property_data.current_market_value is not None else property_data.purchase_price
+        if property_value is not None:
+            await create_or_update_tax_savings(
+                property_id=property_id,
+                user_id=user_id,
+                current_market_value=Decimal(str(property_value)),
+                purchase_date=record["purchase_date"]
+            )
         
         # Convert to response (UUID conversion)
-        response_dict = property_dict.copy()
+        response_dict = record.copy()
         response_dict["id"] = UUID(property_id)
         response_dict["user_id"] = UUID(user_id)
         response_dict["purchase_price"] = property_data.purchase_price
@@ -162,6 +571,7 @@ async def list_properties_endpoint(
         # Get shared user IDs (bidirectional)
         sharing_start = time.time()
         from app.api.sharing_utils import get_shared_user_ids
+        logger.info(f"🔐 [INSPECTIONS] Checking user access before populating the dropdown under Inspections\nmanage property inspections")
         shared_user_ids = get_shared_user_ids(user_id, user_email)
         logger.info(f"⏱️ [PERF] get_shared_user_ids took {time.time() - sharing_start:.2f}s")
         
@@ -329,7 +739,7 @@ async def update_property_endpoint(
         
         # Ensure all expected columns exist in DataFrame (for schema evolution)
         # Get the table schema to check for missing columns
-        table = load_table(NAMESPACE, TABLE_NAME)
+        table = _load_properties_table()
         schema_fields = {field.name for field in table.schema().fields}
         # Only add columns that exist in the schema (don't add new columns that aren't in schema yet)
         for col in schema_fields:
@@ -374,13 +784,24 @@ async def update_property_endpoint(
         # Extract only the updated row
         updated_row_df = df[mask].copy().reset_index(drop=True)
         
-        # CRITICAL: Ensure the updated row has ALL schema columns
+        # CRITICAL: Ensure the updated row has ALL schema columns and required fields are non-null
         # This prevents schema mismatch errors during upsert
-        table = load_table(NAMESPACE, TABLE_NAME)
+        table = _load_properties_table()
         schema_fields = {field.name for field in table.schema().fields}
         for col in schema_fields:
             if col not in updated_row_df.columns:
                 updated_row_df[col] = None
+        
+        # Ensure required fields are present and non-null
+        if pd.isna(updated_row_df.iloc[0]["id"]) or updated_row_df.iloc[0]["id"] is None:
+            updated_row_df.iloc[0, updated_row_df.columns.get_loc("id")] = property_id
+        if pd.isna(updated_row_df.iloc[0]["user_id"]) or updated_row_df.iloc[0]["user_id"] is None:
+            updated_row_df.iloc[0, updated_row_df.columns.get_loc("user_id")] = property_user_id
+        if pd.isna(updated_row_df.iloc[0]["purchase_price"]) or updated_row_df.iloc[0]["purchase_price"] is None:
+            # Get purchase_price from existing row if not in update
+            existing_price = property_rows.iloc[0].get("purchase_price")
+            if pd.notna(existing_price):
+                updated_row_df.iloc[0, updated_row_df.columns.get_loc("purchase_price")] = existing_price
         
         # Reorder columns to match schema order
         schema_column_order = [field.name for field in table.schema().fields]
@@ -400,29 +821,58 @@ async def update_property_endpoint(
                     vacancy_rate=vacancy_rate
                 )
         
-        # Check if purchase price or purchase date changed - update tax savings
-        if "purchase_price" in update_dict or "purchase_date" in update_dict:
+        # Check if current_market_value changed - update tax savings
+        if "current_market_value" in update_dict:
             updated_row = df[mask].iloc[0]
-            purchase_price = Decimal(str(updated_row["purchase_price"]))
-            purchase_date = updated_row.get("purchase_date")
-            if pd.notna(purchase_date):
-                purchase_date = purchase_date.date() if hasattr(purchase_date, 'date') else purchase_date
+            current_market_value = updated_row.get("current_market_value")
+            if pd.notna(current_market_value):
+                current_market_value = Decimal(str(current_market_value))
+                purchase_date = updated_row.get("purchase_date")
+                if pd.notna(purchase_date):
+                    purchase_date = purchase_date.date() if hasattr(purchase_date, 'date') else purchase_date
+                else:
+                    purchase_date = None
+                
+                logger.info(f"Updating tax savings: current_market_value=${current_market_value}")
+                await create_or_update_tax_savings(
+                    property_id=property_id,
+                    user_id=user_id,
+                    current_market_value=current_market_value,
+                    purchase_date=purchase_date
+                )
+        
+        # Property-specific upsert - build ordered dict in exact schema order
+        table = _load_properties_table()
+        table_schema = table.schema().as_arrow()
+        schema_field_names = [field.name for field in table_schema]
+        
+        # Build ordered dict ensuring required fields are non-null
+        ordered_dict = {}
+        for field_name in schema_field_names:
+            if field_name == "id":
+                ordered_dict[field_name] = str(property_id)  # Required
+            elif field_name == "user_id":
+                ordered_dict[field_name] = str(property_user_id)  # Required
+            elif field_name == "purchase_price":
+                # Required - get from update or existing
+                value = updated_row_df.iloc[0].get(field_name) if field_name in updated_row_df.columns else property_rows.iloc[0].get(field_name)
+                ordered_dict[field_name] = int(value) if pd.notna(value) else int(property_rows.iloc[0].get(field_name))
             else:
-                purchase_date = date(2025, 10, 23)
-            
-            logger.info(f"Updating tax savings: purchase_price=${purchase_price}, purchase_date={purchase_date}")
-            await create_or_update_tax_savings(
-                property_id=property_id,
-                user_id=user_id,
-                purchase_price=purchase_price,
-                purchase_date=purchase_date
-            )
+                # Get value from updated_row_df or existing row
+                value = updated_row_df.iloc[0].get(field_name) if field_name in updated_row_df.columns else property_rows.iloc[0].get(field_name)
+                ordered_dict[field_name] = value
         
-        # Use Iceberg's upsert for atomic updates
-        upsert_data(NAMESPACE, TABLE_NAME, updated_row_df, join_cols=["id"])
+        # Create DataFrame and convert to PyArrow
+        property_df = pd.DataFrame([ordered_dict])
+        import pyarrow as pa
+        arrow_table = pa.Table.from_pandas(property_df, preserve_index=False)
+        arrow_table = arrow_table.cast(table_schema)
         
-        # Get updated property from the appended data
-        updated_row = updated_row_df.iloc[0]
+        # Perform upsert
+        table.upsert(arrow_table, join_cols=["id"])
+        
+        # Get updated property from the ordered dict
+        updated_row = ordered_dict
         logger.info(f"Updated row property_status: {updated_row.get('property_status')}")
         
         # Convert to response
@@ -467,29 +917,47 @@ async def delete_property_endpoint(
     property_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete a property (soft delete) in Iceberg - OWNER ONLY"""
+    """Delete a property (hard delete) in Iceberg - OWNER ONLY"""
     try:
         user_id = current_user["sub"]  # Already a string
         
         if not table_exists(NAMESPACE, TABLE_NAME):
             raise HTTPException(status_code=404, detail="Property not found")
         
+        # OPTIMIZATION: Use filtered read instead of reading entire table
         # Verify property exists and user is the OWNER (not just shared access)
-        df = read_table(NAMESPACE, TABLE_NAME)
-        mask = (df["id"] == property_id) & (df["user_id"] == user_id) & (df["is_active"] == True)
+        property_df = read_table_filtered(
+            NAMESPACE,
+            TABLE_NAME,
+            EqualTo("id", property_id),
+            selected_columns=["id", "user_id", "is_active"]
+        )
         
-        if not mask.any():
+        if len(property_df) == 0:
+            raise HTTPException(status_code=404, detail="Property not found")
+        
+        property_row = property_df.iloc[0]
+        property_user_id = str(property_row["user_id"])
+        is_active = bool(property_row["is_active"]) if pd.notna(property_row.get("is_active")) else True
+        
+        # Verify ownership (only owners can delete, not shared users)
+        if property_user_id != user_id:
             raise HTTPException(status_code=404, detail="Property not found or you don't have permission to delete")
         
-        # SOFT DELETE: Update is_active to False (we keep the data)
-        df.loc[mask, "is_active"] = False
-        df.loc[mask, "updated_at"] = pd.Timestamp.now()
+        # Verify property is active
+        if not is_active:
+            raise HTTPException(status_code=404, detail="Property not found")
         
-        # Extract only the updated row
-        updated_row_df = df[mask].copy().reset_index(drop=True)
+        # Get fresh table reference for writes to avoid lock issues
+        catalog = get_catalog()
+        table_identifier = (*NAMESPACE, TABLE_NAME)
+        table = catalog.load_table(table_identifier)
         
-        # Use Iceberg's upsert for atomic updates
-        upsert_data(NAMESPACE, TABLE_NAME, updated_row_df, join_cols=["id"])
+        # HARD DELETE: Permanently remove the property using Iceberg's delete API
+        logger.info(f"🗑️ [PROPERTY] Hard deleting property {property_id} by user {user_id}")
+        table.delete(EqualTo("id", property_id))
+        
+        logger.info(f"✅ Property {property_id} permanently deleted by user {user_id}")
         
         return None
     except HTTPException:

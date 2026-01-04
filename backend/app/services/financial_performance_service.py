@@ -107,8 +107,7 @@ class FinancialPerformanceService:
         
         # Fetch all expenses for this property (excluding rehab)
         all_expenses, _ = self.expense_service.list_expenses(
-            user_id=user_id,
-            property_id=str(property_id),
+            property_id=property_id,
             limit=10000  # Get all
         )
         
@@ -126,12 +125,14 @@ class FinancialPerformanceService:
         rent_payments = []
         if table_exists(rent_namespace, rent_table_name):
             rent_df = read_table(rent_namespace, rent_table_name)
-            # Filter by property and user
+            # Filter by property
             rent_df = rent_df[rent_df["property_id"] == str(property_id)]
             
             # Filter by unit if specified
             if unit_id:
                 rent_df = rent_df[rent_df["unit_id"] == str(unit_id)]
+            
+            logger.info(f"[PERF] Found {len(rent_df)} rent payments for property {property_id}, unit {unit_id}")
             
             # Convert to list of dicts
             for _, row in rent_df.iterrows():
@@ -140,6 +141,8 @@ class FinancialPerformanceService:
                     'payment_date': row['payment_date'],
                     'is_non_irs_revenue': row.get('is_non_irs_revenue', False) if pd.notna(row.get('is_non_irs_revenue')) else False
                 })
+        else:
+            logger.warning(f"[PERF] Rents table does not exist")
         
         # Calculate YTD with breakdowns
         ytd_rent = Decimal("0")  # IRS revenue only (excludes deposits)
@@ -147,6 +150,7 @@ class FinancialPerformanceService:
         ytd_expenses = Decimal("0")
         ytd_breakdown = {
             'piti': Decimal("0"),
+            'tax': Decimal("0"),
             'utilities': Decimal("0"),
             'maintenance': Decimal("0"),
             'capex': Decimal("0"),
@@ -155,8 +159,17 @@ class FinancialPerformanceService:
             'other': Decimal("0")
         }
         
+        logger.info(f"[PERF] YTD start date: {ytd_start}, Current year: {current_year}")
+        logger.info(f"[PERF] Processing {len(rent_payments)} rent payments")
+        
         for rent in rent_payments:
             payment_date = rent['payment_date']
+            
+            # Skip if payment_date is None/NaT
+            if payment_date is None or pd.isna(payment_date):
+                logger.warning(f"[PERF] Skipping rent payment with missing payment_date: amount={rent['amount']}")
+                continue
+            
             # Handle pandas Timestamp, string, or date objects
             if isinstance(payment_date, pd.Timestamp):
                 payment_date = payment_date.date()
@@ -165,6 +178,8 @@ class FinancialPerformanceService:
             elif isinstance(payment_date, datetime):
                 payment_date = payment_date.date()
             # If it's already a date, use it as-is
+            
+            logger.debug(f"[PERF] Rent payment: amount={rent['amount']}, payment_date={payment_date}, is_non_irs={rent.get('is_non_irs_revenue', False)}, ytd_start={ytd_start}, included={payment_date >= ytd_start}")
             
             if payment_date >= ytd_start:
                 # Add to total revenue (all rent including deposits)
@@ -175,19 +190,23 @@ class FinancialPerformanceService:
                 if not is_non_irs:
                     ytd_rent += Decimal(str(rent['amount']))
         
+        logger.info(f"[PERF] Calculated YTD: total_revenue={ytd_total_revenue}, irs_revenue={ytd_rent}")
+        
         for expense in expenses:
             expense_date = expense['date']
             if isinstance(expense_date, str):
                 expense_date = datetime.fromisoformat(expense_date.split('T')[0]).date()
-            # Exclude rehab expenses and planned expenses from YTD
+            # Exclude rehab expenses from YTD
             exp_type = expense.get('expense_type', 'other')
-            if expense_date >= ytd_start and not expense.get('is_planned', False) and exp_type != 'rehab':
+            if expense_date >= ytd_start and exp_type != 'rehab':
                 amount = Decimal(str(expense['amount']))
                 ytd_expenses += amount
                 
                 # Categorize by expense_type
                 if exp_type == 'pandi':
                     ytd_breakdown['piti'] += amount
+                elif exp_type == 'tax':
+                    ytd_breakdown['tax'] += amount
                 elif exp_type == 'utilities':
                     ytd_breakdown['utilities'] += amount
                 elif exp_type == 'maintenance':
@@ -213,6 +232,7 @@ class FinancialPerformanceService:
         cumulative_expenses = Decimal("0")
         cumulative_breakdown = {
             'piti': Decimal("0"),
+            'tax': Decimal("0"),
             'utilities': Decimal("0"),
             'maintenance': Decimal("0"),
             'capex': Decimal("0"),
@@ -223,13 +243,15 @@ class FinancialPerformanceService:
         
         for expense in expenses:
             exp_type = expense.get('expense_type', 'other')
-            # Exclude rehab expenses and planned expenses from cumulative
-            if not expense.get('is_planned', False) and exp_type != 'rehab':
+            # Exclude rehab expenses from cumulative
+            if exp_type != 'rehab':
                 amount = Decimal(str(expense['amount']))
                 cumulative_expenses += amount
                 
                 if exp_type == 'pandi':
                     cumulative_breakdown['piti'] += amount
+                elif exp_type == 'tax':
+                    cumulative_breakdown['tax'] += amount
                 elif exp_type == 'utilities':
                     cumulative_breakdown['utilities'] += amount
                 elif exp_type == 'maintenance':
@@ -268,6 +290,13 @@ class FinancialPerformanceService:
         
         logger.info(f"[PERF] Property {property_id}: YTD P/L={ytd_profit_loss}, Cumulative P/L={cumulative_profit_loss}")
         
+        # Determine the actual cash_invested value used in calculation
+        actual_cash_invested = None
+        if cash_invested and cash_invested > 0:
+            actual_cash_invested = cash_invested
+        elif down_payment and down_payment > 0:
+            actual_cash_invested = down_payment
+        
         return FinancialPerformanceSummary(
             property_id=property_id,
             ytd_total_revenue=ytd_total_revenue,
@@ -275,6 +304,7 @@ class FinancialPerformanceService:
             ytd_expenses=ytd_expenses,
             ytd_profit_loss=ytd_profit_loss,
             ytd_piti=ytd_breakdown['piti'],
+            ytd_tax=ytd_breakdown['tax'],
             ytd_utilities=ytd_breakdown['utilities'],
             ytd_maintenance=ytd_breakdown['maintenance'],
             ytd_capex=ytd_breakdown['capex'],
@@ -285,12 +315,14 @@ class FinancialPerformanceService:
             cumulative_expenses=cumulative_expenses,
             cumulative_profit_loss=cumulative_profit_loss,
             cumulative_piti=cumulative_breakdown['piti'],
+            cumulative_tax=cumulative_breakdown['tax'],
             cumulative_utilities=cumulative_breakdown['utilities'],
             cumulative_maintenance=cumulative_breakdown['maintenance'],
             cumulative_capex=cumulative_breakdown['capex'],
             cumulative_insurance=cumulative_breakdown['insurance'],
             cumulative_property_management=cumulative_breakdown['property_management'],
             cumulative_other=cumulative_breakdown['other'],
+            cash_invested=actual_cash_invested,
             cash_on_cash=cash_on_cash,
             last_calculated_at=date.today()
         )

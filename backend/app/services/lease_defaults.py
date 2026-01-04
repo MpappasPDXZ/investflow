@@ -46,7 +46,7 @@ STATE_LEASE_DEFAULTS = {
         "late_fee_day_16": Decimal("225.00"),  # By 21st
         "late_fee_day_21": Decimal("300.00"),  # After 21st
         "nsf_fee": Decimal("60.00"),
-        "methamphetamine_disclosure": False,  # Not required in NE
+        "disclosure_methamphetamine": False,  # Not required in NE
         "moveout_inspection_rights": False,  # Not required in NE
         "military_termination_days": None,  # Not specific law in NE
     },
@@ -58,7 +58,7 @@ STATE_LEASE_DEFAULTS = {
         "late_fee_day_16": None,  # Simplify for MO
         "late_fee_day_21": None,
         "nsf_fee": Decimal("50.00"),  # Conservative for MO
-        "methamphetamine_disclosure": True,  # Required by MO law
+        "disclosure_methamphetamine": False,  # Only True if property had meth making
         "moveout_inspection_rights": True,  # Tenant has right to inspection in MO
         "military_termination_days": 30,  # MO requires 30 days
     }

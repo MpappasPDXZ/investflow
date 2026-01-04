@@ -37,6 +37,7 @@ const EXPENSE_TYPE_LABELS: Record<string, string> = {
   'capex': 'CapEx',
   'rehab': 'Rehab',
   'pandi': 'P&I',
+  'tax': 'Tax',
   'utilities': 'Utilities',
   'insurance': 'Insurance',
   'property_management': 'Prop Mgmt',
@@ -80,9 +81,18 @@ export default function ExpensesPage() {
   const [loadingUnits, setLoadingUnits] = useState(true);
   
   const { data: properties } = usePropertiesHook();
+  // Require property_id - only fetch expenses when property is selected
   const { data: expenses, isLoading } = useExpenses(selectedPropertyId || undefined);
   const { data: summary } = useExpenseSummary(selectedPropertyId || undefined);
   const deleteExpense = useDeleteExpense();
+  
+  // Auto-select first property if available and none selected
+  useEffect(() => {
+    if (!selectedPropertyId && properties?.items && properties.items.length > 0) {
+      setSelectedPropertyId(properties.items[0].id);
+    }
+  }, [properties, selectedPropertyId]);
+
 
   // Fetch all units for all properties
   useEffect(() => {
@@ -116,20 +126,21 @@ export default function ExpensesPage() {
     return `${property.display_name || 'Property'} - Unit ${unit.unit_number}`;
   };
 
-  // Auto-expand current year on initial load
+  // Auto-expand current year and future years on initial load
   useEffect(() => {
     if (!hasInitializedExpansion && expenses?.items && expenses.items.length > 0) {
       const currentYear = new Date().getFullYear();
       const newExpandedYears = new Set<string>();
       const newExpandedProperties = new Set<string>();
       
-      // Find all properties that have expenses in the current year
+      // Find all properties that have expenses in the current year or future years
       expenses.items.forEach(expense => {
         const expenseYear = parseInt(expense.date.split('-')[0]);
-        if (expenseYear === currentYear) {
+        // Expand current year and any future years (for planned expenses)
+        if (expenseYear >= currentYear) {
           const propId = expense.property_id || 'unassigned';
           newExpandedProperties.add(propId);
-          newExpandedYears.add(`${propId}-${currentYear}`);
+          newExpandedYears.add(`${propId}-${expenseYear}`);
         }
       });
       
@@ -246,27 +257,51 @@ export default function ExpensesPage() {
     // Removed 'Is Planned' column and using full Unit description
     const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
     
+    // CSV escape function: escape quotes and wrap in quotes if contains comma, quote, or newline
+    const escapeCsv = (value: string): string => {
+      const str = String(value || '');
+      // If contains comma, quote, or newline, wrap in quotes and escape internal quotes
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
     const rows = expenses.items.map(e => {
       const unitDesc = getUnitDescription(e.property_id, e.unit_id);
       
       return [
-        e.id,
-        getPropertyName(e.property_id || 'unassigned'),
-        unitDesc,
-        e.date,
-        `"${e.description.replace(/"/g, '""')}"`,
-        Number(e.amount).toFixed(2),
-        e.vendor || '',
-        e.expense_type,
-        e.expense_category || '',
-        `"${(e.notes || '').replace(/"/g, '""')}"`,
-        e.document_storage_id ? 'Yes' : 'No',
-        e.created_at,
-        e.updated_at
+        escapeCsv(String(e.id || '')),
+        escapeCsv(String(getPropertyName(e.property_id || 'unassigned'))),
+        escapeCsv(String(unitDesc || '')),
+        escapeCsv(String(e.date || '')),
+        escapeCsv(String(e.description || '')),
+        escapeCsv(String(Number(e.amount || 0).toFixed(2))),
+        escapeCsv(String(e.vendor || '')),
+        escapeCsv(String(e.expense_type || '')),
+        escapeCsv(String(e.expense_category || '')),
+        escapeCsv(String(e.notes || '')),
+        escapeCsv((() => {
+          // Handle has_receipt: true, false, null, undefined
+          // Explicitly check for boolean false (not just falsy)
+          if (e.has_receipt === true || e.has_receipt === 'true') return 'Yes';
+          if (e.has_receipt === false || e.has_receipt === 'false') return 'No';
+          // If has_receipt is null/undefined, check document_storage_id
+          if (e.has_receipt == null) {
+            return e.document_storage_id ? 'Yes' : 'No';
+          }
+          // Default to No if we can't determine
+          return 'No';
+        })()),
+        escapeCsv(String(e.created_at || '')),
+        escapeCsv(String(e.updated_at || ''))
       ];
     });
     
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csv = [
+      headers.map(escapeCsv).join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -285,9 +320,9 @@ export default function ExpensesPage() {
   );
 
   return (
-    <div className="p-3 max-w-6xl mx-auto">
+    <div className="pt-0 px-3 pb-3 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex justify-between items-center mb-3">
+      <div className="flex justify-between items-center mb-1.5">
         <div>
           <h1 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
             <DollarSign className="h-3.5 w-3.5" />
@@ -315,21 +350,22 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Summary Row */}
-      {summary && (
-        <div className="flex gap-3 mb-3 text-xs">
-          <div className="bg-blue-50 px-2 py-1 rounded">
-            <span className="text-blue-600">Total:</span>{' '}
-            <span className="font-bold text-blue-900">
-              ${summary.grand_total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-          <div className="bg-gray-50 px-2 py-1 rounded">
-            <span className="text-gray-600">Count:</span>{' '}
-            <span className="font-bold">{summary.total_count}</span>
-          </div>
-        </div>
-      )}
+      {/* Property Filter - Required, above summary */}
+      <div className="mb-2">
+        <select
+          value={selectedPropertyId}
+          onChange={(e) => setSelectedPropertyId(e.target.value)}
+          className="px-2 py-1.5 border border-gray-300 rounded text-sm w-full md:w-auto min-w-[200px]"
+          required
+        >
+          <option value="">Select Property</option>
+          {properties?.items.map((prop) => (
+            <option key={prop.id} value={prop.id}>
+              {prop.display_name || prop.address_line1 || prop.id}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/* Filters */}
       <div className="mb-3">
@@ -342,27 +378,15 @@ export default function ExpensesPage() {
           {showFilters ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </button>
         {showFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-2">
-            <select
-              value={selectedPropertyId}
-              onChange={(e) => setSelectedPropertyId(e.target.value)}
-              className="px-2 py-2 md:py-1 border border-gray-300 rounded text-sm md:text-xs min-h-[44px] md:min-h-0"
-            >
-              <option value="">All Properties</option>
-              {properties?.items.map((prop) => (
-                <option key={prop.id} value={prop.id}>
-                  {prop.display_name || prop.address_line1 || prop.id}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
             <select
               value={selectedExpenseType}
               onChange={(e) => setSelectedExpenseType(e.target.value)}
               className="px-2 py-2 md:py-1 border border-gray-300 rounded text-sm md:text-xs min-h-[44px] md:min-h-0"
             >
-              <option value="">All Types</option>
-              {EXPENSE_CATEGORIES.map(t => (
-                <option key={t.key} value={t.key}>{t.fullLabel}</option>
+              <option value="">All Expense Types</option>
+              {Object.entries(EXPENSE_TYPE_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
               ))}
             </select>
             <input
@@ -396,7 +420,15 @@ export default function ExpensesPage() {
       )}
 
       {/* Empty State */}
-      {!isLoading && filteredExpenses.length === 0 && (
+      {!isLoading && !selectedPropertyId && (
+        <Card>
+          <CardContent className="py-8 text-center text-gray-500">
+            <DollarSign className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">Please select a property to view expenses</p>
+          </CardContent>
+        </Card>
+      )}
+      {!isLoading && selectedPropertyId && filteredExpenses.length === 0 && (
         <Card>
           <CardContent className="py-8 text-center text-gray-500">
             <DollarSign className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -409,7 +441,7 @@ export default function ExpensesPage() {
       )}
 
       {/* Grouped by Property, then Year */}
-      {sortedPropertyIds.map(propId => {
+      {selectedPropertyId && sortedPropertyIds.map(propId => {
         const years = groupedByPropertyAndYear[propId];
         const sortedYears = Object.keys(years).map(Number).sort((a, b) => b - a);
         const allPropertyExpenses = sortedYears.flatMap(y => years[y]);

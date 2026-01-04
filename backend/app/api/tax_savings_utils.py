@@ -19,38 +19,41 @@ logger = get_logger(__name__)
 DEPRECIATION_YEARS = Decimal("27.5")
 
 
-def calculate_annual_depreciation(purchase_price: Decimal, tax_rate: Decimal) -> Decimal:
+def calculate_annual_depreciation(property_value: Decimal, tax_rate: Decimal) -> Decimal:
     """
     Calculate annual tax savings from depreciation for residential rental property
-    Formula: (purchase_price / 27.5 years) × tax_rate
+    Formula: (property_value / 27.5 years) × tax_rate
+    
+    Note: Uses current_market_value (what the property is worth), not purchase_price.
+    Purchase date is NOT used in this calculation.
     
     Args:
-        purchase_price: Property purchase price
+        property_value: Property current market value (what the property is worth)
         tax_rate: User's tax rate (e.g., 0.25 for 25%)
     """
-    annual_depreciation = purchase_price / DEPRECIATION_YEARS
+    annual_depreciation = property_value / DEPRECIATION_YEARS
     tax_savings = annual_depreciation * tax_rate
     # Round to 2 decimal places to match table schema precision
     tax_savings = tax_savings.quantize(Decimal('0.01'))
-    logger.info(f"  Tax savings calc: (${purchase_price} ÷ 27.5 years) × {tax_rate*100}% = ${tax_savings:.2f}/year")
+    logger.info(f"  Tax savings calc: (${property_value} ÷ 27.5 years) × {tax_rate*100}% = ${tax_savings:.2f}/year")
     return tax_savings
 
 
-async def create_or_update_tax_savings(property_id: str, user_id: str, purchase_price: Decimal, purchase_date: date = None):
+async def create_or_update_tax_savings(property_id: str, user_id: str, current_market_value: Decimal, purchase_date: date = None):
     """
     Create or update tax savings (depreciation) revenue item for a property
     
     Args:
         property_id: The property ID
         user_id: The user ID (to get their tax rate)
-        purchase_price: Property purchase price
-        purchase_date: Date property was purchased (optional)
+        current_market_value: Property current market value (what the property is worth - used in calculation)
+        purchase_date: Date property was purchased (optional, only used in notes, not in calculation)
     """
     try:
         logger.info(f"💰 Creating/updating tax savings for property {property_id}")
-        logger.info(f"  Purchase Price: ${purchase_price}")
+        logger.info(f"  Current Market Value: ${current_market_value}")
         if purchase_date:
-            logger.info(f"  Purchase Date: {purchase_date}")
+            logger.info(f"  Purchase Date: {purchase_date} (not used in calculation)")
         
         # Get user's tax rate from CDC cache (fast O(1) lookup)
         user = auth_cache.get_user_by_id(user_id)
@@ -96,12 +99,12 @@ async def create_or_update_tax_savings(property_id: str, user_id: str, purchase_
                 table.overwrite(arrow_table)
         
         # Calculate annual tax savings from depreciation
-        annual_amount = calculate_annual_depreciation(purchase_price, tax_rate)
+        annual_amount = calculate_annual_depreciation(current_market_value, tax_rate)
         
         # Create new tax savings revenue
         now = pd.Timestamp.now()
-        depreciation_amount = (purchase_price / DEPRECIATION_YEARS).quantize(Decimal('0.01'))
-        notes = f"Tax savings from depreciation: (${purchase_price} ÷ 27.5 years = ${depreciation_amount}) × {tax_rate*100}% tax rate"
+        depreciation_amount = (current_market_value / DEPRECIATION_YEARS).quantize(Decimal('0.01'))
+        notes = f"Tax savings from depreciation: (${current_market_value} ÷ 27.5 years = ${depreciation_amount}) × {tax_rate*100}% tax rate"
         if purchase_date:
             notes += f" (purchased {purchase_date})"
         

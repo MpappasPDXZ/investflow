@@ -13,7 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Building2, Trash2 } from 'lucide-react';
+import { Plus, Building2, Trash2, Home, Eye, Hammer, ListChecks, Tag, Archive, ShoppingCart, Key } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { apiClient } from '@/lib/api-client';
@@ -24,30 +24,31 @@ export default function PropertiesPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('📊 [PROPERTIES] Page loaded');
-    if (data) {
-      console.log('✅ [PROPERTIES] GET /api/v1/properties - Response:', data);
-      console.log('📝 [PROPERTIES] Backend to PostgreSQL/Lakekeeper: Properties fetched');
-    }
-    if (error) {
-      console.error('❌ [PROPERTIES] Error:', error);
-    }
+    // Removed logging to prevent Fast Refresh noise
   }, [data, error]);
 
   const handleDelete = async (propertyId: string, propertyName: string) => {
+    // First confirmation
     if (!confirm(`Are you sure you want to delete "${propertyName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    // Second confirmation
+    if (!confirm(`⚠️ FINAL WARNING: This will permanently delete "${propertyName}" and all associated data. This cannot be undone. Are you absolutely sure?`)) {
       return;
     }
 
     setDeleting(propertyId);
     try {
+      console.log(`🗑️ [PROPERTY] Deleting property: ${propertyId} (${propertyName})`);
       await apiClient.delete(`/properties/${propertyId}`);
-      console.log('✅ [PROPERTY] Deleted:', propertyId);
+      console.log(`✅ [PROPERTY] Successfully deleted property: ${propertyId}`);
       // Refetch the properties list
       refetch();
     } catch (err) {
-      console.error('❌ [PROPERTY] Error deleting:', err);
-      alert(`Failed to delete property: ${(err as Error).message}`);
+      const errorMessage = (err as Error).message;
+      console.error(`❌ [PROPERTY] Error deleting property ${propertyId}:`, err);
+      alert(`Failed to delete property: ${errorMessage}`);
     } finally {
       setDeleting(null);
     }
@@ -101,7 +102,7 @@ export default function PropertiesPage() {
                       <TableHead className="text-xs">Purchase Price</TableHead>
                       <TableHead className="text-xs">Cash Invested</TableHead>
                       <TableHead className="text-xs">Market Value</TableHead>
-                      <TableHead className="text-xs">Vacancy Rate</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
                       <TableHead className="text-xs">Type</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
@@ -138,9 +139,19 @@ export default function PropertiesPage() {
                             : '-'}
                         </TableCell>
                         <TableCell className="text-xs">
-                          {property.vacancy_rate !== undefined && property.vacancy_rate !== null
-                            ? `${(property.vacancy_rate * 100).toFixed(1)}%`
-                            : '7.0%'}
+                          <div className="flex items-center gap-2">
+                            {property.property_status === 'own' && <Home className="h-4 w-4 text-green-600" />}
+                            {property.property_status === 'evaluating' && <Eye className="h-4 w-4 text-blue-600" />}
+                            {property.property_status === 'rehabbing' && <Hammer className="h-4 w-4 text-orange-600" />}
+                            {property.property_status === 'listed_for_rent' && <ListChecks className="h-4 w-4 text-purple-600" />}
+                            {property.property_status === 'listed_for_sale' && <Tag className="h-4 w-4 text-yellow-600" />}
+                            {property.property_status === 'sold' && <ShoppingCart className="h-4 w-4 text-gray-600" />}
+                            {property.property_status === 'rented' && <Key className="h-4 w-4 text-emerald-600" />}
+                            {property.property_status === 'hide' && <Archive className="h-4 w-4 text-gray-400" />}
+                            <span className="capitalize">
+                              {property.property_status?.replace(/_/g, ' ') || 'N/A'}
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell className="text-xs text-gray-600">
                           {property.property_type || '-'}
@@ -224,11 +235,19 @@ export default function PropertiesPage() {
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Vacancy:</span>{' '}
-                        <span className="font-medium">
-                          {property.vacancy_rate !== undefined && property.vacancy_rate !== null
-                            ? `${(property.vacancy_rate * 100).toFixed(1)}%`
-                            : '7.0%'}
+                        <span className="text-gray-500">Status:</span>{' '}
+                        <span className="font-medium flex items-center gap-1">
+                          {property.property_status === 'own' && <Home className="h-3.5 w-3.5 text-green-600" />}
+                          {property.property_status === 'evaluating' && <Eye className="h-3.5 w-3.5 text-blue-600" />}
+                          {property.property_status === 'rehabbing' && <Hammer className="h-3.5 w-3.5 text-orange-600" />}
+                          {property.property_status === 'listed_for_rent' && <ListChecks className="h-3.5 w-3.5 text-purple-600" />}
+                          {property.property_status === 'listed_for_sale' && <Tag className="h-3.5 w-3.5 text-yellow-600" />}
+                          {property.property_status === 'sold' && <ShoppingCart className="h-3.5 w-3.5 text-gray-600" />}
+                          {property.property_status === 'rented' && <Key className="h-3.5 w-3.5 text-emerald-600" />}
+                          {property.property_status === 'hide' && <Archive className="h-3.5 w-3.5 text-gray-400" />}
+                          <span className="capitalize">
+                            {property.property_status?.replace(/_/g, ' ') || 'N/A'}
+                          </span>
                         </span>
                       </div>
                     </div>

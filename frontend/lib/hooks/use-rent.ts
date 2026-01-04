@@ -24,6 +24,7 @@ export function useRents(filters: RentFilters = {}) {
       const queryString = params.toString();
       return apiClient.get<RentListResponse>(`/rent${queryString ? `?${queryString}` : ''}`);
     },
+    enabled: !!filters.property_id, // Only fetch when property_id is provided
   });
 }
 
@@ -41,10 +42,14 @@ export function useCreateRent() {
   return useMutation({
     mutationFn: (data: RentPaymentCreate) => 
       apiClient.post<RentPayment>('/rent', data),
-    onSuccess: async () => {
+    onSuccess: async (response, variables) => {
       // Invalidate and refetch to ensure fresh data
       await queryClient.invalidateQueries({ queryKey: ['rents'] });
       await queryClient.refetchQueries({ queryKey: ['rents'] });
+      // Invalidate financial performance cache since revenue changed
+      if (variables.property_id) {
+        await queryClient.invalidateQueries({ queryKey: ['financial-performance', variables.property_id] });
+      }
     },
   });
 }
@@ -55,10 +60,14 @@ export function useCreateRentWithReceipt() {
   return useMutation({
     mutationFn: (formData: FormData) => 
       apiClient.upload<RentPayment>('/rent/with-receipt', formData),
-    onSuccess: async () => {
+    onSuccess: async (response) => {
       // Invalidate and refetch to ensure fresh data
       await queryClient.invalidateQueries({ queryKey: ['rents'] });
       await queryClient.refetchQueries({ queryKey: ['rents'] });
+      // Invalidate financial performance cache since revenue changed
+      if (response?.property_id) {
+        await queryClient.invalidateQueries({ queryKey: ['financial-performance', response.property_id] });
+      }
     },
   });
 }
@@ -69,11 +78,16 @@ export function useUpdateRent() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<RentPaymentCreate> }) =>
       apiClient.put<RentPayment>(`/rent/${id}`, data),
-    onSuccess: async (_, variables) => {
+    onSuccess: async (response, variables) => {
       // Invalidate and refetch to ensure fresh data
       await queryClient.invalidateQueries({ queryKey: ['rents'] });
       await queryClient.invalidateQueries({ queryKey: ['rent', variables.id] });
       await queryClient.refetchQueries({ queryKey: ['rents'] });
+      // Invalidate financial performance cache since revenue changed
+      const propertyId = response?.property_id || variables.data?.property_id;
+      if (propertyId) {
+        await queryClient.invalidateQueries({ queryKey: ['financial-performance', propertyId] });
+      }
     },
   });
 }
@@ -87,6 +101,9 @@ export function useDeleteRent() {
       // Invalidate and refetch to ensure fresh data
       await queryClient.invalidateQueries({ queryKey: ['rents'] });
       await queryClient.refetchQueries({ queryKey: ['rents'] });
+      // Invalidate all financial performance caches since revenue changed
+      // (We don't know which property without fetching the rent first)
+      await queryClient.invalidateQueries({ queryKey: ['financial-performance'] });
     },
   });
 }

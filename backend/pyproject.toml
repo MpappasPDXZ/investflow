@@ -27,6 +27,7 @@ dependencies = [
     "pyarrow>=16.0.0",
     "pyiceberg[adlfs,pyiceberg-core]>=0.6.0",
     "cython>=3.0.0",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]

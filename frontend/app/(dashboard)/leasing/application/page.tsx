@@ -47,6 +47,11 @@ export default function RentalApplicationPage() {
     window.open('/Missouri-Residential-Rental-Application.pdf', '_blank');
   };
 
+  const handleDownloadShowingForm = () => {
+    // Download the self-guided showing form from the public folder
+    window.open('/self_guided_showing_form.pdf', '_blank');
+  };
+
   const handleUpload = async () => {
     if (!fileToUpload || !selectedTenantId) return;
     setUploading(true);
@@ -90,57 +95,58 @@ export default function RentalApplicationPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Download Forms Section */}
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle className="text-sm font-bold flex items-center gap-2">
               <Download className="h-4 w-4 text-blue-600" />
               Download Blank Forms
             </CardTitle>
-            <CardDescription className="text-xs">
-              Download application forms to email or text to prospective tenants
-            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <FileText className="h-4 w-4 text-gray-600" />
-                    <h3 className="text-sm font-semibold text-gray-900">Nebraska Residential Rental Application</h3>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    Standard rental application form for Nebraska properties
-                  </p>
-                </div>
+          <CardContent className="space-y-2">
+            <div className="flex items-center justify-between p-2.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <FileText className="h-4 w-4 text-gray-600 shrink-0" />
+                <span className="text-xs font-medium text-gray-900 truncate">Nebraska Residential Rental Application</span>
               </div>
               <Button 
                 onClick={handleDownloadNebraska}
-                className="mt-3 w-full h-8 text-xs"
+                size="sm"
                 variant="outline"
+                className="h-7 text-xs px-2 shrink-0"
               >
-                <Download className="h-3 w-3 mr-2" />
-                Download Nebraska Form
+                <Download className="h-3 w-3 mr-1" />
+                Download
               </Button>
             </div>
 
-            <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <FileText className="h-4 w-4 text-gray-600" />
-                    <h3 className="text-sm font-semibold text-gray-900">Missouri Residential Rental Application</h3>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    Standard rental application form for Missouri properties
-                  </p>
-                </div>
+            <div className="flex items-center justify-between p-2.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <FileText className="h-4 w-4 text-gray-600 shrink-0" />
+                <span className="text-xs font-medium text-gray-900 truncate">Missouri Residential Rental Application</span>
               </div>
               <Button 
                 onClick={handleDownloadMissouri}
-                className="mt-3 w-full h-8 text-xs"
+                size="sm"
                 variant="outline"
+                className="h-7 text-xs px-2 shrink-0"
               >
-                <Download className="h-3 w-3 mr-2" />
-                Download Missouri Form
+                <Download className="h-3 w-3 mr-1" />
+                Download
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-between p-2.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <FileText className="h-4 w-4 text-gray-600 shrink-0" />
+                <span className="text-xs font-medium text-gray-900 truncate">Self-Guided Showing Agreement</span>
+              </div>
+              <Button 
+                onClick={handleDownloadShowingForm}
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs px-2 shrink-0"
+              >
+                <Download className="h-3 w-3 mr-1" />
+                Download
               </Button>
             </div>
           </CardContent>

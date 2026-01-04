@@ -19,14 +19,18 @@ logger = get_logger(__name__)
 async def upload_document_endpoint(
     file: UploadFile = File(...),
     document_type: Optional[str] = Form("other"),
-    property_id: Optional[str] = Form(None),
+    property_id: str = Form(..., description="Property ID (required)"),
     unit_id: Optional[str] = Form(None),
     tenant_id: Optional[str] = Form(None),
     display_name: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload a document to Azure Blob Storage"""
+    """Upload a document to Azure Blob Storage (property_id required)"""
     try:
+        # Validate property_id is provided
+        if not property_id:
+            raise HTTPException(status_code=400, detail="property_id is required")
+        
         # Validate file type
         allowed_types = [
             "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp",
@@ -57,7 +61,7 @@ async def upload_document_endpoint(
             filename=file.filename or "document",
             content_type=content_type,
             document_type=document_type or "other",
-            property_id=UUID(property_id) if property_id else None,
+            property_id=UUID(property_id),
             unit_id=UUID(unit_id) if unit_id else None,
             tenant_id=UUID(tenant_id) if tenant_id else None,
             display_name=display_name.strip() if display_name else None
@@ -80,7 +84,7 @@ async def upload_document_endpoint(
 
 @router.get("", response_model=DocumentListResponse)
 async def list_documents_endpoint(
-    property_id: Optional[UUID] = Query(None, description="Filter by property ID"),
+    property_id: UUID = Query(..., description="Filter by property ID (required)"),
     unit_id: Optional[UUID] = Query(None, description="Filter by unit ID"),
     tenant_id: Optional[UUID] = Query(None, description="Filter by tenant ID"),
     document_type: Optional[str] = Query(None, description="Filter by document type"),
@@ -88,10 +92,10 @@ async def list_documents_endpoint(
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)
 ):
-    """List documents for the current user"""
+    """List documents for a property (property_id required, secured by property_id)"""
     try:
         user_id = UUID(current_user["sub"])
-        logger.info(f"Listing documents for user {user_id}")
+        logger.info(f"Listing documents for property {property_id}")
         
         documents, total = document_service.list_documents(
             user_id=user_id,
@@ -156,33 +160,47 @@ async def update_document_endpoint(
 ):
     """Update document metadata (property assignment, name, type)"""
     try:
+        logger.info(f"[API] 📥 PATCH /documents/{document_id} received")
+        logger.info(f"[API] 📥 Update data: {update_data}")
+        logger.info(f"[API] 📥 Current user: {current_user.get('sub')}")
+        
         user_id = UUID(current_user["sub"])
+        logger.info(f"[API] 📥 User ID: {user_id}")
         
-        logger.info(f"Updating document {document_id} with data: {update_data}")
+        logger.info(f"[API] 📥 Updating document {document_id} with data: {update_data}")
         
+        # property_id is required in the schema, but if clear_property is True, we'll use it as a placeholder
+        # The service will handle setting it to None internally
+        property_id_for_update = update_data.property_id
+        logger.info(f"[API] 📥 Property ID for update: {property_id_for_update}")
+        
+        logger.info(f"[API] 📥 Calling document_service.update_document...")
         updated_document = document_service.update_document(
             document_id=document_id,
+            property_id=property_id_for_update,
             user_id=user_id,
-            property_id=update_data.property_id,
             unit_id=update_data.unit_id,
+            tenant_id=update_data.tenant_id,
             document_type=update_data.document_type.value if update_data.document_type else None,
             display_name=update_data.display_name,
             clear_property=update_data.clear_property or False
         )
+        logger.info(f"[API] 📥 document_service.update_document returned: {updated_document is not None}")
         
         if not updated_document:
+            logger.warning(f"[API] ❌ Document {document_id} not found")
             raise HTTPException(status_code=404, detail="Document not found")
         
-        logger.info(f"Document updated successfully, building response")
+        logger.info(f"[API] ✅ Document updated successfully, building response")
         
         response = DocumentResponse.from_document(updated_document)
-        logger.info(f"Response built: {response.id}")
+        logger.info(f"[API] ✅ Response built: {response.id}")
         
         return response
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating document {document_id}: {e}", exc_info=True)
+        logger.error(f"[API] ❌ Error updating document {document_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -273,6 +273,7 @@ export default function AddExpensePage() {
                   <option value="capex">Capital Expenditure</option>
                   <option value="rehab">Rehab</option>
                   <option value="pandi">Principal & Interest</option>
+                  <option value="tax">Tax</option>
                   <option value="utilities">Utilities</option>
                   <option value="insurance">Insurance</option>
                   <option value="property_management">Property Management</option>

@@ -58,35 +58,41 @@ class RentUpdate(BaseModel):
 
 
 class RentResponse(BaseModel):
-    """Schema for rent response with denormalized fields"""
+    """Schema for rent response with denormalized fields (ordered by dtype to match Iceberg schema)"""
+    # STRING fields (in Iceberg order)
     id: UUID
-    # Denormalized fields (for speed - avoid joins)
-    user_id: UUID
-    user_name: Optional[str] = None
     property_id: UUID
     property_name: Optional[str] = None
     unit_id: Optional[UUID] = None
     unit_name: Optional[str] = None
     tenant_id: Optional[UUID] = None
     tenant_name: Optional[str] = None
-    # Revenue classification
     revenue_description: Optional[str] = None
-    is_non_irs_revenue: bool
-    # Rent period
-    is_one_time_fee: bool
-    rent_period_month: Optional[int] = None
-    rent_period_year: Optional[int] = None
-    rent_period_start: date
-    rent_period_end: date
-    # Payment details
-    amount: Decimal
-    payment_date: date
     payment_method: Optional[str] = None
     transaction_reference: Optional[str] = None
-    is_late: bool
-    late_fee: Optional[Decimal] = None
     notes: Optional[str] = None
     document_storage_id: Optional[UUID] = None
+    created_by_user_id: Optional[UUID] = None
+    
+    # DECIMAL128 fields (in Iceberg order)
+    amount: Decimal
+    late_fee: Optional[Decimal] = None
+    
+    # INT32 fields (in Iceberg order)
+    rent_period_month: Optional[int] = None
+    rent_period_year: Optional[int] = None
+    
+    # DATE32 fields (in Iceberg order)
+    rent_period_start: date
+    rent_period_end: date
+    payment_date: date
+    
+    # BOOLEAN fields (in Iceberg order)
+    is_non_irs_revenue: bool
+    is_one_time_fee: bool
+    is_late: bool
+    
+    # TIMESTAMP fields (in Iceberg order)
     created_at: Optional[date] = None
     updated_at: Optional[date] = None
 

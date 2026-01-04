@@ -126,3 +126,9 @@ site/
 .turbo/
 
 backend/.env.backup
+
+# scripts
+backend/app/scripts/*
+#readme
+*.md
+

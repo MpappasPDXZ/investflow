@@ -12,6 +12,7 @@ export function useExpenses(propertyId?: string) {
       const params = propertyId ? `?property_id=${propertyId}` : '';
       return apiClient.get<ExpenseListResponse>(`/expenses${params}`);
     },
+    enabled: !!propertyId, // Only fetch when propertyId is provided
     refetchOnMount: 'always', // Always refetch when component mounts (e.g., after adding expense)
     staleTime: 0, // Consider data stale immediately
   });
@@ -47,7 +48,6 @@ export function useCreateExpense() {
       expense_type: string;
       expense_category?: string;
       unit_id?: string;
-      is_planned?: boolean;
       notes?: string;
     }) => apiClient.post<Expense>('/expenses', data),
     onSuccess: () => {
@@ -122,6 +122,7 @@ export function useExpenseSummary(propertyId?: string, year?: number) {
       const queryString = params.toString();
       return apiClient.get<ExpenseSummary>(`/expenses/summary${queryString ? `?${queryString}` : ''}`);
     },
+    enabled: !!propertyId, // Only fetch when propertyId is provided (required by backend)
   });
 }
 

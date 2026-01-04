@@ -216,11 +216,11 @@ export default function LeaseDetailPage() {
                 </div>
                 <div>
                   <span className="text-gray-500">Start:</span>{' '}
-                  <span className="font-medium">{formatDate(lease.commencement_date)}</span>
+                  <span className="font-medium">{formatDate(lease.lease_start)}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">End:</span>{' '}
-                  <span className="font-medium">{formatDate(lease.termination_date)}</span>
+                  <span className="font-medium">{formatDate(lease.lease_end)}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Rent:</span>{' '}
@@ -328,12 +328,56 @@ export default function LeaseDetailPage() {
                       </Button>
                     }
                   />
-                  <a href={lease.pdf_url} target="_blank" rel="noopener noreferrer" className="block">
-                    <Button className="w-full h-9 text-sm" variant="outline">
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </a>
+                  <Button 
+                    className="w-full h-9 text-sm" 
+                    variant="outline"
+                    onClick={async () => {
+                      // Use proxy endpoint for IE compatibility (forces download via Content-Disposition header)
+                      const token = localStorage.getItem('auth_token');
+                      const proxyUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/leases/${id}/pdf/proxy`;
+                      
+                      // Check if browser supports download attribute
+                      const supportsDownload = 'download' in document.createElement('a');
+                      
+                      if (supportsDownload && lease.pdf_url) {
+                        // Modern browsers - use direct download
+                        const a = document.createElement('a');
+                        a.href = lease.pdf_url;
+                        a.download = `Lease - ${lease.property?.address || 'Property'}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                      } else {
+                        // IE or browsers without download support - use proxy
+                        try {
+                          const response = await fetch(proxyUrl, {
+                            headers: {
+                              'Authorization': token ? `Bearer ${token}` : ''
+                            }
+                          });
+                          
+                          if (!response.ok) {
+                            throw new Error('Download failed');
+                          }
+                          
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          document.body.appendChild(a);
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                          document.body.removeChild(a);
+                        } catch (err) {
+                          console.error('Download error:', err);
+                          alert('Failed to download PDF');
+                        }
+                      }
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </Button>
                   <Button
                     className="w-full h-9 text-sm"
                     variant="outline"

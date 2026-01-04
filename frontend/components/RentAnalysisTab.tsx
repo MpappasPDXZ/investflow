@@ -25,6 +25,7 @@ interface Property {
   id: string;
   purchase_price?: number;
   down_payment?: number;
+  cash_invested?: number;
   unit_count?: number;
   vacancy_rate?: number;
   property_type?: string;
@@ -84,17 +85,16 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   const [showSummary, setShowSummary] = useState(false);
 
   // User-editable fields
-  const [downPayment, setDownPayment] = useState(25000);
+  const [financedAmount, setFinancedAmount] = useState(0);
   const [monthlyRent, setMonthlyRent] = useState(0);
-  const [repairFinancingAmount, setRepairFinancingAmount] = useState(0);
 
-  const DOWN_PAYMENT_INCREMENT = 25000;
-  const MIN_DOWN_PAYMENT = 25000;
+  const FINANCED_AMOUNT_INCREMENT = 5000;
+  const RANGE_AROUND_INPUT = 25000; // Show ±$25k around input amount
   const LOAN_TERM_YEARS = 30;
 
   const isMultiUnit = property?.property_type === 'multi_family' || property?.property_type === 'duplex';
 
-  // Calculate monthly P&I payment using standard mortgage formula
+  // Calculate monthly P&I payment using standard mortgage amortization formula
   const calculateMonthlyPI = (loanAmount: number, interestRate: number): number => {
     const monthlyRate = interestRate / 12;
     const numPayments = LOAN_TERM_YEARS * 12;
@@ -153,9 +153,11 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
         setMonthlyRent(property.current_monthly_rent || 0);
       }
       
-      // Set initial down payment from property if available
-      if (property.down_payment) {
-        setDownPayment(property.down_payment);
+      // Set initial financed amount from property if available
+      // Financed Amount = Purchase Price - Down Payment
+      if (property.down_payment && property.purchase_price) {
+        const initialFinanced = property.purchase_price - property.down_payment;
+        setFinancedAmount(Math.max(0, initialFinanced));
       }
     } catch (err) {
       console.error('Error fetching rent analysis data:', err);
@@ -188,18 +190,16 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   // Calculated values based on inputs
   const unitCount = isMultiUnit ? units.length : 1;
   const purchasePrice = property.purchase_price || 0;
+  const downPayment = Math.max(0, purchasePrice - financedAmount);
   const percentOfPurchase = purchasePrice > 0 ? (downPayment / purchasePrice) * 100 : 0;
+  const percentFinanced = purchasePrice > 0 ? (financedAmount / purchasePrice) * 100 : 0;
   const annualRent = monthlyRent * unitCount * 12;
   const vacancyRate = property.vacancy_rate || 0.07;
   const vacancyCost = annualRent * vacancyRate;
   const effectiveAnnualRent = annualRent - vacancyCost;
   
-  // LOC rate from user profile
-  const locRate = userProfile?.loc_interest_rate || 0.07;
+  // Mortgage rate from user profile
   const mortgageRate = userProfile?.mortgage_interest_rate || 0.07;
-  
-  // Repair costs = repair financing amount × LOC rate
-  const repairCosts = repairFinancingAmount * locRate;
   
   // Tax and Insurance from scheduled expenses
   const taxAndInsurance = expenseTotals.taxAndInsurance;
@@ -210,13 +210,17 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   // Maintenance - default to scheduled, fallback to 3000
   const maintenance = expenseTotals.maintenance > 0 ? expenseTotals.maintenance : 3000;
   
-  // Calculate P&I - Simple interest calculation for display
-  const loanAmount = purchasePrice - downPayment;
-  const annualInterest = loanAmount * mortgageRate;
+  // Cash invested from property (for CoC calculation)
+  const cashInvested = property.cash_invested || 0;
+  
+  // Calculate P&I - Use financed amount and interest rate
+  // Calculate monthly P&I payment using standard mortgage amortization formula
+  const monthlyPI = calculateMonthlyPI(financedAmount, mortgageRate);
+  const annualPI = monthlyPI * 12;
   
   // Total expenses (excluding P&I for some calculations)
-  const totalExpensesExcludingPI = repairCosts + taxAndInsurance + capex + maintenance;
-  const totalExpenses = totalExpensesExcludingPI + annualInterest;
+  const totalExpensesExcludingPI = taxAndInsurance + capex + maintenance;
+  const totalExpenses = totalExpensesExcludingPI + annualPI;
   
   // Cash Flow = Effective Annual Rent - Total Expenses
   const cashFlow = effectiveAnnualRent - totalExpenses;
@@ -228,58 +232,67 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   const operatingExpenses = adjustedRents * 0.35;
   // Net Operating Income = Adjusted Rents - Operating Expenses
   const netOperatingIncome = adjustedRents - operatingExpenses;
-  // Interest Expenses (calculated from loan amount)
-  const interestExpenses = annualInterest;
-  // DSCR = NOI / Interest (must be ≥ 1.2)
-  const dscr = interestExpenses > 0 ? netOperatingIncome / interestExpenses : 0;
+  // Debt Service = Annual P&I (Principal + Interest)
+  const debtService = annualPI;
+  // DSCR = NOI / Debt Service (must be ≥ 1.2)
+  const dscr = debtService > 0 ? netOperatingIncome / debtService : 0;
   
-  // Cash on Cash = Cash Flow / Down Payment × 100
-  const cashOnCash = downPayment > 0 ? (cashFlow / downPayment) * 100 : 0;
+  // Cash on Cash = Cash Flow / Cash Invested × 100
+  const cashOnCash = cashInvested > 0 ? (cashFlow / cashInvested) * 100 : 0;
 
-  // Generate table rows for different down payment amounts
+  // Generate table rows for different financed amounts
   const rentRows: RentRow[] = useMemo(() => {
     const rows: RentRow[] = [];
     
-    for (let dp = MIN_DOWN_PAYMENT; dp <= purchasePrice; dp += DOWN_PAYMENT_INCREMENT) {
-      const pctOfPurchase = purchasePrice > 0 ? (dp / purchasePrice) * 100 : 0;
-      const loan = purchasePrice - dp;
-      const annInt = loan * mortgageRate;
+    // Generate scenarios around the input financed amount in $5k increments
+    const minFinanced = Math.max(0, financedAmount - RANGE_AROUND_INPUT);
+    const maxFinanced = financedAmount + RANGE_AROUND_INPUT;
+    
+    // Round to nearest $5k increment
+    const startFinanced = Math.floor(minFinanced / FINANCED_AMOUNT_INCREMENT) * FINANCED_AMOUNT_INCREMENT;
+    
+    for (let financed = startFinanced; financed <= maxFinanced; financed += FINANCED_AMOUNT_INCREMENT) {
+      // Calculate P&I using mortgage amortization formula
+      const monthlyPIForScenario = calculateMonthlyPI(financed, mortgageRate);
+      const annPI = monthlyPIForScenario * 12;
       
       const effAnnualRent = annualRent - vacancyCost;
-      const tExpExcludingPI = repairCosts + taxAndInsurance + capex + maintenance;
-      const tExp = tExpExcludingPI + annInt;
+      const tExpExcludingPI = taxAndInsurance + capex + maintenance;
+      const tExp = tExpExcludingPI + annPI;
       const cf = effAnnualRent - tExp;
       
       // DSCR calculation
       const adjRents = effAnnualRent;
       const opEx = adjRents * 0.35;
       const noi = adjRents - opEx;
-      const rowDSCR = annInt > 0 ? noi / annInt : 0;
+      const rowDSCR = annPI > 0 ? noi / annPI : 0;
       
-      const coc = dp > 0 ? (cf / dp) * 100 : 0;
+      // Cash on Cash uses cash_invested from property
+      const coc = cashInvested > 0 ? (cf / cashInvested) * 100 : 0;
       
       rows.push({
-        downPayment: dp,
-        percentOfPurchase: pctOfPurchase,
+        downPayment: 0, // Not used anymore
+        percentOfPurchase: 0, // Not used anymore
         monthlyRent,
         unitCount,
         annualRent,
         vacancyCost,
         effectiveAnnualRent: effAnnualRent,
-        repairCosts,
+        repairCosts: 0, // Not used anymore
         taxAndInsurance,
         capex,
         maintenance,
-        annualPI: annInt,
+        annualPI: annPI,
         totalExpenses: tExp,
         cashFlow: cf,
         bankRatio: rowDSCR,
         cashOnCash: coc,
+        financedAmount: financed, // Store the financed amount for this row
       });
     }
     
     return rows;
-  }, [purchasePrice, monthlyRent, unitCount, annualRent, vacancyCost, repairCosts, taxAndInsurance, capex, maintenance, mortgageRate]);
+  }, [financedAmount, monthlyRent, unitCount, annualRent, vacancyCost, taxAndInsurance, capex, maintenance, mortgageRate, cashInvested]);
 
   if (loading) {
     return (
@@ -298,7 +311,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
       <CardHeader>
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <DollarSign className="h-4 w-4" />
-          Set Down Payment
+          Bank Financing Analysis
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -322,28 +335,27 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
           
           {showInputs && (
             <div className="bg-gray-50 border rounded-lg p-3">
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
-                  <Label htmlFor="downPayment" className="text-xs">Down Payment</Label>
+                  <Label htmlFor="financedAmount" className="text-xs">Financed Amount</Label>
                   <Input
-                    id="downPayment"
+                    id="financedAmount"
                     type="number"
-                    step={25000}
-                    min={25000}
-                    max={purchasePrice}
-                    value={downPayment}
-                    onChange={(e) => setDownPayment(Math.max(25000, parseInt(e.target.value) || 25000))}
+                    step={1000}
+                    min={0}
+                    value={financedAmount}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || value === '-') {
+                        setFinancedAmount(0);
+                      } else {
+                        const numValue = parseInt(value, 10);
+                        if (!isNaN(numValue)) {
+                          setFinancedAmount(Math.max(0, numValue));
+                        }
+                      }
+                    }}
                     className="text-sm h-8"
-                  />
-                </div>
-                
-                <div>
-                  <Label className="text-xs">% of Purchase</Label>
-                  <Input
-                    type="text"
-                    value={`${percentOfPurchase.toFixed(1)}%`}
-                    disabled
-                    className="text-sm h-8 bg-gray-100"
                   />
                 </div>
                 
@@ -356,19 +368,6 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                     min={0}
                     value={monthlyRent}
                     onChange={(e) => setMonthlyRent(parseFloat(e.target.value) || 0)}
-                    className="text-sm h-8"
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="repairFinancing" className="text-xs">Repair Financing</Label>
-                  <Input
-                    id="repairFinancing"
-                    type="number"
-                    step={1000}
-                    min={0}
-                    value={repairFinancingAmount}
-                    onChange={(e) => setRepairFinancingAmount(parseFloat(e.target.value) || 0)}
                     className="text-sm h-8"
                   />
                 </div>
@@ -430,20 +429,15 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                     <div className="font-bold text-blue-700">${netOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Annual Interest</div>
-                    <div className="font-bold text-orange-700">${interestExpenses.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                    <div className="text-xs text-gray-600 mb-1">Annual P&I</div>
+                    <div className="font-bold text-orange-700">${annualPI.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                   </div>
                 </div>
               </div>
               
               <div className="border-t pt-4 mb-4">
                 <div className="text-xs font-semibold text-gray-700 mb-2">Your Actual Expenses</div>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                  <div>
-                    <div className="text-xs text-gray-600 mb-1">Repair Costs</div>
-                    <div className="font-semibold text-red-700">${repairCosts.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                    <div className="text-xs text-gray-500">${repairFinancingAmount.toLocaleString()} × {(locRate * 100).toFixed(1)}%</div>
-                  </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <div className="text-xs text-gray-600 mb-1">Tax & Insurance</div>
                     <div className="font-semibold text-red-700">${taxAndInsurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
@@ -461,7 +455,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                   </div>
                   <div>
                     <div className="text-xs text-gray-600 mb-1">P&I (Financing)</div>
-                    <div className="font-bold text-orange-700">${annualInterest.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                    <div className="font-bold text-orange-700">${annualPI.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                   </div>
                 </div>
               </div>
@@ -479,7 +473,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                   <div className={`font-bold text-lg ${meetsDSCR ? 'text-blue-700' : 'text-red-700'}`}>
                     {dscr.toFixed(2)} {meetsDSCR ? '✓' : '✗'}
                   </div>
-                  <div className="text-xs text-gray-500">NOI ÷ P&I (need ≥ 1.20)</div>
+                  <div className="text-xs text-gray-500">NOI ÷ Debt Service (need ≥ 1.20)</div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-600 mb-1">Cash on Cash</div>
@@ -497,12 +491,10 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr className="border-b-2 border-gray-300 bg-gray-100">
-                <th className="text-left p-2 font-semibold sticky left-0 bg-gray-100 z-10">Down Payment</th>
-                <th className="text-right p-2 font-semibold">% Purchase</th>
+                <th className="text-left p-2 font-semibold sticky left-0 bg-gray-100 z-10">Financed Amount</th>
                 <th className="text-right p-2 font-semibold">Annual Rent</th>
                 <th className="text-right p-2 font-semibold">Vacancy</th>
                 <th className="text-right p-2 font-semibold bg-blue-50">Adjusted Rent</th>
-                <th className="text-right p-2 font-semibold">Repairs</th>
                 <th className="text-right p-2 font-semibold">Tax & Ins</th>
                 <th className="text-right p-2 font-semibold">CapEx</th>
                 <th className="text-right p-2 font-semibold">Maint</th>
@@ -514,20 +506,27 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
             </thead>
             <tbody>
               {rentRows.map((row, idx) => {
-                const isCurrentDP = row.downPayment === downPayment;
+                // Use the financed amount stored in the row
+                const financedForRow = row.financedAmount;
+                const isCurrentFinanced = Math.abs(financedForRow - financedAmount) < 1000; // Within $1k
                 const rowMeetsDSCR = row.bankRatio >= 1.2;
                 const hasPositiveCashFlow = row.cashFlow > 0;
                 const meetsAllCriteria = rowMeetsDSCR && hasPositiveCashFlow;
                 
-                // Find the first row that meets all criteria
-                const firstOptimalIdx = rentRows.findIndex(r => r.bankRatio >= 1.2 && r.cashFlow > 0);
-                const isOptimal = meetsAllCriteria && idx === firstOptimalIdx;
+                // Find the highest financed amount that qualifies (meets DSCR >= 1.2)
+                const qualifyingRows = rentRows.filter(r => r.bankRatio >= 1.2 && r.cashFlow > 0);
+                const maxQualifyingIdx = qualifyingRows.length > 0 
+                  ? rentRows.findIndex(r => r === qualifyingRows[qualifyingRows.length - 1])
+                  : -1;
+                const isOptimal = meetsAllCriteria && idx === maxQualifyingIdx;
                 
                 let rowClass = 'border-b border-gray-200 hover:bg-gray-50';
-                if (isCurrentDP) {
+                if (isCurrentFinanced) {
                   rowClass = 'bg-blue-50 border-2 border-blue-600 font-semibold';
                 } else if (isOptimal) {
-                  rowClass = 'border-2 border-blue-600 hover:bg-blue-50';
+                  rowClass = 'border-2 border-green-600 hover:bg-green-50';
+                } else if (rowMeetsDSCR) {
+                  rowClass = 'border-b border-gray-200 hover:bg-green-50 bg-green-50/30';
                 }
                 
                 return (
@@ -537,20 +536,19 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                   >
                     <td className="p-2 sticky left-0 bg-white">
                       <div className="flex items-center gap-1">
-                        {isOptimal && !isCurrentDP && (
-                          <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        {isOptimal && !isCurrentFinanced && (
+                          <svg className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                           </svg>
                         )}
-                        <span>${(row.downPayment / 1000).toFixed(0)}k</span>
-                        {isCurrentDP && <span className="ml-1 text-xs bg-blue-700 text-white px-1 rounded">CURRENT</span>}
+                        <span>${(financedForRow / 1000).toFixed(0)}k</span>
+                        {isCurrentFinanced && <span className="ml-1 text-xs bg-blue-700 text-white px-1 rounded">CURRENT</span>}
+                        {isOptimal && !isCurrentFinanced && <span className="ml-1 text-xs bg-green-700 text-white px-1 rounded">MAX QUALIFYING</span>}
                       </div>
                     </td>
-                    <td className="text-right p-2">{row.percentOfPurchase.toFixed(1)}%</td>
                     <td className="text-right p-2">${row.annualRent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                     <td className="text-right p-2 text-red-700">-${row.vacancyCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                     <td className="text-right p-2 font-semibold bg-blue-50 text-blue-700">${row.effectiveAnnualRent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                    <td className="text-right p-2">${row.repairCosts.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                     <td className="text-right p-2">${row.taxAndInsurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                     <td className="text-right p-2">${row.capex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                     <td className="text-right p-2">${row.maintenance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
@@ -580,13 +578,13 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
           <div className="mt-2"><strong>Bank DSCR Calculation:</strong></div>
           <div className="ml-4">• Operating Expenses = 35% × Adjusted Rents (bank's simplified estimate)</div>
           <div className="ml-4">• Net Operating Income (NOI) = Adjusted Rents - Operating Expenses</div>
-          <div className="ml-4">• Annual Interest = (Purchase Price - Down Payment) × Mortgage Rate</div>
-          <div className="ml-4">• <strong className="text-purple-700">DSCR = NOI ÷ Annual Interest (must be ≥ 1.20)</strong></div>
+          <div className="ml-4">• Annual P&I = Calculated from Financed Amount using mortgage formula (30-year amortization)</div>
+          <div className="ml-4">• <strong className="text-purple-700">DSCR = NOI ÷ Annual P&I (must be ≥ 1.20)</strong></div>
           <div className="mt-2"><strong>Your Actual Cash Flow:</strong></div>
-          <div className="ml-4">• Repair Costs = Repair Financing × LOC Rate</div>
           <div className="ml-4">• Tax & Insurance, CapEx, Maintenance = From scheduled expenses</div>
-          <div className="ml-4">• <strong>Cash Flow = Adjusted Rents - (All Actual Expenses + Interest)</strong></div>
-          <div className="ml-4">• <strong>Cash on Cash = Cash Flow ÷ Down Payment × 100%</strong></div>
+          <div className="ml-4">• <strong>Cash Flow = Adjusted Rents - (All Actual Expenses + P&I)</strong></div>
+          <div className="ml-4">• <strong>Cash on Cash = Cash Flow ÷ Cash Invested × 100%</strong></div>
+          <div className="ml-4 text-xs text-gray-500 italic">Cash Invested comes from the property's cash_invested field</div>
         </div>
       </CardContent>
     </Card>

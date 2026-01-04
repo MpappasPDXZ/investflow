@@ -13,7 +13,8 @@ from app.schemas.walkthrough import (
     WalkthroughAreaCreate, WalkthroughAreaResponse, WalkthroughAreaPhoto, PhotoUploadRequest,
     WalkthroughAreaIssue
 )
-from app.core.iceberg import read_table, append_data, table_exists, load_table, read_table_filtered, upsert_data
+from app.core.iceberg import read_table, table_exists, load_table, read_table_filtered, update_walkthrough_data, create_walkthrough_data
+import pyarrow as pa
 from app.core.logging import get_logger
 from app.services.adls_service import adls_service
 from app.services.walkthrough_generator_service import WalkthroughGeneratorService
@@ -25,12 +26,34 @@ WALKTHROUGHS_TABLE = "walkthroughs"
 WALKTHROUGH_AREAS_TABLE = "walkthrough_areas"
 PROPERTIES_TABLE = "properties"
 
+# Column order matching the Iceberg table schema (from migration script)
+WALKTHROUGHS_FIELD_ORDER = [
+    "id",
+    "property_id",
+    "unit_id",
+    "property_display_name",
+    "unit_number",
+    "walkthrough_type",
+    "walkthrough_date",
+    "status",
+    "inspector_name",
+    "tenant_name",
+    "tenant_signature_date",
+    "landlord_signature_date",
+    "notes",
+    "generated_pdf_blob_name",
+    "areas_json",
+    "is_active",
+    "created_at",
+    "updated_at",
+]
+
 router = APIRouter(prefix="/walkthroughs", tags=["walkthroughs"])
 logger = get_logger(__name__)
 
 
-def _verify_property_ownership(property_id: str, user_id: str):
-    """Verify that the user owns the property"""
+def _verify_property_access(property_id: str, user_id: str, user_email: str):
+    """Verify that the user has access to the property (ownership or sharing)"""
     try:
         if not table_exists(NAMESPACE, PROPERTIES_TABLE):
             raise HTTPException(status_code=404, detail="Property not found")
@@ -46,15 +69,19 @@ def _verify_property_ownership(property_id: str, user_id: str):
             raise HTTPException(status_code=404, detail="Property not found")
         
         property_data = properties_df.iloc[0]
-        if property_data["user_id"] != user_id:
+        property_user_id = str(property_data["user_id"])
+        
+        # Check access: owner OR bidirectional share
+        from app.api.sharing_utils import user_has_property_access
+        if not user_has_property_access(property_user_id, user_id, user_email):
             raise HTTPException(status_code=403, detail="Not authorized to access this property")
         
         return property_data
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error verifying property ownership: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error verifying property ownership")
+        logger.error(f"Error verifying property access: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error verifying property access")
 
 
 @router.post("", response_model=WalkthroughResponse, status_code=201)
@@ -67,11 +94,12 @@ async def create_walkthrough(
         logger.info(f"📥 [WALKTHROUGH] Received create request with {len(walkthrough_data.areas)} areas")
         logger.info(f"📥 [WALKTHROUGH] Payload: {walkthrough_data.model_dump_json(indent=2)}")
         user_id = current_user["sub"]
+        user_email = current_user["email"]
         walkthrough_id = str(uuid.uuid4())
         now = pd.Timestamp.now()
         
-        # Verify property ownership and get property data
-        property_data = _verify_property_ownership(str(walkthrough_data.property_id), user_id)
+        # Verify property access (ownership or sharing) and get property data
+        property_data = _verify_property_access(str(walkthrough_data.property_id), user_id, user_email)
         
         # Get property display_name
         property_display_name = property_data.get("display_name") or property_data.get("address", "")
@@ -98,38 +126,28 @@ async def create_walkthrough(
             except Exception as e:
                 logger.warning(f"Could not get unit number: {e}")
         
-        # Convert to dict
-        walkthrough_dict = walkthrough_data.model_dump(exclude={"areas"})
-        walkthrough_dict["id"] = walkthrough_id
-        walkthrough_dict["user_id"] = user_id
-        walkthrough_dict["status"] = "draft"
-        walkthrough_dict["created_at"] = now
-        walkthrough_dict["updated_at"] = now
-        walkthrough_dict["is_active"] = True
-        walkthrough_dict["generated_pdf_blob_name"] = None
+        # Build walkthrough dict in correct column order
+        walkthrough_dict = {}
         
-        # Convert UUIDs and dates
+        # Add fields in exact schema order
+        walkthrough_dict["id"] = walkthrough_id
         walkthrough_dict["property_id"] = str(walkthrough_data.property_id)
         walkthrough_dict["unit_id"] = str(walkthrough_data.unit_id) if walkthrough_data.unit_id else None
         walkthrough_dict["property_display_name"] = property_display_name
         walkthrough_dict["unit_number"] = unit_number
-        walkthrough_dict["walkthrough_date"] = pd.Timestamp(walkthrough_data.walkthrough_date)
-        
-        # Ensure tenant_name and inspector_name are explicitly included (they should be from model_dump, but be explicit)
-        walkthrough_dict["tenant_name"] = walkthrough_data.tenant_name
-        # Default inspector to Sarah Pappas if not provided
+        walkthrough_dict["walkthrough_type"] = walkthrough_data.walkthrough_type
+        walkthrough_dict["walkthrough_date"] = pd.Timestamp(walkthrough_data.walkthrough_date).date()
+        walkthrough_dict["status"] = "draft"
         walkthrough_dict["inspector_name"] = walkthrough_data.inspector_name or "Sarah Pappas, Member S&M Axios Heartland Holdings LLC"
-        
-        # Convert signature dates if present
-        if walkthrough_data.tenant_signature_date:
-            walkthrough_dict["tenant_signature_date"] = pd.Timestamp(walkthrough_data.tenant_signature_date)
-        else:
-            walkthrough_dict["tenant_signature_date"] = None
-            
-        if walkthrough_data.landlord_signature_date:
-            walkthrough_dict["landlord_signature_date"] = pd.Timestamp(walkthrough_data.landlord_signature_date)
-        else:
-            walkthrough_dict["landlord_signature_date"] = None
+        walkthrough_dict["tenant_name"] = walkthrough_data.tenant_name
+        walkthrough_dict["tenant_signature_date"] = pd.Timestamp(walkthrough_data.tenant_signature_date).date() if walkthrough_data.tenant_signature_date else None
+        walkthrough_dict["landlord_signature_date"] = pd.Timestamp(walkthrough_data.landlord_signature_date).date() if walkthrough_data.landlord_signature_date else None
+        walkthrough_dict["notes"] = walkthrough_data.notes
+        walkthrough_dict["generated_pdf_blob_name"] = None
+        walkthrough_dict["areas_json"] = None  # Will be set below
+        walkthrough_dict["is_active"] = True
+        walkthrough_dict["created_at"] = now
+        walkthrough_dict["updated_at"] = now
         
         # OPTIMIZATION: Store areas as JSON in walkthrough table (much faster than separate table)
         areas_json_data = []
@@ -144,7 +162,6 @@ async def create_walkthrough(
                 "area_order": idx + 1,
                 "inspection_status": area_data.inspection_status,
                 "notes": area_data.notes,
-                "landlord_fix_notes": area_data.landlord_fix_notes,
                 "issues": [issue.model_dump() for issue in area_data.issues] if area_data.issues else [],
                 "photos": []  # Photos will be added via upload endpoint
             }
@@ -159,7 +176,6 @@ async def create_walkthrough(
                 area_order=idx + 1,
                 inspection_status=area_data.inspection_status,
                 notes=area_data.notes,
-                landlord_fix_notes=area_data.landlord_fix_notes,
                 issues=area_data.issues,
                 photos=[],
                 created_at=now.to_pydatetime(),
@@ -169,14 +185,42 @@ async def create_walkthrough(
         # Store areas as JSON in walkthrough table
         walkthrough_dict["areas_json"] = json.dumps(areas_json_data) if areas_json_data else None
         
-        # OPTIMIZATION: Use upsert_data for walkthrough (like leases) - much faster
-        walkthrough_df = pd.DataFrame([walkthrough_dict])
-        if table_exists(NAMESPACE, WALKTHROUGHS_TABLE):
-            table = load_table(NAMESPACE, WALKTHROUGHS_TABLE)
-            schema_columns = [field.name for field in table.schema().fields]
-            walkthrough_df = walkthrough_df.reindex(columns=schema_columns, fill_value=None)
+        # Build walkthrough record in schema order (like leases create)
+        table = load_table(NAMESPACE, WALKTHROUGHS_TABLE)
+        table_schema = table.schema().as_arrow()
         
-        upsert_data(NAMESPACE, WALKTHROUGHS_TABLE, walkthrough_df, join_cols=["id"])
+        # Build record with all fields in schema order
+        record = {}
+        for field in table_schema:
+            col_name = field.name
+            value = walkthrough_dict.get(col_name)
+            field_type = field.type
+            
+            # Handle date fields - ensure date objects (not datetime/timestamp)
+            if pa.types.is_date(field_type):
+                if value is None:
+                    record[col_name] = None
+                elif isinstance(value, (datetime, pd.Timestamp)):
+                    record[col_name] = value.date()
+                elif isinstance(value, date):
+                    record[col_name] = value
+                else:
+                    record[col_name] = None
+            # For timestamp fields, ensure datetime objects
+            elif pa.types.is_timestamp(field_type):
+                if value is None:
+                    record[col_name] = None
+                elif isinstance(value, pd.Timestamp):
+                    record[col_name] = value.to_pydatetime()
+                elif isinstance(value, datetime):
+                    record[col_name] = value
+                else:
+                    record[col_name] = value
+            else:
+                record[col_name] = value
+        
+        # Use walkthroughs-specific create function
+        create_walkthrough_data(record)
         
         # Build response
         pdf_url = None
@@ -185,18 +229,15 @@ async def create_walkthrough(
         
         return WalkthroughResponse(
             id=UUID(walkthrough_id),
-            user_id=user_id,
             property_id=walkthrough_data.property_id,
             unit_id=walkthrough_data.unit_id,
             property_display_name=property_display_name,
             unit_number=unit_number,
             walkthrough_type=walkthrough_data.walkthrough_type,
             walkthrough_date=walkthrough_data.walkthrough_date,
-            inspector_name=walkthrough_data.inspector_name,
+            inspector_name=walkthrough_data.inspector_name or "Sarah Pappas, Member S&M Axios Heartland Holdings LLC",
             tenant_name=walkthrough_data.tenant_name,
-            tenant_signed=walkthrough_data.tenant_signed,
             tenant_signature_date=walkthrough_data.tenant_signature_date,
-            landlord_signed=walkthrough_data.landlord_signed,
             landlord_signature_date=walkthrough_data.landlord_signature_date,
             notes=walkthrough_data.notes,
             status="draft",
@@ -220,19 +261,43 @@ async def list_walkthroughs(
     status: Optional[str] = Query(None, description="Filter by status"),
     current_user: dict = Depends(get_current_user)
 ):
-    """List all walkthroughs for the current user - SIMPLIFIED: only walkthroughs table, no areas"""
+    """List all walkthroughs for properties the user has access to (ownership or sharing)"""
     try:
         user_id = current_user["sub"]
+        user_email = current_user["email"]
         
         if not table_exists(NAMESPACE, WALKTHROUGHS_TABLE):
             return WalkthroughListResponse(items=[], total=0)
         
-        # Read walkthroughs - ONLY from walkthroughs table
-        walkthroughs_df = read_table_filtered(
-            NAMESPACE,
-            WALKTHROUGHS_TABLE,
-            EqualTo("user_id", user_id)
-        )
+        # Get all properties user has access to (owned or shared)
+        if not table_exists(NAMESPACE, PROPERTIES_TABLE):
+            return WalkthroughListResponse(items=[], total=0)
+        
+        properties_df = read_table(NAMESPACE, PROPERTIES_TABLE)
+        
+        # Get shared user IDs (bidirectional)
+        from app.api.sharing_utils import get_shared_user_ids
+        shared_user_ids = get_shared_user_ids(user_id, user_email)
+        
+        # Filter: properties owned by user OR owned by shared users
+        if len(shared_user_ids) > 0:
+            accessible_properties = properties_df[
+                ((properties_df["user_id"] == user_id) | (properties_df["user_id"].isin(shared_user_ids))) &
+                (properties_df["is_active"] == True)
+            ]
+        else:
+            accessible_properties = properties_df[(properties_df["user_id"] == user_id) & (properties_df["is_active"] == True)]
+        
+        accessible_property_ids = accessible_properties["id"].astype(str).tolist()
+        
+        if not accessible_property_ids:
+            return WalkthroughListResponse(items=[], total=0)
+        
+        # Read all walkthroughs and filter by accessible properties
+        walkthroughs_df = read_table(NAMESPACE, WALKTHROUGHS_TABLE)
+        
+        # Filter by accessible properties
+        walkthroughs_df = walkthroughs_df[walkthroughs_df["property_id"].isin(accessible_property_ids)]
         
         if len(walkthroughs_df) == 0:
             return WalkthroughListResponse(items=[], total=0)
@@ -271,7 +336,6 @@ async def list_walkthroughs(
             
             items.append(WalkthroughListItem(
                 id=UUID(walkthrough["id"]),
-                user_id=walkthrough["user_id"],
                 property_id=UUID(walkthrough["property_id"]),
                 unit_id=UUID(walkthrough["unit_id"]) if walkthrough.get("unit_id") else None,
                 property_display_name=walkthrough.get("property_display_name"),
@@ -322,8 +386,10 @@ async def upload_area_photo(
             raise HTTPException(status_code=404, detail="Walkthrough not found")
         
         walkthrough = walkthroughs_df.iloc[0]
-        if walkthrough["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        
+        # Verify property access
+        user_email = current_user["email"]
+        property_data = _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
         
         # Upload photo using DocumentService (stores in vault table)
         file_content = await file.read()
@@ -333,7 +399,7 @@ async def upload_area_photo(
             file_content=file_content,
             filename=file.filename or "photo.jpg",
             content_type=file.content_type or "image/jpeg",
-            document_type="walkthrough_photo",
+            document_type="inspection",
             property_id=UUIDType(walkthrough["property_id"]),
             unit_id=UUIDType(walkthrough["unit_id"]) if walkthrough.get("unit_id") else None
         )
@@ -438,21 +504,43 @@ async def upload_area_photo(
                 table.delete(EqualTo("id", str(area_id)))
                 area_df = pd.DataFrame([area_dict])
                 area_df = area_df.reindex(columns=schema_columns, fill_value=None)
-                append_data(NAMESPACE, WALKTHROUGH_AREAS_TABLE, area_df)
+                
+                # Convert timestamp columns from nanoseconds to microseconds
+                for col in area_df.columns:
+                    if pd.api.types.is_datetime64_any_dtype(area_df[col]):
+                        area_df[col] = area_df[col].astype('datetime64[us]')
+                
+                # Convert to PyArrow table and cast to schema (inline append_data logic)
+                arrow_table = pa.Table.from_pandas(area_df)
+                table_schema = table.schema().as_arrow()
+                arrow_table = arrow_table.cast(table_schema)
+                
+                # Append updated area (legacy table)
+                table.append(arrow_table)
             else:
                 raise HTTPException(status_code=404, detail="Area not found")
         else:
-            # Update walkthrough with updated areas_json
-            walkthrough_dict = walkthrough.to_dict()
+            # Re-read walkthrough right before update to ensure we have the latest data
+            # This prevents stale data issues where other fields were updated after initial read
+            walkthroughs_df_fresh = read_table_filtered(
+                NAMESPACE,
+                WALKTHROUGHS_TABLE,
+                EqualTo("id", str(walkthrough_id))
+            )
+            
+            if len(walkthroughs_df_fresh) == 0:
+                raise HTTPException(status_code=404, detail="Walkthrough not found")
+            
+            walkthrough_fresh = walkthroughs_df_fresh.iloc[0]
+            
+            # Update walkthrough with updated areas_json using fresh data
+            walkthrough_dict = walkthrough_fresh.to_dict()
             walkthrough_dict["areas_json"] = json.dumps(areas_data)
             walkthrough_dict["updated_at"] = pd.Timestamp.now()
             
-            walkthroughs_table = load_table(NAMESPACE, WALKTHROUGHS_TABLE)
-            schema_columns = [field.name for field in walkthroughs_table.schema().fields]
+            # Use walkthroughs-specific update function
             walkthrough_df = pd.DataFrame([walkthrough_dict])
-            walkthrough_df = walkthrough_df.reindex(columns=schema_columns, fill_value=None)
-            
-            upsert_data(NAMESPACE, WALKTHROUGHS_TABLE, walkthrough_df, join_cols=["id"])
+            update_walkthrough_data(str(walkthrough_id), walkthrough_df)
         
         # Generate photo URL using document service
         photo_url = document_service.get_document_download_url(UUIDType(document["id"]), UUIDType(user_id))
@@ -472,17 +560,18 @@ async def upload_area_photo(
         raise HTTPException(status_code=500, detail=f"Error uploading photo: {str(e)}")
 
 
-@router.post("/{walkthrough_id}/generate-pdf")
-async def generate_walkthrough_pdf(
+@router.delete("/{walkthrough_id}/areas/{area_id}/photos/{document_id}")
+async def delete_area_photo(
     walkthrough_id: UUID,
-    regenerate: bool = Query(False, description="Regenerate PDF even if it exists"),
+    area_id: UUID,
+    document_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Generate PDF for walkthrough inspection"""
+    """Delete a photo from a walkthrough area"""
     try:
         user_id = current_user["sub"]
         
-        # Get walkthrough
+        # Verify walkthrough exists
         if not table_exists(NAMESPACE, WALKTHROUGHS_TABLE):
             raise HTTPException(status_code=404, detail="Walkthrough not found")
         
@@ -497,32 +586,132 @@ async def generate_walkthrough_pdf(
         
         walkthrough = walkthroughs_df.iloc[0]
         
-        # Verify ownership
-        if walkthrough["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify property access
+        user_email = current_user["email"]
+        property_data = _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
         
-        # Check if PDF already exists (unless regenerate is True)
-        if not regenerate and walkthrough.get("generated_pdf_blob_name"):
-            pdf_blob = walkthrough["generated_pdf_blob_name"]
-            if adls_service.blob_exists(pdf_blob):
-                pdf_url = adls_service.get_blob_download_url(pdf_blob)
-                return {
-                    "walkthrough_id": walkthrough_id,
-                    "pdf_url": pdf_url,
-                    "pdf_blob_name": pdf_blob,
-                    "generated_at": datetime.now().isoformat(),
-                    "status": walkthrough["status"]
-                }
+        # Get areas_json
+        areas_json_str = walkthrough.get("areas_json")
+        areas_data = []
         
-        # Get property data
+        if areas_json_str:
+            try:
+                areas_data = json.loads(areas_json_str)
+            except Exception as e:
+                logger.error(f"📷 [DELETE PHOTO] Failed to parse areas_json: {e}")
+                raise HTTPException(status_code=500, detail="Failed to parse areas data")
+        
+        # Find the area by area_id
+        area_found = False
+        target_area = None
+        
+        for area_data in areas_data:
+            if str(area_data.get("id")) == str(area_id):
+                target_area = area_data
+                area_found = True
+                break
+        
+        if not area_found:
+            raise HTTPException(status_code=404, detail="Area not found")
+        
+        # Remove photo from area's photos list
+        existing_photos = target_area.get("photos", [])
+        original_count = len(existing_photos)
+        
+        # Filter out the photo with matching document_id
+        updated_photos = [
+            photo for photo in existing_photos 
+            if str(photo.get("document_id")) != str(document_id)
+        ]
+        
+        if len(updated_photos) == original_count:
+            raise HTTPException(status_code=404, detail="Photo not found")
+        
+        target_area["photos"] = updated_photos
+        
+        # Re-read walkthrough to ensure we have latest data
+        walkthroughs_df_fresh = read_table_filtered(
+            NAMESPACE,
+            WALKTHROUGHS_TABLE,
+            EqualTo("id", str(walkthrough_id))
+        )
+        
+        if len(walkthroughs_df_fresh) == 0:
+            raise HTTPException(status_code=404, detail="Walkthrough not found")
+        
+        walkthrough_fresh = walkthroughs_df_fresh.iloc[0]
+        
+        # Update walkthrough with updated areas_json
+        walkthrough_dict = walkthrough_fresh.to_dict()
+        walkthrough_dict["areas_json"] = json.dumps(areas_data)
+        walkthrough_dict["updated_at"] = pd.Timestamp.now()
+        
+        # Use walkthroughs-specific update function
+        walkthrough_df = pd.DataFrame([walkthrough_dict])
+        update_walkthrough_data(str(walkthrough_id), walkthrough_df)
+        
+        logger.info(f"📷 [DELETE PHOTO] Deleted photo {document_id} from area {area_id}")
+        
+        return {"success": True, "message": "Photo deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting photo: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error deleting photo: {str(e)}")
+
+
+@router.post("/{walkthrough_id}/generate-pdf")
+async def generate_walkthrough_pdf(
+    walkthrough_id: UUID,
+    regenerate: bool = Query(False, description="Regenerate PDF even if it exists"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Generate PDF for walkthrough inspection"""
+    try:
+        user_id = current_user["sub"]
+        user_email = current_user["email"]
+        
+        # PHASE 2: Read ALL data upfront (walkthrough, property, inspector, areas, photos)
+        # Minimal retry logic ONLY for PyIceberg concurrency bug ("dictionary changed size during iteration")
+        # This is a known PyIceberg issue that can occur when reading immediately after a write
+        
+        import time
+        
+        def read_with_concurrency_retry(table_name, filter_expr, max_retries=3):
+            """Read table with retry for PyIceberg concurrency bug"""
+            for attempt in range(max_retries):
+                try:
+                    return read_table_filtered(NAMESPACE, table_name, filter_expr)
+                except RuntimeError as e:
+                    if "dictionary changed size during iteration" in str(e) and attempt < max_retries - 1:
+                        delay = 0.2 * (attempt + 1)  # 0.2s, 0.4s, 0.6s
+                        logger.warning(f"📄 [PDF] PyIceberg concurrency issue reading {table_name}, retry {attempt + 1}/{max_retries} after {delay}s")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        raise
+                except Exception as e:
+                    # Other errors, don't retry
+                    raise
+        
+        # Read walkthrough data
+        if not table_exists(NAMESPACE, WALKTHROUGHS_TABLE):
+            raise HTTPException(status_code=404, detail="Walkthrough not found")
+        
+        walkthroughs_df = read_with_concurrency_retry(WALKTHROUGHS_TABLE, EqualTo("id", str(walkthrough_id)))
+        
+        if len(walkthroughs_df) == 0:
+            raise HTTPException(status_code=404, detail="Walkthrough not found")
+        
+        walkthrough = walkthroughs_df.iloc[0]
+        walkthrough_dict = walkthrough.to_dict()
+        
+        # Get property data (ownership check already done on frontend via property dropdown)
         if not table_exists(NAMESPACE, PROPERTIES_TABLE):
             raise HTTPException(status_code=404, detail="Property not found")
         
-        properties_df = read_table_filtered(
-            NAMESPACE,
-            PROPERTIES_TABLE,
-            EqualTo("id", str(walkthrough["property_id"]))
-        )
+        properties_df = read_with_concurrency_retry(PROPERTIES_TABLE, EqualTo("id", str(walkthrough["property_id"])))
         
         if len(properties_df) == 0:
             raise HTTPException(status_code=404, detail="Property not found")
@@ -533,11 +722,7 @@ async def generate_walkthrough_pdf(
         landlord_name = None
         if table_exists(NAMESPACE, "users"):
             try:
-                users_df = read_table_filtered(
-                    NAMESPACE,
-                    "users",
-                    EqualTo("id", user_id)
-                )
+                users_df = read_with_concurrency_retry("users", EqualTo("id", user_id))
                 if len(users_df) > 0:
                     user_data = users_df.iloc[0]
                     # Build name from first_name and last_name
@@ -559,27 +744,38 @@ async def generate_walkthrough_pdf(
             # New format: areas stored as JSON in walkthrough table
             try:
                 areas_list = json.loads(areas_json_str)
+                logger.info(f"📄 [PDF] Loaded {len(areas_list)} areas from areas_json for walkthrough {walkthrough_id}")
             except Exception as e:
                 logger.warning(f"Failed to parse areas_json, falling back to separate table: {e}")
                 areas_json_str = None
         
-        # Fallback to separate table if areas_json doesn't exist
+        # Fallback to separate table if areas_json doesn't exist (legacy inspections)
         if not areas_json_str:
             if table_exists(NAMESPACE, WALKTHROUGH_AREAS_TABLE):
-                areas_df = read_table_filtered(
-                    NAMESPACE,
-                    WALKTHROUGH_AREAS_TABLE,
-                    EqualTo("walkthrough_id", str(walkthrough_id))
-                )
+                logger.info(f"📄 [PDF] Loading areas from legacy walkthrough_areas table for walkthrough {walkthrough_id}")
+                areas_df = read_with_concurrency_retry(WALKTHROUGH_AREAS_TABLE, EqualTo("walkthrough_id", str(walkthrough_id)))
                 
                 if len(areas_df) > 0:
                     areas_df = areas_df.sort_values("area_order")
                     for _, area in areas_df.iterrows():
                         area_dict = area.to_dict()
-                        # Deserialize issues and photos
+                        
+                        # Ensure all required fields are present
+                        if "id" not in area_dict or not area_dict.get("id"):
+                            area_dict["id"] = str(area.get("id", uuid.uuid4()))
+                        if "floor" not in area_dict:
+                            area_dict["floor"] = area.get("floor", "Floor 1")
+                        if "area_name" not in area_dict:
+                            area_dict["area_name"] = area.get("area_name", "Unknown")
+                        if "area_order" not in area_dict:
+                            area_dict["area_order"] = area.get("area_order", 0)
+                        if "inspection_status" not in area_dict:
+                            area_dict["inspection_status"] = area.get("inspection_status", "no_issues")
+                        
+                        # Deserialize issues and photos from JSON strings
                         if area_dict.get("issues"):
                             try:
-                                area_dict["issues"] = json.loads(area_dict["issues"])
+                                area_dict["issues"] = json.loads(area_dict["issues"]) if isinstance(area_dict["issues"], str) else area_dict["issues"]
                             except:
                                 area_dict["issues"] = []
                         else:
@@ -587,38 +783,48 @@ async def generate_walkthrough_pdf(
                         
                         if area_dict.get("photos"):
                             try:
-                                area_dict["photos"] = json.loads(area_dict["photos"])
-                            except:
+                                area_dict["photos"] = json.loads(area_dict["photos"]) if isinstance(area_dict["photos"], str) else area_dict["photos"]
+                                logger.info(f"📄 [PDF] Loaded {len(area_dict['photos'])} photos for area {area_dict.get('area_name')}")
+                            except Exception as e:
+                                logger.warning(f"Failed to parse photos JSON for area {area_dict.get('area_name')}: {e}")
                                 area_dict["photos"] = []
                         else:
                             area_dict["photos"] = []
                         
+                        # Ensure notes field is present
+                        if "notes" not in area_dict:
+                            area_dict["notes"] = area.get("notes") or ""
+                        
                         areas_list.append(area_dict)
+                    
+                    logger.info(f"📄 [PDF] Loaded {len(areas_list)} areas from legacy table for walkthrough {walkthrough_id}")
+                else:
+                    logger.warning(f"📄 [PDF] No areas found in legacy table for walkthrough {walkthrough_id}")
+            else:
+                logger.warning(f"📄 [PDF] Legacy walkthrough_areas table does not exist")
         
-        # Generate PDF
+        logger.info(f"📄 [PDF] Total areas to include in PDF: {len(areas_list)}")
+        
+        # PHASE 4: Generate PDF (photo loading happens inside generator, user will see "Generating..." which includes photo loading)
         generator = WalkthroughGeneratorService()
-        walkthrough_dict = walkthrough.to_dict()
         
         pdf_bytes, pdf_blob_name, latex_blob_name = generator.generate_walkthrough_pdf(
             walkthrough_data=walkthrough_dict,
             areas=areas_list,
             property_data=property_data,
-            user_id=user_id
+            user_id=user_id,
+            landlord_name=landlord_name
         )
         
-        # Update walkthrough record with PDF location using upsert
-        update_dict = walkthrough.to_dict()
+        # Update walkthrough record with PDF location
+        update_dict = walkthrough_dict.copy()
         update_dict["generated_pdf_blob_name"] = pdf_blob_name
         update_dict["status"] = "pending_signature" if walkthrough["status"] == "draft" else walkthrough["status"]
         update_dict["updated_at"] = pd.Timestamp.now()
         
+        # Use walkthroughs-specific update function
         update_df = pd.DataFrame([update_dict])
-        if table_exists(NAMESPACE, WALKTHROUGHS_TABLE):
-            table = load_table(NAMESPACE, WALKTHROUGHS_TABLE)
-            schema_columns = [field.name for field in table.schema().fields]
-            update_df = update_df.reindex(columns=schema_columns, fill_value=None)
-        
-        upsert_data(NAMESPACE, WALKTHROUGHS_TABLE, update_df, join_cols=["id"])
+        update_walkthrough_data(str(walkthrough_id), update_df)
         
         # Get download URL
         pdf_url = adls_service.get_blob_download_url(pdf_blob_name)
@@ -663,9 +869,9 @@ async def download_walkthrough_pdf(
         
         walkthrough = walkthroughs_df.iloc[0]
         
-        # Verify ownership
-        if walkthrough["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify property access (ownership or sharing)
+        user_email = current_user["email"]
+        _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
         
         # Get PDF blob name
         pdf_blob_name = walkthrough.get("generated_pdf_blob_name")
@@ -711,9 +917,9 @@ async def proxy_walkthrough_pdf_download(
         
         walkthrough = walkthroughs_df.iloc[0]
         
-        # Verify ownership
-        if walkthrough["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify property access (ownership or sharing)
+        user_email = current_user["email"]
+        _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
         
         # Get PDF blob name
         pdf_blob_name = walkthrough.get("generated_pdf_blob_name")
@@ -775,10 +981,11 @@ async def update_walkthrough(
     try:
         logger.info(f"📥 [WALKTHROUGH] Received update request for {walkthrough_id} with {len(walkthrough_data.areas)} areas")
         user_id = current_user["sub"]
+        user_email = current_user["email"]
         
         step_start = time.time()
-        # Verify property ownership and get property data
-        property_data = _verify_property_ownership(str(walkthrough_data.property_id), user_id)
+        # Verify property access (ownership or sharing) and get property data
+        property_data = _verify_property_access(str(walkthrough_data.property_id), user_id, user_email)
         logger.info(f"⏱️  [WALKTHROUGH] Property ownership check: {time.time() - step_start:.3f}s")
         
         # Get property display_name
@@ -824,17 +1031,33 @@ async def update_walkthrough(
         
         existing_walkthrough = walkthroughs_df.iloc[0]
         
-        # Verify ownership
-        if existing_walkthrough["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify property access
+        property_data_check = _verify_property_access(str(existing_walkthrough["property_id"]), user_id, user_email)
         
         now = pd.Timestamp.now()
         
         step_start = time.time()
-        # Update walkthrough fields
-        walkthrough_dict = walkthrough_data.model_dump(exclude={"areas"})
+        # Build walkthrough dict in correct column order
+        walkthrough_dict = {}
+        
+        # Add fields in exact schema order
         walkthrough_dict["id"] = str(walkthrough_id)
-        walkthrough_dict["user_id"] = user_id
+        walkthrough_dict["property_id"] = str(walkthrough_data.property_id)
+        walkthrough_dict["unit_id"] = str(walkthrough_data.unit_id) if walkthrough_data.unit_id else None
+        walkthrough_dict["property_display_name"] = property_display_name
+        walkthrough_dict["unit_number"] = unit_number
+        walkthrough_dict["walkthrough_type"] = walkthrough_data.walkthrough_type
+        walkthrough_dict["walkthrough_date"] = pd.Timestamp(walkthrough_data.walkthrough_date).date()
+        walkthrough_dict["status"] = existing_walkthrough.get("status", "draft")
+        walkthrough_dict["inspector_name"] = walkthrough_data.inspector_name or "Sarah Pappas, Member S&M Axios Heartland Holdings LLC"
+        walkthrough_dict["tenant_name"] = walkthrough_data.tenant_name
+        walkthrough_dict["tenant_signature_date"] = pd.Timestamp(walkthrough_data.tenant_signature_date).date() if walkthrough_data.tenant_signature_date else None
+        walkthrough_dict["landlord_signature_date"] = pd.Timestamp(walkthrough_data.landlord_signature_date).date() if walkthrough_data.landlord_signature_date else None
+        walkthrough_dict["notes"] = walkthrough_data.notes
+        walkthrough_dict["generated_pdf_blob_name"] = existing_walkthrough.get("generated_pdf_blob_name")
+        walkthrough_dict["areas_json"] = None  # Will be set below
+        walkthrough_dict["is_active"] = existing_walkthrough.get("is_active", True)
+        walkthrough_dict["created_at"] = pd.Timestamp(existing_walkthrough["created_at"])
         walkthrough_dict["updated_at"] = now
         
         # Keep existing fields that shouldn't change
@@ -843,28 +1066,6 @@ async def update_walkthrough(
         walkthrough_dict["is_active"] = existing_walkthrough.get("is_active", True)
         walkthrough_dict["generated_pdf_blob_name"] = existing_walkthrough.get("generated_pdf_blob_name")
         
-        # Convert UUIDs and dates
-        walkthrough_dict["property_id"] = str(walkthrough_data.property_id)
-        walkthrough_dict["unit_id"] = str(walkthrough_data.unit_id) if walkthrough_data.unit_id else None
-        walkthrough_dict["property_display_name"] = property_display_name
-        walkthrough_dict["unit_number"] = unit_number
-        walkthrough_dict["walkthrough_date"] = pd.Timestamp(walkthrough_data.walkthrough_date)
-        
-        # Ensure tenant_name and inspector_name are explicitly included
-        walkthrough_dict["tenant_name"] = walkthrough_data.tenant_name
-        # Default inspector to Sarah Pappas if not provided
-        walkthrough_dict["inspector_name"] = walkthrough_data.inspector_name or "Sarah Pappas, Member S&M Axios Heartland Holdings LLC"
-        
-        # Convert signature dates if present
-        if walkthrough_data.tenant_signature_date:
-            walkthrough_dict["tenant_signature_date"] = pd.Timestamp(walkthrough_data.tenant_signature_date)
-        else:
-            walkthrough_dict["tenant_signature_date"] = None
-            
-        if walkthrough_data.landlord_signature_date:
-            walkthrough_dict["landlord_signature_date"] = pd.Timestamp(walkthrough_data.landlord_signature_date)
-        else:
-            walkthrough_dict["landlord_signature_date"] = None
         logger.info(f"⏱️  [WALKTHROUGH] Prepared walkthrough dict: {time.time() - step_start:.3f}s")
         
         step_start = time.time()
@@ -925,7 +1126,6 @@ async def update_walkthrough(
                 "area_order": idx + 1,
                 "inspection_status": area_data.inspection_status,
                 "notes": area_data.notes,
-                "landlord_fix_notes": area_data.landlord_fix_notes,
                 "issues": [issue.model_dump() for issue in area_data.issues] if area_data.issues else [],
                 "photos": photos  # Preserve existing photos
             }
@@ -935,16 +1135,19 @@ async def update_walkthrough(
         logger.info(f"⏱️  [WALKTHROUGH] Prepared areas JSON ({len(areas_json_data)} areas): {time.time() - step_start:.3f}s")
         
         step_start = time.time()
-        # Update walkthrough using upsert - now includes areas_json
-        walkthrough_df = pd.DataFrame([walkthrough_dict])
-        schema_columns = [field.name for field in walkthroughs_table.schema().fields]
-        walkthrough_df = walkthrough_df.reindex(columns=schema_columns, fill_value=None)
+        # Build DataFrame with fields in correct order
+        ordered_dict = {}
+        for field in WALKTHROUGHS_FIELD_ORDER:
+            if field in walkthrough_dict:
+                ordered_dict[field] = walkthrough_dict[field]
+        
+        walkthrough_df = pd.DataFrame([ordered_dict])
         logger.info(f"⏱️  [WALKTHROUGH] Prepared walkthrough DataFrame: {time.time() - step_start:.3f}s")
         
         step_start = time.time()
-        from app.core.iceberg import upsert_data
-        upsert_data(NAMESPACE, WALKTHROUGHS_TABLE, walkthrough_df, join_cols=["id"])
-        logger.info(f"⏱️  [WALKTHROUGH] Upserted walkthrough (with areas_json): {time.time() - step_start:.3f}s")
+        # Use walkthroughs-specific update function
+        update_walkthrough_data(str(walkthrough_id), walkthrough_df)
+        logger.info(f"⏱️  [WALKTHROUGH] Updated walkthrough (delete+append): {time.time() - step_start:.3f}s")
         
         # Build area responses from JSON data
         area_responses = []
@@ -957,7 +1160,6 @@ async def update_walkthrough(
                 area_order=area_json["area_order"],
                 inspection_status=area_json["inspection_status"],
                 notes=area_json.get("notes"),
-                landlord_fix_notes=area_json.get("landlord_fix_notes"),
                 issues=[WalkthroughAreaIssue(**issue) for issue in area_json.get("issues", [])] if area_json.get("issues") else [],
                 photos=area_json.get("photos", []),
                 created_at=now.to_pydatetime(),
@@ -976,23 +1178,21 @@ async def update_walkthrough(
         
         return WalkthroughResponse(
             id=walkthrough_id,
-            user_id=user_id,
             property_id=walkthrough_data.property_id,
             unit_id=walkthrough_data.unit_id if walkthrough_data.unit_id else None,
             property_display_name=property_display_name,
             unit_number=unit_number,
             walkthrough_type=walkthrough_data.walkthrough_type,
-            walkthrough_date=walkthrough_dict["walkthrough_date"].to_pydatetime(),
-            inspector_name=walkthrough_data.inspector_name,
+            walkthrough_date=walkthrough_dict["walkthrough_date"],
+            inspector_name=walkthrough_data.inspector_name or "Sarah Pappas, Member S&M Axios Heartland Holdings LLC",
             tenant_name=walkthrough_data.tenant_name,
+            tenant_signature_date=walkthrough_dict["tenant_signature_date"] if walkthrough_dict.get("tenant_signature_date") and pd.notna(walkthrough_dict["tenant_signature_date"]) else None,
+            landlord_signature_date=walkthrough_dict["landlord_signature_date"] if walkthrough_dict.get("landlord_signature_date") and pd.notna(walkthrough_dict["landlord_signature_date"]) else None,
             notes=walkthrough_data.notes,
             status=walkthrough_dict["status"],
-            tenant_signature=None,
-            tenant_signature_date=walkthrough_dict["tenant_signature_date"].to_pydatetime() if walkthrough_dict.get("tenant_signature_date") and pd.notna(walkthrough_dict["tenant_signature_date"]) else None,
-            landlord_signature=None,
-            landlord_signature_date=walkthrough_dict["landlord_signature_date"].to_pydatetime() if walkthrough_dict.get("landlord_signature_date") and pd.notna(walkthrough_dict["landlord_signature_date"]) else None,
-            areas=area_responses,
+            generated_pdf_blob_name=walkthrough_dict.get("generated_pdf_blob_name"),
             pdf_url=pdf_url,
+            areas=area_responses,
             created_at=walkthrough_dict["created_at"].to_pydatetime(),
             updated_at=walkthrough_dict["updated_at"].to_pydatetime()
         )
@@ -1038,10 +1238,9 @@ async def delete_walkthrough(
             logger.warning(f"Delete attempt: Walkthrough {walkthrough_id} already deleted")
             raise HTTPException(status_code=404, detail="Walkthrough not found")
         
-        # Verify ownership
-        if walkthrough["user_id"] != user_id:
-            logger.warning(f"Delete attempt: Walkthrough {walkthrough_id} unauthorized for user {user_id}")
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify property access
+        user_email = current_user["email"]
+        property_data = _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
         
         # HARD DELETE: Remove all rows for this walkthrough ID from Iceberg
         from app.core.iceberg import get_catalog
@@ -1089,9 +1288,9 @@ async def get_walkthrough(
         
         walkthrough = walkthroughs_df.iloc[0]
         
-        # Verify ownership
-        if walkthrough["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify property access (ownership or sharing)
+        user_email = current_user["email"]
+        _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
         
         # Get areas - prefer areas_json (new format) over separate table (legacy)
         area_responses = []
@@ -1114,12 +1313,12 @@ async def get_walkthrough(
                                 try:
                                     photo_url = document_service.get_document_download_url(
                                         UUIDType(photo_data["document_id"]),
-                                        UUIDType(walkthrough["user_id"])
+                                        UUIDType(user_id)
                                     )
                                     if not blob_name:
                                         doc = document_service.get_document(
                                             UUIDType(photo_data["document_id"]),
-                                            UUIDType(walkthrough["user_id"])
+                                            UUIDType(user_id)
                                         )
                                         if doc:
                                             blob_name = doc.get("blob_name", "")
@@ -1145,7 +1344,6 @@ async def get_walkthrough(
                         area_order=area_data.get("area_order", 0),
                         inspection_status=area_data.get("inspection_status", "no_issues"),
                         notes=area_data.get("notes"),
-                        landlord_fix_notes=area_data.get("landlord_fix_notes"),
                         issues=[WalkthroughAreaIssue(**issue) for issue in area_data.get("issues", [])],
                         photos=photos,
                         created_at=pd.Timestamp(walkthrough["created_at"]).to_pydatetime(),
@@ -1193,13 +1391,13 @@ async def get_walkthrough(
                                 try:
                                     photo_url = document_service.get_document_download_url(
                                         UUIDType(photo_data["document_id"]),
-                                        UUIDType(walkthrough["user_id"])
+                                        UUIDType(user_id)
                                     )
                                     # Get blob_name from document if not already present
                                     if not blob_name:
                                         doc = document_service.get_document(
                                             UUIDType(photo_data["document_id"]),
-                                            UUIDType(walkthrough["user_id"])
+                                            UUIDType(user_id)
                                         )
                                         if doc:
                                             blob_name = doc.get("blob_name", "")
@@ -1228,7 +1426,6 @@ async def get_walkthrough(
                     area_order=int(area.get("area_order", 0)),
                     inspection_status=area.get("inspection_status", "no_issues"),
                     notes=area.get("notes"),
-                    landlord_fix_notes=area.get("landlord_fix_notes"),
                     issues=issues,
                     photos=photos,
                     created_at=pd.Timestamp(area["created_at"]).to_pydatetime(),
@@ -1241,7 +1438,6 @@ async def get_walkthrough(
         
         return WalkthroughResponse(
             id=UUID(walkthrough["id"]),
-            user_id=walkthrough["user_id"],
             property_id=UUID(walkthrough["property_id"]),
             unit_id=UUID(walkthrough["unit_id"]) if walkthrough.get("unit_id") else None,
             property_display_name=walkthrough.get("property_display_name"),
@@ -1250,9 +1446,7 @@ async def get_walkthrough(
             walkthrough_date=pd.Timestamp(walkthrough["walkthrough_date"]).date(),
             inspector_name=walkthrough.get("inspector_name"),
             tenant_name=walkthrough.get("tenant_name"),
-            tenant_signed=bool(walkthrough.get("tenant_signed", False)),
             tenant_signature_date=pd.Timestamp(walkthrough["tenant_signature_date"]).date() if walkthrough.get("tenant_signature_date") else None,
-            landlord_signed=bool(walkthrough.get("landlord_signed", False)),
             landlord_signature_date=pd.Timestamp(walkthrough["landlord_signature_date"]).date() if walkthrough.get("landlord_signature_date") else None,
             notes=walkthrough.get("notes"),
             status=walkthrough["status"],

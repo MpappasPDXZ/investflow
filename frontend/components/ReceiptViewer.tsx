@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/api-client';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -66,13 +67,14 @@ export function ReceiptViewer({
       try {
         let response: { download_url: string };
         
-        if (expenseId) {
-          response = await apiClient.get<{ download_url: string }>(
-            `/expenses/${expenseId}/receipt`
-          );
-        } else if (documentId) {
+        // Prefer documentId over expenseId (more direct, doesn't require expense to exist)
+        if (documentId) {
           response = await apiClient.get<{ download_url: string }>(
             `/documents/${documentId}/download`
+          );
+        } else if (expenseId) {
+          response = await apiClient.get<{ download_url: string }>(
+            `/expenses/${expenseId}/receipt`
           );
         } else {
           throw new Error('No expense ID or document ID provided');
@@ -109,9 +111,10 @@ export function ReceiptViewer({
   // Handle proxy download
   const handleDownload = async () => {
     try {
-      const endpoint = expenseId 
-        ? `/expenses/${expenseId}/receipt/proxy`
-        : `/documents/${documentId}/proxy`;
+      // Prefer documentId over expenseId (more direct, doesn't require expense to exist)
+      const endpoint = documentId
+        ? `/documents/${documentId}/proxy`
+        : `/expenses/${expenseId}/receipt/proxy`;
       
       // Get token from localStorage (same way apiClient does)
       const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -141,7 +144,8 @@ export function ReceiptViewer({
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename;
+      // Don't set a.download for IE compatibility - proxy endpoint already sets Content-Disposition header
+      // which forces download in all browsers including IE
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -177,6 +181,9 @@ export function ReceiptViewer({
         <DialogContent className="max-w-5xl w-[95vw] h-[90vh] md:h-[85vh] flex flex-col p-0 gap-0 [&>button]:hidden">
           {/* Header - Responsive with X button at far right */}
           <DialogHeader className="px-4 md:px-6 py-3 md:py-4 border-b bg-gray-50 shrink-0">
+            <DialogDescription className="sr-only">
+              View and download receipt document
+            </DialogDescription>
             <div className="flex items-center justify-between gap-3">
               <DialogTitle className="flex items-center gap-2 text-base md:text-lg font-semibold truncate">
                 <FileText className="h-5 w-5 shrink-0" />

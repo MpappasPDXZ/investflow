@@ -22,8 +22,8 @@ export interface LeaseCreate {
   unit_id?: string;
   state: 'NE' | 'MO';
   lease_date?: string; // Date lease is entered into (signing date)
-  commencement_date: string;
-  termination_date: string;
+  lease_start: string;
+  lease_end: string;
   lease_duration_months?: number;
   monthly_rent: number;
   security_deposit: number;
@@ -85,12 +85,12 @@ export interface LeaseCreate {
   tenant_snow_removal?: boolean;
   tenant_lawn_care?: boolean;
   lead_paint_disclosure?: boolean;
-  lead_paint_year_built?: number;
+  disclosure_lead_paint?: number;
   early_termination_allowed?: boolean;
   early_termination_notice_days?: number;
   early_termination_fee_months?: number;
   moveout_costs?: MoveOutCostItem[];
-  methamphetamine_disclosure?: boolean;
+  disclosure_methamphetamine?: boolean;
   owner_name?: string;
   owner_address?: string;
   manager_name?: string;
@@ -114,6 +114,16 @@ export interface LeaseCreate {
   signed_date?: string;
 }
 
+export interface PropertySummary {
+  id: string;
+  display_name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  year_built?: number;
+}
+
 export interface Lease extends LeaseCreate {
   id: string;
   user_id: string;
@@ -124,6 +134,11 @@ export interface Lease extends LeaseCreate {
   updated_at: string;
   pdf_url?: string;
   latex_url?: string;
+  property?: PropertySummary;
+  unit_id?: string;
+  // Dates may be date strings or Date objects
+  lease_start?: string | Date;
+  lease_end?: string | Date;
 }
 
 export interface LeaseListResponse {
@@ -131,14 +146,111 @@ export interface LeaseListResponse {
   total: number;
 }
 
+// Backend field order (matching EXACT Iceberg table schema order from terminal output)
+// Note: This excludes id, created_at, updated_at, is_active, lease_number, lease_version, generated_pdf_document_id, template_used
+// which are handled by the backend automatically
+// Exact order from terminal (lines 47-112):
+// id, property_id, unit_id, status, state, lease_date, lease_start, lease_end, monthly_rent, rent_due_by_time,
+// payment_method, prorated_first_month_rent, late_fee_day_1_10, late_fee_day_11, late_fee_day_16, late_fee_day_21,
+// nsf_fee, security_deposit, holding_fee_amount, holding_fee_date, utilities_tenant, utilities_landlord,
+// pet_fee, pet_description, garage_spaces, key_replacement_fee, shared_driveway_with, garage_door_opener_fee,
+// appliances_provided, early_termination_fee_amount, moveout_costs, owner_name, manager_name, manager_address,
+// generated_pdf_document_id, template_used, tenants, notes, auto_convert_month_to_month, show_prorated_rent,
+// include_holding_fee_addendum, has_shared_driveway, tenant_lawn_mowing, tenant_snow_removal, tenant_lawn_care,
+// has_garage_door_opener, lead_paint_disclosure, early_termination_allowed, disclosure_methamphetamine, is_active,
+// lease_number, lease_version, rent_due_day, rent_due_by_day, max_occupants, max_adults, offstreet_parking_spots,
+// front_door_keys, back_door_keys, garage_back_door_keys, disclosure_lead_paint, early_termination_notice_days,
+// early_termination_fee_months, created_at, updated_at
+const LEASES_FIELD_ORDER = [
+  "property_id", "unit_id",
+  "status", "state",
+  "lease_date", "lease_start", "lease_end",
+  "monthly_rent", "rent_due_by_time",
+  "payment_method",
+  "prorated_first_month_rent",
+  "late_fee_day_1_10", "late_fee_day_11", "late_fee_day_16", "late_fee_day_21",
+  "nsf_fee",
+  "security_deposit",
+  "holding_fee_amount", "holding_fee_date",
+  "utilities_tenant", "utilities_landlord",
+  "pet_fee", "pets", // Changed from pet_description to pets
+  "garage_spaces",
+  "key_replacement_fee",
+  "shared_driveway_with",
+  "garage_door_opener_fee",
+  "appliances_provided",
+  "early_termination_fee_amount",
+  "moveout_costs",
+  "owner_name", "manager_name", "manager_address",
+  "tenants",
+  "notes",
+  "auto_convert_month_to_month",
+  "show_prorated_rent",
+  "include_holding_fee_addendum",
+  "has_shared_driveway",
+  "tenant_lawn_mowing", "tenant_snow_removal", "tenant_lawn_care",
+  "has_garage_door_opener",
+  "lead_paint_disclosure",
+  "early_termination_allowed",
+  "disclosure_methamphetamine",
+  "rent_due_day",
+  "rent_due_by_day",
+  "max_occupants", "max_adults",
+  "offstreet_parking_spots",
+  "front_door_keys", "back_door_keys", "garage_back_door_keys",
+  "disclosure_lead_paint",
+  "early_termination_notice_days",
+  "early_termination_fee_months",
+];
+
 export function useLeases() {
   const createLease = async (leaseData: LeaseCreate): Promise<Lease> => {
-    const response = await apiClient.post('/leases', leaseData);
+    // Build ordered payload respecting backend field order
+    const orderedPayload: any = {};
+    
+    // Add fields in exact backend order
+    for (const field of LEASES_FIELD_ORDER) {
+      if (leaseData.hasOwnProperty(field) && leaseData[field as keyof LeaseCreate] !== undefined) {
+        orderedPayload[field] = leaseData[field as keyof LeaseCreate];
+      }
+    }
+    
+    // Add any remaining fields not in the order list (for backward compatibility)
+    for (const key in leaseData) {
+      if (!LEASES_FIELD_ORDER.includes(key) && !orderedPayload.hasOwnProperty(key)) {
+        orderedPayload[key] = leaseData[key as keyof LeaseCreate];
+      }
+    }
+    
+    console.log('📝 [LEASE] Creating lease with ordered payload:', orderedPayload);
+    console.log('📝 [LEASE] Payload field order:', Object.keys(orderedPayload));
+    
+    const response = await apiClient.post('/leases', orderedPayload);
     return response as Lease;
   };
 
   const updateLease = async (leaseId: string, leaseData: Partial<LeaseCreate>): Promise<Lease> => {
-    const response = await apiClient.put(`/leases/${leaseId}`, leaseData);
+    // Build ordered payload respecting backend field order
+    const orderedPayload: any = {};
+    
+    // Add fields in exact backend order
+    for (const field of LEASES_FIELD_ORDER) {
+      if (leaseData.hasOwnProperty(field) && leaseData[field as keyof LeaseCreate] !== undefined) {
+        orderedPayload[field] = leaseData[field as keyof LeaseCreate];
+      }
+    }
+    
+    // Add any remaining fields not in the order list (for backward compatibility)
+    for (const key in leaseData) {
+      if (!LEASES_FIELD_ORDER.includes(key) && !orderedPayload.hasOwnProperty(key)) {
+        orderedPayload[key] = leaseData[key as keyof LeaseCreate];
+      }
+    }
+    
+    console.log('📝 [LEASE] Updating lease with ordered payload:', orderedPayload);
+    console.log('📝 [LEASE] Payload field order:', Object.keys(orderedPayload));
+    
+    const response = await apiClient.put(`/leases/${leaseId}`, orderedPayload);
     return response as Lease;
   };
 
@@ -163,9 +275,9 @@ export function useLeases() {
     return response as Lease;
   };
 
-  const generatePDF = async (id: string, regenerate = false): Promise<{ pdf_url: string; latex_url: string }> => {
+  const generatePDF = async (id: string, regenerate = false): Promise<{ pdf_url: string; latex_url: string; holding_fee_pdf_url?: string }> => {
     const response = await apiClient.post(`/leases/${id}/generate-pdf`, { regenerate });
-    return response as { pdf_url: string; latex_url: string };
+    return response as { pdf_url: string; latex_url: string; holding_fee_pdf_url?: string };
   };
 
   const deleteLease = async (id: string) => {

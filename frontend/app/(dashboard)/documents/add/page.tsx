@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useProperties } from '@/lib/hooks/use-properties';
 import { useUnits } from '@/lib/hooks/use-units';
@@ -37,14 +37,14 @@ export default function AddDocumentPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: propertiesData } = useProperties();
-  const { data: tenantsData } = useTenants();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('unassigned');
+  const propertyIdFromUrl = searchParams.get('property_id') || '';
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>(propertyIdFromUrl);
   const [formData, setFormData] = useState({
-    property_id: 'unassigned',
+    property_id: propertyIdFromUrl,
     unit_id: '',
     tenant_id: '',
     display_name: '',
@@ -54,17 +54,28 @@ export default function AddDocumentPage() {
   const [filePreview, setFilePreview] = useState<string | null>(null);
 
   const properties = propertiesData?.items || [];
+  
+  // Fetch tenants for selected property
+  const { data: tenantsData } = useTenants(
+    selectedPropertyId ? { property_id: selectedPropertyId } : undefined
+  );
   const tenants = tenantsData?.tenants || [];
   
   // Fetch units for selected property
-  const { data: unitsData } = useUnits(selectedPropertyId === 'unassigned' ? '' : selectedPropertyId);
-  const units = unitsData?.items || [];
+  const { data: unitsData } = useUnits(selectedPropertyId || '');
+  const allUnits = unitsData?.items || [];
+  
+  // Get units for the currently selected property in the form (for multi-family properties)
+  const formPropertyUnits = useMemo(() => {
+    if (!formData.property_id) return [];
+    return allUnits.filter(u => u.property_id === formData.property_id);
+  }, [allUnits, formData.property_id]);
 
   // Update selectedPropertyId when formData.property_id changes
   useEffect(() => {
     setSelectedPropertyId(formData.property_id);
-    // Reset unit_id when property changes
-    setFormData(prev => ({ ...prev, unit_id: '' }));
+    // Reset unit_id and tenant_id when property changes
+    setFormData(prev => ({ ...prev, unit_id: '', tenant_id: '' }));
   }, [formData.property_id]);
 
   // Create preview for selected file
@@ -127,13 +138,15 @@ export default function AddDocumentPage() {
     setLoading(true);
 
     try {
+      if (!formData.property_id || formData.property_id === 'unassigned') {
+        setError('Please select a property');
+        return;
+      }
+
       const uploadFormData = new FormData();
       uploadFormData.append('file', file);
       uploadFormData.append('document_type', formData.document_type);
-      
-      if (formData.property_id && formData.property_id !== 'unassigned') {
-        uploadFormData.append('property_id', formData.property_id);
-      }
+      uploadFormData.append('property_id', formData.property_id);
       
       if (formData.display_name.trim()) {
         uploadFormData.append('display_name', formData.display_name.trim());
@@ -149,7 +162,7 @@ export default function AddDocumentPage() {
 
       await apiClient.upload('/documents/upload', uploadFormData);
       
-      router.push('/documents');
+      router.push(`/documents?property_id=${formData.property_id}`);
     } catch (err) {
       console.error('Error uploading document:', err);
       setError((err as Error).message || 'Failed to upload document');
@@ -253,6 +266,45 @@ export default function AddDocumentPage() {
 
             {/* Form Fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Property Selection - First and Required */}
+              <div>
+                <Label htmlFor="property_id" className="text-xs md:text-sm">Property *</Label>
+                <select
+                  id="property_id"
+                  value={formData.property_id}
+                  onChange={(e) => setFormData({ ...formData, property_id: e.target.value })}
+                  required
+                  className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px]"
+                >
+                  <option value="">Select a property...</option>
+                  {properties.map((prop) => (
+                    <option key={prop.id} value={prop.id}>
+                      {prop.display_name || prop.address_line1 || 'Property'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Unit Selection - Only show if property has units (multi-family) */}
+              {formData.property_id && formPropertyUnits.length > 0 && (
+                <div>
+                  <Label htmlFor="unit_id" className="text-xs md:text-sm">Unit (optional)</Label>
+                  <select
+                    id="unit_id"
+                    value={formData.unit_id}
+                    onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
+                    className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px]"
+                  >
+                    <option value="">None</option>
+                    {formPropertyUnits.map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.unit_number}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
               <div>
                 <Label htmlFor="document_type" className="text-xs md:text-sm">Document Type *</Label>
                 <select
@@ -282,41 +334,6 @@ export default function AddDocumentPage() {
                   {tenants.map((tenant) => (
                     <option key={tenant.id} value={tenant.id}>
                       {tenant.first_name} {tenant.last_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <Label htmlFor="property_id" className="text-xs md:text-sm">Property (optional)</Label>
-                <select
-                  id="property_id"
-                  value={formData.property_id}
-                  onChange={(e) => setFormData({ ...formData, property_id: e.target.value })}
-                  className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px]"
-                >
-                  <option value="unassigned">None</option>
-                  {properties.map((prop) => (
-                    <option key={prop.id} value={prop.id}>
-                      {prop.display_name || prop.address_line1 || 'Property'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <Label htmlFor="unit_id" className="text-xs md:text-sm">Unit (optional)</Label>
-                <select
-                  id="unit_id"
-                  value={formData.unit_id}
-                  onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
-                  disabled={!selectedPropertyId || selectedPropertyId === 'unassigned' || units.length === 0}
-                  className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px] disabled:bg-gray-100 disabled:cursor-not-allowed"
-                >
-                  <option value="">None</option>
-                  {units.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.unit_number}
                     </option>
                   ))}
                 </select>

@@ -206,11 +206,11 @@ class WalkthroughGeneratorService:
                 area_name = self._escape_latex(area.get("area_name", ""))
                 inspection_status = area.get("inspection_status", "no_issues")
                 area_notes = area.get("notes", "") or ""
-                landlord_fix_notes = area.get("landlord_fix_notes", "") or ""
                 
                 # Determine status color and label
+                # Colors: red, investflow blue, yellowish orange, black gray (no green)
                 if inspection_status == "no_issues":
-                    status_color = "statusgreen"
+                    status_color = "brandblue"
                     status_label = "No Issues"
                 elif inspection_status == "issue_noted_as_is":
                     status_color = "statusorange"
@@ -243,8 +243,29 @@ class WalkthroughGeneratorService:
                                     if photo_url:
                                         response = requests.get(photo_url, timeout=10)
                                         if response.status_code == 200:
+                                            # Fix image orientation for LaTeX (LaTeX ignores EXIF tags)
+                                            # Use PIL to physically rotate pixels to match EXIF orientation
+                                            try:
+                                                from PIL import Image, ImageOps
+                                                from io import BytesIO
+                                                
+                                                # Open image from downloaded bytes
+                                                img = Image.open(BytesIO(response.content))
+                                                # Apply EXIF transpose to physically rotate pixels
+                                                corrected_img = ImageOps.exif_transpose(img)
+                                                
+                                                # Save corrected image to bytes
+                                                output = BytesIO()
+                                                corrected_img.save(output, format='JPEG', quality=95)
+                                                corrected_bytes = output.getvalue()
+                                            except Exception as e:
+                                                # If PIL fails, use original bytes
+                                                logger = self._get_logger()
+                                                logger.warning(f"Could not fix image orientation for photo {photo_id}: {e}, using original")
+                                                corrected_bytes = response.content
+                                            
                                             photo_filename = f"photo_{area.get('area_order', 0)}_{idx}.jpg"
-                                            photo_files[photo_filename] = response.content
+                                            photo_files[photo_filename] = corrected_bytes
                                             photo_list.append(photo_filename)
                                 except Exception as e:
                                     logger = self._get_logger()
@@ -252,22 +273,17 @@ class WalkthroughGeneratorService:
                                     continue
                             
                             # Layout photos - if photos exist, show them centered
+                            # Use only width to preserve actual image orientation (portrait/landscape)
                             if photo_list:
                                 photos_latex = "\\\\[6pt]"
                                 for photo_file in photo_list:
-                                    photos_latex += f"\\includegraphics[width=0.28\\linewidth,height=0.2\\textheight,keepaspectratio]{{{photo_file}}} \\hspace{{4pt}}"
+                                    photos_latex += f"\\includegraphics[width=0.28\\linewidth,keepaspectratio]{{{photo_file}}} \\hspace{{4pt}}"
                     except Exception as e:
                         logger = self._get_logger()
                         logger.warning(f"Error processing photos for area {area_name}: {e}")
                 
-                # Build notes text
-                notes_text = ""
-                if area_notes:
-                    notes_text = self._escape_latex(area_notes)
-                if landlord_fix_notes:
-                    if notes_text:
-                        notes_text += " "
-                    notes_text += f"\\textbf{{[Landlord to Fix:]}} {self._escape_latex(landlord_fix_notes)}"
+                # Build notes text (single notes field)
+                notes_text = self._escape_latex(area_notes) if area_notes else ""
                 
                 # Build area row - using card style
                 if notes_text or photos_latex:
@@ -337,9 +353,8 @@ class WalkthroughGeneratorService:
 \\setlength{{\\parindent}}{{0pt}}
 \\setlength{{\\parskip}}{{4pt}}
 
-% Define colors
+% Define colors - only red, investflow blue, yellowish orange, black gray (no green)
 \\definecolor{{brandblue}}{{RGB}}{{37, 99, 235}}
-\\definecolor{{statusgreen}}{{RGB}}{{34, 139, 34}}
 \\definecolor{{statusorange}}{{RGB}}{{255, 140, 0}}
 \\definecolor{{statusred}}{{RGB}}{{220, 53, 69}}
 \\definecolor{{lightgray}}{{RGB}}{{245, 247, 250}}
@@ -411,7 +426,7 @@ class WalkthroughGeneratorService:
     bottom=12pt
 ]
 \\begin{{center}}
-\\statuscircle{{statusgreen}}\\\\[6pt]
+\\statuscircle{{brandblue}}\\\\[6pt]
 {{\\Huge\\bfseries {no_issues_count}}}\\\\[6pt]
 \\textcolor{{textgray}}{{\\small No Issues}}
 \\end{{center}}

@@ -92,34 +92,34 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {/* Total Revenue */}
             <div className="flex justify-between items-center py-1.5 border-b">
               <span className="text-xs text-gray-600">Total Revenue</span>
-              <span className="text-xs font-medium text-gray-900">{formatCurrency(performance.ytd_total_revenue || 0)}</span>
+              <span className="text-xs text-gray-900">{formatCurrency(performance.ytd_total_revenue || 0)}</span>
             </div>
             
             {/* IRS Revenue */}
             <div className="flex justify-between items-center py-1.5 border-b">
               <span className="text-xs text-gray-600">IRS Revenue</span>
-              <span className="text-xs font-medium text-blue-900">{formatCurrency(performance.ytd_rent)}</span>
+              <span className="text-xs text-gray-900">{formatCurrency(performance.ytd_rent)}</span>
             </div>
             
             {/* YTD Cost */}
-            <div className="flex justify-between items-center py-1.5 border-t border-b font-medium">
-              <span className="text-xs text-gray-700">YTD Cost</span>
-              <span className="text-xs text-red-600">({formatCurrency(performance.ytd_expenses)})</span>
+            <div className="flex justify-between items-center py-1.5 border-t border-b">
+              <span className="text-xs text-gray-600">YTD Cost</span>
+              <span className="text-xs text-gray-900">({formatCurrency(performance.ytd_expenses)})</span>
             </div>
             
             {/* YTD IRS Profit / Loss */}
             <div className={`flex justify-between items-center p-2 rounded mt-2 ${
               performance.ytd_profit_loss >= 0
-                ? 'bg-green-50 border border-green-200'
+                ? 'bg-blue-50 border border-blue-200'
                 : 'bg-red-50 border border-red-200'
             }`}>
               <span className={`text-xs font-bold ${
-                performance.ytd_profit_loss >= 0 ? 'text-green-700' : 'text-red-700'
+                performance.ytd_profit_loss >= 0 ? 'text-blue-600' : 'text-red-700'
               }`}>
                 YTD IRS Profit / (Loss)
               </span>
               <span className={`text-base font-bold ${
-                performance.ytd_profit_loss >= 0 ? 'text-green-900' : 'text-red-900'
+                performance.ytd_profit_loss >= 0 ? 'text-blue-600' : 'text-red-900'
               }`}>
                 {formatCurrency(performance.ytd_profit_loss)}
               </span>
@@ -136,7 +136,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {/* Rent Collected */}
             <div className="flex justify-between items-center py-1.5 border-b">
               <span className="text-xs text-gray-600">Rent Collected</span>
-              <span className="text-xs font-medium text-gray-900">{formatCurrency(performance.cumulative_rent)}</span>
+              <span className="text-xs text-gray-900">{formatCurrency(performance.cumulative_rent)}</span>
             </div>
             
             {/* Minus label */}
@@ -149,7 +149,15 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {performance.cumulative_piti > 0 && (
               <div className="flex justify-between items-center pl-4">
                 <span className="text-xs text-gray-600">PITI</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_piti)})</span>
+                <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_piti)})</span>
+              </div>
+            )}
+            
+            {/* Tax */}
+            {performance.cumulative_tax > 0 && (
+              <div className="flex justify-between items-center pl-4">
+                <span className="text-xs text-gray-600">Tax</span>
+                <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_tax)})</span>
               </div>
             )}
             
@@ -157,7 +165,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {performance.cumulative_utilities > 0 && (
               <div className="flex justify-between items-center pl-4">
                 <span className="text-xs text-gray-600">Utilities</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_utilities)})</span>
+                <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_utilities)})</span>
               </div>
             )}
             
@@ -165,7 +173,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {performance.cumulative_maintenance > 0 && (
               <div className="flex justify-between items-center pl-4">
                 <span className="text-xs text-gray-600">Maintenance</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_maintenance)})</span>
+                <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_maintenance)})</span>
               </div>
             )}
             
@@ -173,7 +181,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {performance.cumulative_capex > 0 && (
               <div className="flex justify-between items-center pl-4">
                 <span className="text-xs text-gray-600">CapEx</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_capex)})</span>
+                <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_capex)})</span>
               </div>
             )}
             
@@ -181,7 +189,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {performance.cumulative_insurance > 0 && (
               <div className="flex justify-between items-center pl-4">
                 <span className="text-xs text-gray-600">Insurance</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_insurance)})</span>
+                <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_insurance)})</span>
               </div>
             )}
             
@@ -189,7 +197,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {performance.cumulative_property_management > 0 && (
               <div className="flex justify-between items-center pl-4">
                 <span className="text-xs text-gray-600">Property Mgmt</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_property_management)})</span>
+                <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_property_management)})</span>
               </div>
             )}
             
@@ -197,14 +205,14 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {performance.cumulative_other > 0 && (
               <div className="flex justify-between items-center pl-4">
                 <span className="text-xs text-gray-600">Other</span>
-                <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_other)})</span>
+                <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_other)})</span>
               </div>
             )}
             
             {/* Total Expenses */}
-            <div className="flex justify-between items-center py-1.5 border-t border-b font-medium">
-              <span className="text-xs text-gray-700">Total Expenses</span>
-              <span className="text-xs text-red-600">({formatCurrency(performance.cumulative_expenses)})</span>
+            <div className="flex justify-between items-center py-1.5 border-t border-b">
+              <span className="text-xs text-gray-600">Total Expenses</span>
+              <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_expenses)})</span>
             </div>
             
             {/* Equals label */}
@@ -216,16 +224,16 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
             {/* Profit/Loss */}
             <div className={`flex justify-between items-center p-2 rounded ${
               performance.cumulative_profit_loss >= 0
-                ? 'bg-green-50 border border-green-200'
+                ? 'bg-blue-50 border border-blue-200'
                 : 'bg-red-50 border border-red-200'
             }`}>
               <span className={`text-xs font-bold ${
-                performance.cumulative_profit_loss >= 0 ? 'text-green-700' : 'text-red-700'
+                performance.cumulative_profit_loss >= 0 ? 'text-blue-700' : 'text-red-700'
               }`}>
                 Profit / (Loss)
               </span>
               <span className={`text-base font-bold ${
-                performance.cumulative_profit_loss >= 0 ? 'text-green-900' : 'text-red-900'
+                performance.cumulative_profit_loss >= 0 ? 'text-blue-900' : 'text-red-900'
               }`}>
                 {formatCurrency(performance.cumulative_profit_loss)}
               </span>
@@ -244,9 +252,9 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
 
             <div className="space-y-3">
               {/* Main Value */}
-              <div className="flex justify-between items-center pb-2 border-b">
-                <span className="text-xs text-gray-600">Cash on Cash %</span>
-                <span className="text-xl font-bold text-purple-900">{formatPercent(performance.cash_on_cash)}</span>
+              <div className="flex justify-between items-center p-2 rounded bg-blue-50 border border-blue-200">
+                <span className="text-xs font-bold text-blue-700">Cash on Cash %</span>
+                <span className="text-xl font-bold text-blue-900">{formatPercent(performance.cash_on_cash)}</span>
               </div>
               
               {/* Formula Breakdown with Actual Values */}
@@ -255,9 +263,10 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
                 <div>• <strong>Annual Rent</strong> = YTD Rent Annualized ({formatCurrency(performance.ytd_rent)})</div>
                 <div>• <strong>Vacancy (Lost Rent)</strong> = Calculated in vacancy expenses</div>
                 <div>• <strong>Adjusted Rent</strong> = Annual Rent - Vacancy</div>
-                <div>• <strong>Annual Expenses</strong> = Tax & Ins + CapEx + Maintenance + Vacancy Costs + P&I ({formatCurrency(performance.ytd_expenses)})</div>
+                <div>• <strong>Annual Expenses</strong> = Tax + Ins + CapEx + Maintenance + Vacancy Costs + P&I ({formatCurrency(performance.ytd_expenses)})</div>
                 <div className="ml-4 text-[9px] text-gray-500">
-                  Tax & Ins ({formatCurrency(performance.ytd_insurance)}) + 
+                  Tax ({formatCurrency(performance.ytd_tax || 0)}) + 
+                  Ins ({formatCurrency(performance.ytd_insurance)}) + 
                   CapEx ({formatCurrency(performance.ytd_capex)}) + 
                   Maintenance ({formatCurrency(performance.ytd_maintenance)}) + 
                   Vacancy/Utilities ({formatCurrency(performance.ytd_utilities)}) + 
@@ -269,7 +278,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
                   <strong>• Cash on Cash % = Cash Flow ÷ Cash Invested × 100%</strong>
                 </div>
                 <div className="ml-4 text-[9px] text-gray-600 italic">
-                  = {formatCurrency(performance.ytd_profit_loss)} ÷ Cash Invested × 100% = {formatPercent(performance.cash_on_cash)}
+                  = {formatCurrency(performance.ytd_profit_loss)} ÷ {performance.cash_invested ? formatCurrency(performance.cash_invested) : '(Cash Invested not set)'} × 100% = {formatPercent(performance.cash_on_cash)}
                 </div>
                 <div className="mt-2 pt-2 border-t border-gray-300">
                   <div className="text-[9px] text-gray-500 italic">

@@ -3,32 +3,34 @@
  */
 
 export interface Property {
-  id: string;
-  user_id: string;
-  display_name?: string;
-  purchase_price: number;
-  purchase_date?: string;
-  down_payment?: number;
-  cash_invested?: number;
-  current_market_value?: number;
-  property_status?: 'own' | 'evaluating' | 'rehabbing' | 'listed_for_rent' | 'listed_for_sale' | 'sold' | 'hide';
-  vacancy_rate?: number;
-  monthly_rent_to_income_ratio?: number;
-  address_line1?: string;
-  address_line2?: string;
-  city?: string;
-  state?: string;
-  zip_code?: string;
-  property_type?: string;
-  bedrooms?: number;
-  bathrooms?: number;
-  square_feet?: number;
-  year_built?: number;
-  current_monthly_rent?: number;
-  notes?: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  id: string; // Iceberg: string (UUID)
+  user_id: string; // Iceberg: string (UUID)
+  display_name?: string; // Iceberg: string
+  purchase_price: number; // Iceberg: int64 (no decimals allowed)
+  purchase_date?: string; // Iceberg: date32 (ISO date string)
+  down_payment?: number; // Iceberg: int64 (no decimals allowed)
+  cash_invested?: number; // Iceberg: int64 (no decimals allowed)
+  current_market_value?: number; // Iceberg: int64 (no decimals allowed)
+  property_status?: 'own' | 'evaluating' | 'rehabbing' | 'listed_for_rent' | 'listed_for_sale' | 'sold' | 'rented' | 'hide'; // Iceberg: string
+  vacancy_rate?: number; // Iceberg: float64 (decimals allowed)
+  monthly_rent_to_income_ratio?: number; // Iceberg: decimal128(4, 2) (decimals allowed)
+  address_line1?: string; // Iceberg: string
+  address_line2?: string; // Iceberg: string
+  city?: string; // Iceberg: string
+  state?: string; // Iceberg: string
+  zip_code?: string; // Iceberg: string
+  property_type?: string; // Iceberg: string
+  unit_count?: number; // Iceberg: int64 (no decimals allowed)
+  bedrooms?: number; // Iceberg: int64 (no decimals allowed)
+  bathrooms?: number; // Iceberg: float64 (decimals allowed, e.g., 1.5, 2.5)
+  square_feet?: number; // Iceberg: int64 (no decimals allowed)
+  year_built?: number; // Iceberg: int64 (no decimals allowed)
+  current_monthly_rent?: number; // Iceberg: float64 (decimals allowed)
+  notes?: string; // Iceberg: string
+  has_units?: boolean; // Iceberg: bool
+  is_active: boolean; // Iceberg: bool
+  created_at: string; // Iceberg: timestamp (ISO datetime string)
+  updated_at: string; // Iceberg: timestamp (ISO datetime string)
 }
 
 export interface Expense {
@@ -39,12 +41,11 @@ export interface Expense {
   date: string; // ISO date string
   amount: number;
   vendor?: string;
-  expense_type: 'capex' | 'rehab' | 'pandi' | 'utilities' | 'maintenance' | 'insurance' | 'property_management' | 'other';
+  expense_type: 'capex' | 'rehab' | 'pandi' | 'tax' | 'utilities' | 'maintenance' | 'insurance' | 'property_management' | 'other';
   expense_category?: 'co_equip' | 'rent_equip' | 'equip_maint' | 'small_tools' | 'bulk_comm' | 'eng_equip' | 'subs' | 'other';
   document_storage_id?: string;
-  is_planned: boolean;
   notes?: string;
-  created_by_user_id?: string;
+  has_receipt?: boolean; // Iceberg: bool (nullable)
   created_at: string;
   updated_at: string;
 }
@@ -106,20 +107,17 @@ export interface DocumentListResponse {
 // Tenant types
 export interface Tenant {
   id: string;
-  user_id: string;
+  user_id?: string;  // Optional, kept for audit
+  
+  // Property assignment (required)
+  property_id: string;  // Required
+  unit_id?: string;  // Optional, for multi-family
   
   // Personal Information
   first_name: string;
   last_name: string;
   email?: string;
   phone?: string;
-  phone_secondary?: string;
-  
-  // Identification
-  date_of_birth?: string;
-  ssn_last_four?: string;
-  drivers_license?: string;
-  drivers_license_state?: string;
   
   // Current Address
   current_address?: string;
@@ -129,46 +127,33 @@ export interface Tenant {
   
   // Employment
   employer_name?: string;
-  employer_phone?: string;
-  job_title?: string;
   monthly_income?: number;
-  employment_start_date?: string;
-  
-  // Emergency Contact
-  emergency_contact_name?: string;
-  emergency_contact_phone?: string;
-  emergency_contact_relationship?: string;
-  
-  // Screening Documents
-  background_check_document_id?: string;
-  application_document_id?: string;
   
   // Status
   status?: 'applicant' | 'approved' | 'current' | 'former' | 'rejected';
   notes?: string;
   
-  // Screening Results
-  background_check_date?: string;
-  background_check_status?: 'pass' | 'fail' | 'pending' | 'not_started';
-  credit_score?: number;
-  
-  // Rental History
-  has_evictions?: boolean;
-  eviction_details?: string;
-  previous_landlord_name?: string;
-  previous_landlord_phone?: string;
-  previous_landlord_contacted?: boolean;
-  previous_landlord_reference?: string;
-  
-  // Lease Assignment
-  property_id?: string;
-  unit_id?: string;
-  lease_id?: string;
+    // Screening Results
+    background_check_status?: 'pass' | 'fail' | 'pending' | 'not_started';
+    credit_score?: number;
+    
+    // Landlord References (JSON array)
+    landlord_references?: Array<{
+      landlord_name: string;
+      landlord_phone?: string;
+      landlord_email?: string;
+      property_address?: string;
+      contact_date?: string;
+      status?: 'pass' | 'fail' | 'no_info';
+      notes?: string;
+    }>;
+    
+    // Identification
+    date_of_birth?: string;  // Under background check and screening
   
   // Metadata
   created_at: string;
   updated_at: string;
-  is_deleted: boolean;
   landlord_references_passed?: number;
 }
 

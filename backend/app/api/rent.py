@@ -85,8 +85,6 @@ def _invalidate_financial_performance_cache(property_id: UUID, user_id: str, uni
 
 def build_rent_dict(
     rent_id: str,
-    user_id: str,
-    user_name: Optional[str],
     property_id: str,
     property_name: Optional[str],
     unit_id: Optional[str],
@@ -110,19 +108,20 @@ def build_rent_dict(
     document_storage_id: Optional[str],
     now: pd.Timestamp,
     existing_rent: Optional[pd.Series] = None,
-    is_update: bool = False
+    is_update: bool = False,
+    created_by_user_id: Optional[str] = None
 ) -> dict:
     """
-    Build rent dict for create or update operations.
+    Build rent dict for create or update operations (ordered by dtype to match Iceberg schema).
     
     Args:
         existing_rent: Optional existing rent record (for updates)
         is_update: If True, preserve created_at/created_by_user_id from existing_rent
+        created_by_user_id: User ID who created/updated the record
     """
     rent_dict = {
+        # STRING fields (in Iceberg order)
         "id": str(rent_id),
-        "user_id": str(user_id),
-        "user_name": user_name,
         "property_id": str(property_id),
         "property_name": property_name,
         "unit_id": str(unit_id) if unit_id else None,
@@ -130,27 +129,39 @@ def build_rent_dict(
         "tenant_id": str(tenant_id) if tenant_id else None,
         "tenant_name": tenant_name,
         "revenue_description": revenue_description,
-        "is_non_irs_revenue": is_non_irs_revenue,
-        "is_one_time_fee": is_one_time_fee,
+        "payment_method": payment_method if payment_method else None,
+        "transaction_reference": transaction_reference,
+        "notes": notes,
+        "document_storage_id": document_storage_id,
+        "created_by_user_id": created_by_user_id,
+        
+        # DECIMAL128 fields (in Iceberg order)
         "amount": amount,
+        "late_fee": Decimal(str(late_fee)) if late_fee else None,
+        
+        # INT32 fields (in Iceberg order)
         "rent_period_month": rent_period_month,
         "rent_period_year": rent_period_year,
+        
+        # DATE32 fields (in Iceberg order)
         "rent_period_start": parse_date_midday(rent_period_start),
         "rent_period_end": parse_date_midday(rent_period_end),
         "payment_date": parse_date_midday(payment_date),
-        "payment_method": payment_method if payment_method else None,
-        "transaction_reference": transaction_reference,
+        
+        # BOOLEAN fields (in Iceberg order)
+        "is_non_irs_revenue": is_non_irs_revenue,
+        "is_one_time_fee": is_one_time_fee,
         "is_late": is_late if is_late else False,
-        "late_fee": Decimal(str(late_fee)) if late_fee else None,
-        "notes": notes,
-        "document_storage_id": document_storage_id,
+        
+        # TIMESTAMP fields (in Iceberg order)
         "updated_at": now,
     }
     
     if is_update and existing_rent is not None:
         # Preserve created_at and created_by_user_id for updates
         rent_dict["created_at"] = existing_rent.get("created_at")
-        rent_dict["created_by_user_id"] = existing_rent.get("created_by_user_id")
+        if "created_by_user_id" in existing_rent and pd.notna(existing_rent.get("created_by_user_id")):
+            rent_dict["created_by_user_id"] = str(existing_rent.get("created_by_user_id"))
     else:
         # Set new timestamps for creates
         rent_dict["created_at"] = now
@@ -169,7 +180,7 @@ def prepare_rent_dataframe(rent_dict: dict) -> pd.DataFrame:
     df = pd.DataFrame([rent_dict], dtype=object)
     
     # Ensure required string fields are strings and not None
-    required_string_fields = ["id", "user_id", "property_id"]
+    required_string_fields = ["id", "property_id"]
     for field in required_string_fields:
         if field in df.columns:
             # Convert to string, ensuring no None values
@@ -201,7 +212,7 @@ def prepare_rent_dataframe(rent_dict: dict) -> pd.DataFrame:
         df["rent_period_year"] = pd.to_numeric(df["rent_period_year"], errors='coerce').astype("Int32")
     
     # Ensure optional string fields are strings (not object/unknown)
-    optional_string_fields = ["user_name", "property_name", "unit_id", "unit_name", "tenant_id", 
+    optional_string_fields = ["property_name", "unit_id", "unit_name", "tenant_id", 
                              "tenant_name", "revenue_description", "payment_method", 
                              "transaction_reference", "notes", "document_storage_id", "created_by_user_id"]
     for field in optional_string_fields:
@@ -244,34 +255,40 @@ def rent_to_response(row: pd.Series) -> dict:
             return str(value)
         
         return {
+            # STRING fields (in Iceberg order)
             "id": str(row["id"]),
-            # Denormalized fields
-            "user_id": str(row["user_id"]) if pd.notna(row.get("user_id")) else None,
-            "user_name": str(row["user_name"]) if pd.notna(row.get("user_name")) else None,
             "property_id": str(row["property_id"]),
             "property_name": str(row["property_name"]) if pd.notna(row.get("property_name")) else None,
             "unit_id": str(row["unit_id"]) if pd.notna(row.get("unit_id")) else None,
             "unit_name": str(row["unit_name"]) if pd.notna(row.get("unit_name")) else None,
             "tenant_id": str(row["tenant_id"]) if pd.notna(row.get("tenant_id")) else None,
             "tenant_name": str(row["tenant_name"]) if pd.notna(row.get("tenant_name")) else None,
-            # Revenue classification
             "revenue_description": str(row["revenue_description"]) if pd.notna(row.get("revenue_description")) else None,
-            "is_non_irs_revenue": bool(row["is_non_irs_revenue"]) if pd.notna(row.get("is_non_irs_revenue")) else False,
-            # Rent period
-            "is_one_time_fee": bool(row["is_one_time_fee"]) if pd.notna(row.get("is_one_time_fee")) else False,
-            "rent_period_month": int(row["rent_period_month"]) if pd.notna(row.get("rent_period_month")) else None,
-            "rent_period_year": int(row["rent_period_year"]) if pd.notna(row.get("rent_period_year")) else None,
-            "rent_period_start": safe_date_str(row.get("rent_period_start")),
-            "rent_period_end": safe_date_str(row.get("rent_period_end")),
-            # Payment details
-            "amount": float(row["amount"]) if pd.notna(row.get("amount")) else 0,
-            "payment_date": safe_date_str(row.get("payment_date")),
             "payment_method": str(row["payment_method"]) if pd.notna(row.get("payment_method")) else None,
             "transaction_reference": str(row["transaction_reference"]) if pd.notna(row.get("transaction_reference")) else None,
-            "is_late": bool(row["is_late"]) if pd.notna(row.get("is_late")) else False,
-            "late_fee": float(row["late_fee"]) if pd.notna(row.get("late_fee")) else None,
             "notes": str(row["notes"]) if pd.notna(row.get("notes")) else None,
             "document_storage_id": str(row["document_storage_id"]) if pd.notna(row.get("document_storage_id")) else None,
+            "created_by_user_id": str(row["created_by_user_id"]) if pd.notna(row.get("created_by_user_id")) else None,
+            
+            # DECIMAL128 fields (in Iceberg order)
+            "amount": float(row["amount"]) if pd.notna(row.get("amount")) else 0,
+            "late_fee": float(row["late_fee"]) if pd.notna(row.get("late_fee")) else None,
+            
+            # INT32 fields (in Iceberg order)
+            "rent_period_month": int(row["rent_period_month"]) if pd.notna(row.get("rent_period_month")) else None,
+            "rent_period_year": int(row["rent_period_year"]) if pd.notna(row.get("rent_period_year")) else None,
+            
+            # DATE32 fields (in Iceberg order)
+            "rent_period_start": safe_date_str(row.get("rent_period_start")),
+            "rent_period_end": safe_date_str(row.get("rent_period_end")),
+            "payment_date": safe_date_str(row.get("payment_date")),
+            
+            # BOOLEAN fields (in Iceberg order)
+            "is_non_irs_revenue": bool(row["is_non_irs_revenue"]) if pd.notna(row.get("is_non_irs_revenue")) else False,
+            "is_one_time_fee": bool(row["is_one_time_fee"]) if pd.notna(row.get("is_one_time_fee")) else False,
+            "is_late": bool(row["is_late"]) if pd.notna(row.get("is_late")) else False,
+            
+            # TIMESTAMP fields (in Iceberg order)
             "created_at": safe_date_str(row.get("created_at")),
             "updated_at": safe_date_str(row.get("updated_at")),
         }
@@ -285,12 +302,19 @@ async def create_rent_endpoint(
     rent_data: RentCreate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Create a new rent payment record with denormalized fields for speed"""
+    """Create a new rent payment record (property_id required, secured by property_id)"""
     try:
-        user_id = current_user["sub"]
-        user_name = f"{current_user.get('first_name', '')} {current_user.get('last_name', '')}".strip() or None
+        user_id = current_user["sub"]  # For created_by_user_id only
         rent_id = str(uuid.uuid4())
         now = pd.Timestamp.now()
+        
+        # Validate required fields
+        if not rent_data.property_id:
+            raise HTTPException(status_code=400, detail="property_id is required")
+        if not rent_data.amount or rent_data.amount <= 0:
+            raise HTTPException(status_code=400, detail="amount must be greater than 0")
+        if not rent_data.payment_date:
+            raise HTTPException(status_code=400, detail="payment_date is required")
         
         # Calculate rent period start/end
         is_one_time_fee = rent_data.is_one_time_fee if hasattr(rent_data, 'is_one_time_fee') else False
@@ -376,8 +400,6 @@ async def create_rent_endpoint(
         # Create rent record with denormalized fields using shared helper
         rent_dict = build_rent_dict(
             rent_id=rent_id,
-            user_id=user_id,
-            user_name=user_name,
             property_id=str(rent_data.property_id),
             property_name=property_name,
             unit_id=str(rent_data.unit_id) if rent_data.unit_id else None,
@@ -400,7 +422,8 @@ async def create_rent_endpoint(
             notes=rent_data.notes,
             document_storage_id=str(rent_data.document_storage_id) if rent_data.document_storage_id else None,
             now=now,
-            is_update=False
+            is_update=False,
+            created_by_user_id=str(user_id)
         )
         
         # Log the rent_dict being saved
@@ -416,32 +439,12 @@ async def create_rent_endpoint(
         # Invalidate financial performance cache
         _invalidate_financial_performance_cache(rent_data.property_id, user_id, rent_data.unit_id)
         
-        return RentResponse(
-            id=UUID(rent_id),
-            user_id=UUID(user_id),
-            user_name=user_name,
-            property_id=rent_data.property_id,
-            property_name=property_name,
-            unit_id=rent_data.unit_id,
-            unit_name=unit_name,
-            tenant_id=rent_data.tenant_id,
-            tenant_name=tenant_name,
-            revenue_description=revenue_description,
-            is_non_irs_revenue=is_non_irs_revenue,
-            is_one_time_fee=is_one_time_fee,
-            amount=rent_data.amount,
-            rent_period_month=rent_period_month,
-            rent_period_year=rent_period_year,
-            rent_period_start=period_start,
-            rent_period_end=period_end,
-            payment_date=rent_data.payment_date,
-            payment_method=rent_data.payment_method,
-            transaction_reference=rent_data.transaction_reference,
-            is_late=rent_data.is_late if rent_data.is_late else False,
-            late_fee=rent_data.late_fee,
-            notes=rent_data.notes,
-            document_storage_id=rent_data.document_storage_id if hasattr(rent_data, 'document_storage_id') else None,
-        )
+        # Fetch the created rent to return proper response
+        created_rent = read_table_filtered(NAMESPACE, TABLE_NAME, EqualTo("id", rent_id))
+        if len(created_rent) == 0:
+            raise HTTPException(status_code=500, detail="Failed to retrieve created rent payment")
+        
+        return RentResponse(**rent_to_response(created_rent.iloc[0]))
         
     except Exception as e:
         logger.error(f"Error creating rent payment: {e}", exc_info=True)
@@ -520,28 +523,24 @@ async def create_rent_with_receipt(
 
 @router.get("", response_model=RentListResponse)
 async def list_rents_endpoint(
-    property_id: Optional[UUID] = Query(None, description="Filter by property ID"),
+    property_id: UUID = Query(..., description="Filter by property ID (required)"),
     unit_id: Optional[UUID] = Query(None, description="Filter by unit ID"),
     year: Optional[int] = Query(None, description="Filter by rent period year"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)
 ):
-    """List rent payments for the current user"""
+    """List rent payments for a property (property_id required)"""
     try:
-        user_id = current_user["sub"]
-        
         if not table_exists(NAMESPACE, TABLE_NAME):
             return RentListResponse(items=[], total=0, page=1, limit=limit)
         
         df = read_table(NAMESPACE, TABLE_NAME)
         
-        # Filter by user
-        df = df[df["user_id"] == user_id]
+        # Filter by property_id (required)
+        df = df[df["property_id"] == str(property_id)]
         
-        # Apply filters
-        if property_id:
-            df = df[df["property_id"] == str(property_id)]
+        # Apply additional filters
         if unit_id:
             df = df[df["unit_id"] == str(unit_id)]
         if year:
@@ -583,15 +582,13 @@ async def get_rent_endpoint(
     rent_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get a rent payment by ID"""
+    """Get a rent payment by ID (secured by property_id)"""
     try:
-        user_id = current_user["sub"]
-        
         if not table_exists(NAMESPACE, TABLE_NAME):
             raise HTTPException(status_code=404, detail="Rent payment not found")
         
         df = read_table(NAMESPACE, TABLE_NAME)
-        rent_rows = df[(df["id"] == str(rent_id)) & (df["user_id"] == user_id)]
+        rent_rows = df[df["id"] == str(rent_id)]
         
         if len(rent_rows) == 0:
             raise HTTPException(status_code=404, detail="Rent payment not found")
@@ -612,23 +609,34 @@ async def update_rent_endpoint(
     rent_data: RentUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Update an existing rent payment record"""
+    """Update an existing rent payment record (secured by property_id)"""
     try:
-        user_id = current_user["sub"]
-        user_name = f"{current_user.get('first_name', '')} {current_user.get('last_name', '')}".strip() or None
+        user_id = current_user["sub"]  # For created_by_user_id tracking only
         
         if not table_exists(NAMESPACE, TABLE_NAME):
             raise HTTPException(status_code=404, detail="Rent payment not found")
         
         # Get existing rent record
         df = read_table(NAMESPACE, TABLE_NAME)
-        rent_rows = df[(df["id"] == str(rent_id)) & (df["user_id"] == user_id)]
+        rent_rows = df[df["id"] == str(rent_id)]
         
         if len(rent_rows) == 0:
             raise HTTPException(status_code=404, detail="Rent payment not found")
         
+        # Validate property_id if provided in update
+        if rent_data.property_id:
+            existing_property_id = str(rent_rows.iloc[0]["property_id"])
+            if str(rent_data.property_id) != existing_property_id:
+                raise HTTPException(status_code=400, detail="Cannot change property_id on update")
+        
         existing_rent = rent_rows.iloc[0]
         now = pd.Timestamp.now()
+        
+        # Validate update data
+        if rent_data.amount is not None and rent_data.amount <= 0:
+            raise HTTPException(status_code=400, detail="amount must be greater than 0")
+        if rent_data.late_fee is not None and rent_data.late_fee < 0:
+            raise HTTPException(status_code=400, detail="late_fee cannot be negative")
         
         # Use existing values if not provided in update
         property_id = str(rent_data.property_id) if rent_data.property_id else existing_rent["property_id"]
@@ -756,7 +764,6 @@ async def update_rent_endpoint(
         
         # Ensure required fields are present and correctly typed
         # Get existing values for required fields if not provided
-        existing_user_id = str(existing_rent.get("user_id", ""))
         existing_property_id = str(existing_rent.get("property_id", ""))
         existing_amount = Decimal(str(existing_rent["amount"])) if pd.notna(existing_rent.get("amount")) else Decimal("0")
         existing_payment_date = existing_rent.get("payment_date")
@@ -778,10 +785,15 @@ async def update_rent_endpoint(
         elif pd.notna(existing_rent.get("document_storage_id")):
             doc_storage_id = str(existing_rent.get("document_storage_id"))
         
+        # Get existing created_by_user_id or use current user
+        existing_created_by_user_id = existing_rent.get("created_by_user_id")
+        if pd.notna(existing_created_by_user_id):
+            created_by_user_id = str(existing_created_by_user_id)
+        else:
+            created_by_user_id = str(user_id)
+        
         update_dict = build_rent_dict(
             rent_id=str(rent_id),
-            user_id=str(user_id) if user_id else str(existing_user_id),
-            user_name=user_name if user_name is not None else existing_rent.get("user_name"),
             property_id=str(property_id) if property_id else str(existing_property_id),
             property_name=property_name if property_name is not None else existing_rent.get("property_name"),
             unit_id=str(unit_id) if unit_id else (str(existing_rent.get("unit_id")) if pd.notna(existing_rent.get("unit_id")) else None),
@@ -805,7 +817,8 @@ async def update_rent_endpoint(
             document_storage_id=doc_storage_id,
             now=now,
             existing_rent=existing_rent,
-            is_update=True
+            is_update=True,
+            created_by_user_id=created_by_user_id
         )
         
         # Update the record using delete + append pattern (like expenses) to avoid pandas type inference issues
@@ -871,17 +884,17 @@ async def delete_rent_endpoint(
     rent_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete a rent payment"""
+    """Delete a rent payment (secured by property_id)"""
     try:
-        user_id = current_user["sub"]
+        user_id = current_user["sub"]  # For cache invalidation only
         
         if not table_exists(NAMESPACE, TABLE_NAME):
             raise HTTPException(status_code=404, detail="Rent payment not found")
         
         df = read_table(NAMESPACE, TABLE_NAME)
         
-        # Check if rent exists and belongs to user
-        rent_rows = df[(df["id"] == str(rent_id)) & (df["user_id"] == user_id)]
+        # Check if rent exists
+        rent_rows = df[df["id"] == str(rent_id)]
         if len(rent_rows) == 0:
             raise HTTPException(status_code=404, detail="Rent payment not found")
         

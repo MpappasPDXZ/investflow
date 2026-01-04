@@ -17,16 +17,19 @@ export function useTenants(filters?: { property_id?: string; unit_id?: string; s
   const { enabled, ...filterParams } = filters || {}
   return useQuery<TenantListResponse>({
     queryKey: tenantKeys.list(filterParams),
-    enabled: enabled !== false, // Default to true for backward compatibility
+    enabled: enabled !== false && !!filters?.property_id, // Require property_id
     queryFn: async () => {
+      if (!filters?.property_id) {
+        throw new Error('property_id is required');
+      }
       const startTime = performance.now();
       console.log(`📤 [TENANT] GET /api/v1/tenants - Request`, filters);
       const params = new URLSearchParams();
-      if (filters?.property_id) params.append('property_id', filters.property_id);
+      params.append('property_id', filters.property_id);  // Required
       if (filters?.unit_id) params.append('unit_id', filters.unit_id);
       if (filters?.status) params.append('status', filters.status);
       
-      const url = `/tenants${params.toString() ? `?${params.toString()}` : ''}`;
+      const url = `/tenants?${params.toString()}`;
       try {
         const result = await apiClient.get<TenantListResponse>(url);
         const elapsed = performance.now() - startTime;

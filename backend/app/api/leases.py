@@ -15,7 +15,7 @@ from app.core.dependencies import get_current_user
 from app.schemas.lease import (
     LeaseCreate, LeaseUpdate, LeaseResponse, LeaseListResponse, LeaseListItem,
     TenantResponse, TenantUpdate, GeneratePDFRequest, GeneratePDFResponse,
-    TerminateLeaseRequest, TerminateLeaseResponse, PropertySummary, MoveOutCostItem
+    TerminateLeaseRequest, TerminateLeaseResponse, PropertySummary, MoveOutCostItem, PetInfo
 )
 from app.core.iceberg import read_table, append_data, upsert_data, table_exists, load_table, get_catalog
 from app.core.logging import get_logger
@@ -24,12 +24,81 @@ from app.services.lease_generator_service import LeaseGeneratorService
 from app.services.adls_service import adls_service
 
 NAMESPACE = ("investflow",)
-LEASES_TABLE = "leases_full"
-TENANTS_TABLE = "lease_tenants"
+LEASES_TABLE = "leases"
 PROPERTIES_TABLE = "properties"
 
 router = APIRouter(prefix="/leases", tags=["leases"])
 logger = get_logger(__name__)
+
+# Strict field order for leases table (must match Iceberg schema exactly)
+# Schema changes:
+# - Removed: user_id, utilities_provided_by_owner_city, pets, pets_allowed, max_children, max_pets
+# - Removed: parking_spaces, parking_small_vehicles, parking_large_trucks
+# - Removed: garage_outlets_prohibited, has_garage, has_attic, attic_usage, has_basement, moveout_inspection_rights
+# - Removed: military_termination_days
+# - Restructured: pet_fee (amount), pets (JSON string like tenants)
+# - Renamed: snow_removal_responsibility -> tenant_snow_removal (boolean)
+# - Renamed: lead_paint_year_built -> disclosure_lead_paint
+# - Renamed: methamphetamine_disclosure -> disclosure_methamphetamine
+# - Merged: owner_address + manager_address -> manager_address
+# - Added: tenants (JSON column)
+# EXACT field order matching actual Iceberg table schema (from inspect_table.py output)
+# Verified order from table inspection:
+# id, property_id, unit_id, status, state, lease_date, lease_start, lease_end, monthly_rent, rent_due_by_time,
+# payment_method, prorated_first_month_rent, late_fee_day_1_10, late_fee_day_11, late_fee_day_16, late_fee_day_21,
+# nsf_fee, security_deposit, holding_fee_amount, holding_fee_date, utilities_tenant, utilities_landlord,
+# pet_fee, pets, garage_spaces, key_replacement_fee, shared_driveway_with, garage_door_opener_fee,
+# appliances_provided, early_termination_fee_amount, moveout_costs, owner_name, manager_name, manager_address,
+# generated_pdf_document_id, template_used, tenants, notes, auto_convert_month_to_month, show_prorated_rent,
+# include_holding_fee_addendum, has_shared_driveway, tenant_lawn_mowing, tenant_snow_removal, tenant_lawn_care,
+# has_garage_door_opener, lead_paint_disclosure, early_termination_allowed, disclosure_methamphetamine, is_active,
+# lease_number, lease_version, rent_due_day, rent_due_by_day, max_occupants, max_adults, offstreet_parking_spots,
+# front_door_keys, back_door_keys, garage_back_door_keys, disclosure_lead_paint, early_termination_notice_days,
+# early_termination_fee_months, created_at, updated_at
+LEASES_FIELD_ORDER = [
+    "id", "property_id", "unit_id",
+    "status", "state",
+    "lease_date", "lease_start", "lease_end",
+    "monthly_rent", "rent_due_by_time",
+    "payment_method",
+    "prorated_first_month_rent",
+    "late_fee_day_1_10", "late_fee_day_11", "late_fee_day_16", "late_fee_day_21",
+    "nsf_fee",
+    "security_deposit",
+    "holding_fee_amount", "holding_fee_date",
+    "utilities_tenant", "utilities_landlord",
+    "pet_fee", "pets",
+    "garage_spaces",
+    "key_replacement_fee",
+    "shared_driveway_with",
+    "garage_door_opener_fee",
+    "appliances_provided",
+    "early_termination_fee_amount",
+    "moveout_costs",
+    "owner_name", "manager_name", "manager_address",
+    "generated_pdf_document_id", "template_used",
+    "tenants",
+    "notes",
+    "auto_convert_month_to_month",
+    "show_prorated_rent",
+    "include_holding_fee_addendum",
+    "has_shared_driveway",
+    "tenant_lawn_mowing", "tenant_snow_removal", "tenant_lawn_care",
+    "has_garage_door_opener",
+    "lead_paint_disclosure",
+    "early_termination_allowed",
+    "disclosure_methamphetamine",
+    "is_active",
+    "lease_number", "lease_version",
+    "rent_due_day", "rent_due_by_day",
+    "max_occupants", "max_adults",
+    "offstreet_parking_spots",
+    "front_door_keys", "back_door_keys", "garage_back_door_keys",
+    "disclosure_lead_paint",
+    "early_termination_notice_days",
+    "early_termination_fee_months",
+    "created_at", "updated_at",
+]
 
 
 def parse_date_midday(date_value: Union[str, date, datetime, pd.Timestamp]) -> pd.Timestamp:
@@ -60,28 +129,152 @@ def parse_date_midday(date_value: Union[str, date, datetime, pd.Timestamp]) -> p
     return pd.Timestamp(midday_datetime)
 
 
-def _serialize_moveout_costs(moveout_costs: Optional[List[MoveOutCostItem]]) -> str:
-    """Convert move-out costs list to JSON string for storage"""
-    if not moveout_costs:
-        return get_default_moveout_costs_json()
+def _serialize_moveout_costs(moveout_costs: Optional[List]) -> Optional[str]:
+    """Convert move-out costs list to JSON string for storage (like landlord_references)
     
-    costs = []
+    Handles both Pydantic MoveOutCostItem models and plain dicts.
+    """
+    if not moveout_costs:
+        return None
+    
+    # Convert to list of dicts if needed
+    costs_list = []
     for item in moveout_costs:
-        costs.append({
-            "item": item.item,
-            "description": item.description,
-            "amount": str(item.amount),
-            "order": item.order
-        })
-    return json.dumps(costs)
+        # Handle Pydantic models
+        if hasattr(item, 'model_dump'):
+            item_dict = item.model_dump()
+        elif hasattr(item, 'dict'):  # Pydantic v1
+            item_dict = item.dict()
+        elif isinstance(item, dict):
+            item_dict = item
+        else:
+            # Fallback: try to convert to dict
+            item_dict = dict(item) if hasattr(item, '__dict__') else {}
+        
+        # Ensure amount is a string for JSON
+        if 'amount' in item_dict and not isinstance(item_dict['amount'], str):
+            item_dict['amount'] = str(item_dict['amount'])
+        
+        costs_list.append(item_dict)
+    
+    return json.dumps(costs_list) if costs_list else None
 
 
-def _deserialize_moveout_costs(moveout_costs_json: str) -> List[MoveOutCostItem]:
-    """Convert JSON string to move-out costs list"""
+def _deserialize_moveout_costs(moveout_costs_json: Optional[str]) -> List[MoveOutCostItem]:
+    """Convert JSON string to move-out costs list (like landlord_references)"""
+    if not moveout_costs_json:
+        return []
+    
     try:
-        costs = json.loads(moveout_costs_json)
+        costs = json.loads(moveout_costs_json) if isinstance(moveout_costs_json, str) else moveout_costs_json
         return [MoveOutCostItem(**cost) for cost in costs]
     except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def _serialize_pets(pets: Optional[List]) -> Optional[str]:
+    """Convert pets list to JSON string for storage (like landlord_references)
+    
+    Handles both Pydantic PetInfo models and plain dicts.
+    """
+    if not pets:
+        return None
+    
+    # Convert to list of dicts if needed
+    pets_list = []
+    for pet in pets:
+        # Handle Pydantic models
+        if hasattr(pet, 'model_dump'):
+            pet_dict = pet.model_dump()
+        elif hasattr(pet, 'dict'):  # Pydantic v1
+            pet_dict = pet.dict()
+        elif isinstance(pet, dict):
+            pet_dict = pet
+        else:
+            # Fallback: try to convert to dict
+            pet_dict = dict(pet) if hasattr(pet, '__dict__') else {}
+        
+        pets_list.append(pet_dict)
+    
+    return json.dumps(pets_list) if pets_list else None
+
+
+def _deserialize_pets(pets_json: Optional[str]) -> List[dict]:
+    """Convert JSON string to pets list (like landlord_references)"""
+    if not pets_json:
+        return []
+    
+    try:
+        return json.loads(pets_json) if isinstance(pets_json, str) else pets_json
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def _serialize_tenants(tenants: Optional[List]) -> Optional[str]:
+    """Convert tenant list to JSON string for storage (like landlord_references)
+    
+    Handles both Pydantic TenantCreate/TenantUpdate models and plain dicts.
+    Note: signed_date is not collected/stored for leases.
+    """
+    if not tenants:
+        return None
+    
+    # Convert to list of dicts if needed
+    tenants_list = []
+    for idx, tenant in enumerate(tenants):
+        # Handle Pydantic models
+        if hasattr(tenant, 'model_dump'):
+            tenant_dict = tenant.model_dump()
+        elif hasattr(tenant, 'dict'):  # Pydantic v1
+            tenant_dict = tenant.dict()
+        elif isinstance(tenant, dict):
+            tenant_dict = tenant.copy()
+        else:
+            # Fallback: try to convert to dict
+            tenant_dict = dict(tenant) if hasattr(tenant, '__dict__') else {}
+        
+        # Remove signed_date if present (we don't collect it)
+        tenant_dict.pop('signed_date', None)
+        
+        # Ensure tenant_order is set
+        if 'tenant_order' not in tenant_dict:
+            tenant_dict['tenant_order'] = idx + 1
+        
+        # Ensure id is a string if present
+        if 'id' in tenant_dict and tenant_dict['id']:
+            tenant_dict['id'] = str(tenant_dict['id'])
+        elif 'id' not in tenant_dict or not tenant_dict.get('id'):
+            tenant_dict['id'] = str(uuid.uuid4())
+        
+        tenants_list.append(tenant_dict)
+    
+    return json.dumps(tenants_list) if tenants_list else None
+
+
+def _deserialize_tenants(tenants_json: Optional[str]) -> List[TenantResponse]:
+    """Convert JSON string from leases table to TenantResponse list (like landlord_references)"""
+    if not tenants_json:
+        return []
+    
+    try:
+        tenant_list = json.loads(tenants_json) if isinstance(tenants_json, str) else tenants_json
+        return [
+            TenantResponse(
+                id=UUID(tenant.get("id", str(uuid.uuid4()))),
+                lease_id=UUID("00000000-0000-0000-0000-000000000000"),  # Will be set by caller
+                tenant_order=tenant.get("tenant_order", 0),
+                first_name=tenant.get("first_name", ""),
+                last_name=tenant.get("last_name", ""),
+                email=tenant.get("email"),
+                phone=tenant.get("phone"),
+                signed_date=None,  # Not collected/stored for leases
+                created_at=datetime.utcnow(),  # Not stored in JSON, use current time
+                updated_at=datetime.utcnow(),  # Not stored in JSON, use current time
+            )
+            for tenant in tenant_list
+        ]
+    except (json.JSONDecodeError, TypeError, KeyError) as e:
+        logger.warning(f"Error deserializing tenants JSON: {e}")
         return []
 
 
@@ -171,23 +364,6 @@ def _prepare_lease_for_iceberg(lease_dict: dict, table_schema) -> dict:
             prepared[col_name] = value
     
     return prepared
-
-
-def _serialize_pets(pets: Optional[List[dict]]) -> Optional[str]:
-    """Convert pets list to JSON string for storage"""
-    if not pets:
-        return None
-    return json.dumps(pets)
-
-
-def _deserialize_pets(pets_json: Optional[str]) -> Optional[List[dict]]:
-    """Convert JSON string to pets list"""
-    if not pets_json:
-        return None
-    try:
-        return json.loads(pets_json)
-    except (json.JSONDecodeError, TypeError):
-        return None
 
 
 def _get_property_summary(property_id: str, unit_id: Optional[str] = None, properties_df: Optional[pd.DataFrame] = None) -> dict:
@@ -335,17 +511,22 @@ async def create_lease(
         
         # Generate lease_number: Auto-incrementing per user (1, 2, 3, ...)
         # PRIMARY KEY: lease_number is unique per user and used for identification
-        # With <10 rows per user, this is fast
+        # Since user_id is removed, we filter by property ownership instead
         lease_number_start = time.time()
         from pyiceberg.expressions import EqualTo
         from app.core.iceberg import read_table_filtered
         
-        # Read only this user's leases to get max lease_number
-        user_leases_df = read_table_filtered(
-            NAMESPACE, 
-            LEASES_TABLE, 
-            EqualTo("user_id", user_id)
-        )
+        # Get user's property IDs to filter leases
+        properties_df = read_table(NAMESPACE, PROPERTIES_TABLE)
+        user_property_ids = properties_df[properties_df["user_id"] == user_id]["id"].tolist()
+        
+        # Read leases for this user's properties to get max lease_number
+        if user_property_ids:
+            # Filter leases by property_id (using IN predicate if possible, or read all and filter)
+            leases_df = read_table(NAMESPACE, LEASES_TABLE)
+            user_leases_df = leases_df[leases_df["property_id"].isin(user_property_ids)]
+        else:
+            user_leases_df = pd.DataFrame()
         
         # Filter to active leases and get latest version per lease
         if len(user_leases_df) > 0:
@@ -372,7 +553,6 @@ async def create_lease(
         # Convert to dict and apply state defaults
         lease_dict = lease_data.model_dump(exclude={"tenants"})
         lease_dict["id"] = lease_id
-        lease_dict["user_id"] = user_id
         lease_dict["lease_number"] = lease_number
         lease_dict["lease_version"] = 1
         lease_dict["created_at"] = now
@@ -384,33 +564,31 @@ async def create_lease(
         # Apply state-specific defaults
         lease_dict = apply_lease_defaults(lease_dict, lease_data.state)
         
-        # Serialize moveout_costs
+        # Serialize moveout_costs as JSON (like tenants)
         if lease_data.moveout_costs:
             lease_dict["moveout_costs"] = _serialize_moveout_costs(lease_data.moveout_costs)
+        else:
+            lease_dict["moveout_costs"] = None
         
-        # Serialize pets
+        # Serialize pets as JSON (like tenants)
         if lease_data.pets:
-            lease_dict["pets"] = _serialize_pets([p.model_dump() if hasattr(p, 'model_dump') else p for p in lease_data.pets])
+            lease_dict["pets"] = _serialize_pets(lease_data.pets)
+        else:
+            lease_dict["pets"] = None
+        
+        # Serialize tenants as JSON
+        if lease_data.tenants:
+            lease_dict["tenants"] = _serialize_tenants(lease_data.tenants)
+        else:
+            lease_dict["tenants"] = None
         
         # Convert UUIDs and dates to strings for Iceberg
         lease_dict["property_id"] = str(lease_data.property_id)
         lease_dict["unit_id"] = str(lease_data.unit_id) if lease_data.unit_id else None
         # Parse dates using Midday Strategy (12:00 PM) to prevent timezone shifting
-        lease_dict["commencement_date"] = parse_date_midday(lease_data.commencement_date)
-        lease_dict["termination_date"] = parse_date_midday(lease_data.termination_date)
+        lease_dict["lease_start"] = parse_date_midday(lease_data.lease_start)
+        lease_dict["lease_end"] = parse_date_midday(lease_data.lease_end)
         lease_dict["lease_date"] = parse_date_midday(lease_data.lease_date) if lease_data.lease_date else None
-        # Handle signed_date - it's a date field, not a timestamp
-        # Check if signed_date exists in the request (it might be in lease_data as an attribute)
-        signed_date_value = getattr(lease_data, 'signed_date', None)
-        if signed_date_value:
-            # Parse as date (not timestamp) - use date part only
-            if isinstance(signed_date_value, str):
-                signed_date_value = datetime.strptime(signed_date_value, "%Y-%m-%d").date()
-            elif isinstance(signed_date_value, (datetime, pd.Timestamp)):
-                signed_date_value = signed_date_value.date() if hasattr(signed_date_value, 'date') else signed_date_value
-            lease_dict["signed_date"] = signed_date_value
-        else:
-            lease_dict["signed_date"] = None
         
         # Append to Iceberg leases table
         # CRITICAL: Get table schema FIRST, then prepare data according to schema
@@ -459,40 +637,26 @@ async def create_lease(
         table.upsert(arrow_table, join_cols=["id"])
         logger.info(f"⏱️ [PERF] upsert_data(leases) took {time.time() - upsert_start:.2f}s")
         
-        # Create tenants
+        # Tenants are already serialized as JSON in lease_dict["tenants"]
+        # Deserialize to create tenant responses
         tenants_start = time.time()
         tenant_responses = []
-        for idx, tenant in enumerate(lease_data.tenants):
-            tenant_id = str(uuid.uuid4())
-            tenant_dict = {
-                "id": tenant_id,
-                "lease_id": lease_id,
-                "tenant_order": idx + 1,
-                "first_name": tenant.first_name,
-                "last_name": tenant.last_name,
-                "email": tenant.email,
-                "phone": tenant.phone,
-                "signed_date": None,
-                "created_at": now,
-                "updated_at": now,
-            }
-            
-            tenant_df = pd.DataFrame([tenant_dict])
-            append_data(NAMESPACE, TENANTS_TABLE, tenant_df)
-            
-            tenant_responses.append(TenantResponse(
-                id=UUID(tenant_id),
-                lease_id=UUID(lease_id),
-                tenant_order=idx + 1,
-                first_name=tenant.first_name,
-                last_name=tenant.last_name,
-                email=tenant.email,
-                phone=tenant.phone,
-                signed_date=None,
-                created_at=now.to_pydatetime(),
-                updated_at=now.to_pydatetime()
-            ))
-        logger.info(f"⏱️ [PERF] Creating {len(lease_data.tenants)} tenants took {time.time() - tenants_start:.2f}s")
+        if lease_data.tenants:
+            for idx, tenant in enumerate(lease_data.tenants):
+                tenant_id = str(uuid.uuid4())
+                tenant_responses.append(TenantResponse(
+                    id=UUID(tenant_id),
+                    lease_id=UUID(lease_id),
+                    tenant_order=idx + 1,
+                    first_name=tenant.first_name,
+                    last_name=tenant.last_name,
+                    email=tenant.email,
+                    phone=tenant.phone,
+                    signed_date=None,  # Not collected/stored for leases
+                    created_at=now.to_pydatetime(),
+                    updated_at=now.to_pydatetime()
+                ))
+        logger.info(f"⏱️ [PERF] Processing {len(lease_data.tenants)} tenants took {time.time() - tenants_start:.2f}s")
         
         # Get property summary
         property_summary_start = time.time()
@@ -510,15 +674,33 @@ async def create_lease(
         response_dict["lease_number"] = int(lease_dict.get("lease_number", 0))
         response_dict["property"] = PropertySummary(**property_summary)
         response_dict["tenants"] = tenant_responses
-        response_dict["moveout_costs"] = lease_data.moveout_costs or _deserialize_moveout_costs(lease_dict["moveout_costs"])
-        response_dict["pets"] = lease_data.pets or _deserialize_pets(lease_dict.get("pets"))
+        # Deserialize moveout_costs from JSON (like tenants)
+        moveout_costs_json = lease_dict.get("moveout_costs")
+        response_dict["moveout_costs"] = lease_data.moveout_costs if lease_data.moveout_costs else _deserialize_moveout_costs(moveout_costs_json)
+        
+        # Deserialize pets from JSON (like tenants)
+        pets_json = lease_dict.get("pets")
+        if lease_data.pets:
+            response_dict["pets"] = lease_data.pets
+        else:
+            # Try pets column first, then fallback to pet_description for backward compatibility
+            if pets_json:
+                response_dict["pets"] = _deserialize_pets(pets_json)
+            elif lease_dict.get("pet_description"):
+                try:
+                    pet_descriptions = json.loads(lease_dict["pet_description"])
+                    # Convert from old format to new format
+                    response_dict["pets"] = [{"type": p.get("pet_type"), "breed": p.get("breed"), "name": p.get("pet_name"), "weight": p.get("weight"), "isEmotionalSupport": False} for p in pet_descriptions]
+                except:
+                    response_dict["pets"] = []
+            else:
+                response_dict["pets"] = []
         response_dict["pdf_url"] = None
         response_dict["latex_url"] = None
         # Convert midday timestamps to dates for Pydantic response
-        response_dict["commencement_date"] = pd.Timestamp(lease_dict["commencement_date"]).date()
-        response_dict["termination_date"] = pd.Timestamp(lease_dict["termination_date"]).date()
+        response_dict["lease_start"] = pd.Timestamp(lease_dict["lease_start"]).date()
+        response_dict["lease_end"] = pd.Timestamp(lease_dict["lease_end"]).date()
         response_dict["lease_date"] = pd.Timestamp(lease_dict["lease_date"]).date() if lease_dict.get("lease_date") and pd.notna(lease_dict.get("lease_date")) else None
-        response_dict["signed_date"] = None
         response_dict["created_at"] = now.to_pydatetime()
         response_dict["updated_at"] = now.to_pydatetime()
         logger.info(f"⏱️ [PERF] Building response took {time.time() - response_start:.2f}s")
@@ -578,9 +760,8 @@ async def update_lease(
         if hasattr(existing_lease, 'is_active') and not existing_lease.get("is_active", True):
             raise HTTPException(status_code=404, detail="Lease not found")
         
-        # Verify ownership
-        if existing_lease["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify ownership via property
+        _verify_property_ownership(existing_lease["property_id"], user_id)
         
         # Convert to dict and merge with existing data
         update_dict = lease_data.model_dump(exclude_unset=True, exclude={"tenants"})
@@ -600,19 +781,38 @@ async def update_lease(
         lease_dict["updated_at"] = now
         lease_dict["lease_version"] = existing_lease["lease_version"] + 1
         
-        # Serialize moveout_costs if provided
-        if lease_data.moveout_costs is not None:
+        # Serialize moveout_costs as JSON (like tenants)
+        if hasattr(lease_data, 'moveout_costs') and lease_data.moveout_costs is not None:
             lease_dict["moveout_costs"] = _serialize_moveout_costs(lease_data.moveout_costs)
+        else:
+            # Keep existing value if not provided
+            existing_moveout_costs = existing_lease.get("moveout_costs")
+            lease_dict["moveout_costs"] = existing_moveout_costs if existing_moveout_costs else None
         
-        # Serialize pets if provided
+        # Serialize pets as JSON (like tenants)
         if hasattr(lease_data, 'pets') and lease_data.pets is not None:
-            lease_dict["pets"] = _serialize_pets([p.model_dump() if hasattr(p, 'model_dump') else p for p in lease_data.pets])
+            lease_dict["pets"] = _serialize_pets(lease_data.pets)
+        else:
+            # Keep existing value if not provided, or migrate from pet_description
+            existing_pets = existing_lease.get("pets")
+            if existing_pets:
+                lease_dict["pets"] = existing_pets
+            elif existing_lease.get("pet_description"):
+                # Migrate from old pet_description format
+                try:
+                    pet_descriptions = json.loads(existing_lease["pet_description"])
+                    pet_list = [{"type": p.get("pet_type"), "breed": p.get("breed"), "name": p.get("pet_name"), "weight": p.get("weight"), "isEmotionalSupport": False} for p in pet_descriptions]
+                    lease_dict["pets"] = _serialize_pets(pet_list)
+                except:
+                    lease_dict["pets"] = None
+            else:
+                lease_dict["pets"] = None
         
         # Convert dates if provided using Midday Strategy
-        if hasattr(lease_data, 'commencement_date') and lease_data.commencement_date:
-            lease_dict["commencement_date"] = parse_date_midday(lease_data.commencement_date)
-        if hasattr(lease_data, 'termination_date') and lease_data.termination_date:
-            lease_dict["termination_date"] = parse_date_midday(lease_data.termination_date)
+        if hasattr(lease_data, 'lease_start') and lease_data.lease_start:
+            lease_dict["lease_start"] = parse_date_midday(lease_data.lease_start)
+        if hasattr(lease_data, 'lease_end') and lease_data.lease_end:
+            lease_dict["lease_end"] = parse_date_midday(lease_data.lease_end)
         if hasattr(lease_data, 'lease_date') and lease_data.lease_date:
             lease_dict["lease_date"] = parse_date_midday(lease_data.lease_date)
         
@@ -657,34 +857,15 @@ async def update_lease(
         logger.info(f"⏱️ [PERF] append_data(leases) for update took {time.time() - append_start:.2f}s")
         logger.info(f"Updated lease {lease_id} (version {lease_dict['lease_version']}) via delete+append")
         
-        # Update tenants if provided
+        # Update tenants if provided - serialize as JSON
         tenant_responses = []
         if hasattr(lease_data, 'tenants') and lease_data.tenants is not None:
-            # TRUE UPSERT for tenants: Delete all old tenants for this lease, then add new ones
-            tenants_table = catalog.load_table((*NAMESPACE, TENANTS_TABLE))
-            tenants_table.delete(EqualTo("lease_id", str(lease_id)))
-            logger.info(f"Deleted old tenants for lease {lease_id} before upsert")
+            # Serialize tenants as JSON and update in lease_dict
+            lease_dict["tenants"] = _serialize_tenants(lease_data.tenants)
             
-            # Create new tenant records
+            # Create tenant responses
             for idx, tenant in enumerate(lease_data.tenants):
                 tenant_id = str(uuid.uuid4())
-                tenant_dict = {
-                    "id": tenant_id,
-                    "lease_id": str(lease_id),
-                    "tenant_order": idx + 1,
-                    "first_name": tenant.first_name,
-                    "last_name": tenant.last_name,
-                    "email": tenant.email,
-                    "phone": tenant.phone,
-                    "signed_date": None,
-                    "is_active": True,
-                    "created_at": now,
-                    "updated_at": now,
-                }
-                
-                tenant_df = pd.DataFrame([tenant_dict])
-                append_data(NAMESPACE, TENANTS_TABLE, tenant_df)
-                
                 tenant_responses.append(TenantResponse(
                     id=UUID(tenant_id),
                     lease_id=lease_id,
@@ -693,29 +874,20 @@ async def update_lease(
                     last_name=tenant.last_name,
                     email=tenant.email,
                     phone=tenant.phone,
-                    signed_date=None,
+                    signed_date=None,  # Not collected/stored for leases
                     created_at=now.to_pydatetime(),
                     updated_at=now.to_pydatetime()
                 ))
         else:
-            # Get existing tenants
-            tenants_read_start = time.time()
-            tenants_df = read_table(NAMESPACE, TENANTS_TABLE)
-            lease_tenants = tenants_df[(tenants_df["lease_id"] == str(lease_id)) & (tenants_df.get("is_active", True) == True)]
-            logger.info(f"⏱️ [PERF] read_table(tenants) for existing tenants took {time.time() - tenants_read_start:.2f}s")
-            for _, tenant in lease_tenants.iterrows():
-                tenant_responses.append(TenantResponse(
-                    id=UUID(tenant["id"]),
-                    lease_id=lease_id,
-                    tenant_order=tenant["tenant_order"],
-                    first_name=tenant["first_name"],
-                    last_name=tenant["last_name"],
-                    email=tenant.get("email"),
-                    phone=tenant.get("phone"),
-                    signed_date=tenant.get("signed_date"),
-                    created_at=pd.Timestamp(tenant["created_at"]).to_pydatetime(),
-                    updated_at=pd.Timestamp(tenant["updated_at"]).to_pydatetime()
-                ))
+            # Get existing tenants from JSON column
+            tenants_json = existing_lease.get("tenants")
+            if tenants_json:
+                tenant_responses = _deserialize_tenants(tenants_json)
+                # Set lease_id on all tenant responses
+                for tenant_resp in tenant_responses:
+                    tenant_resp.lease_id = lease_id
+            else:
+                tenant_responses = []
         
         # Get property summary
         property_summary_start = time.time()
@@ -739,14 +911,34 @@ async def update_lease(
         response_dict["lease_number"] = int(lease_dict.get("lease_number", 0)) if lease_dict.get("lease_number") is not None and not pd.isna(lease_dict.get("lease_number")) else 0
         response_dict["property"] = PropertySummary(**property_summary)
         response_dict["tenants"] = tenant_responses
-        response_dict["moveout_costs"] = lease_data.moveout_costs if lease_data.moveout_costs is not None else _deserialize_moveout_costs(lease_dict["moveout_costs"])
-        response_dict["pets"] = lease_data.pets if hasattr(lease_data, 'pets') and lease_data.pets is not None else _deserialize_pets(lease_dict.get("pets"))
+        # Deserialize moveout_costs from JSON (like tenants)
+        moveout_costs_json = lease_dict.get("moveout_costs")
+        response_dict["moveout_costs"] = lease_data.moveout_costs if (hasattr(lease_data, 'moveout_costs') and lease_data.moveout_costs is not None) else _deserialize_moveout_costs(moveout_costs_json)
+        
+        # Deserialize pets from JSON (like tenants)
+        pets_json = lease_dict.get("pets")
+        if hasattr(lease_data, 'pets') and lease_data.pets is not None:
+            response_dict["pets"] = lease_data.pets
+        else:
+            # Try pets column first, then fallback to pet_description for backward compatibility
+            if pets_json:
+                response_dict["pets"] = _deserialize_pets(pets_json)
+            elif lease_dict.get("pet_description"):
+                try:
+                    pet_descriptions = json.loads(lease_dict["pet_description"])
+                    response_dict["pets"] = [{"type": p.get("pet_type"), "breed": p.get("breed"), "name": p.get("pet_name"), "weight": p.get("weight"), "isEmotionalSupport": False} for p in pet_descriptions]
+                except:
+                    response_dict["pets"] = []
+            else:
+                response_dict["pets"] = []
         
         # Convert Timestamp dates to date objects for Pydantic
-        for date_field in ["commencement_date", "termination_date", "lease_date"]:
-            if date_field in response_dict and response_dict[date_field] is not None:
-                if isinstance(response_dict[date_field], pd.Timestamp):
-                    response_dict[date_field] = response_dict[date_field].date()
+        if "lease_start" in lease_dict and lease_dict["lease_start"] is not None:
+            response_dict["lease_start"] = pd.Timestamp(lease_dict["lease_start"]).date() if isinstance(lease_dict["lease_start"], pd.Timestamp) else lease_dict["lease_start"]
+        if "lease_end" in lease_dict and lease_dict["lease_end"] is not None:
+            response_dict["lease_end"] = pd.Timestamp(lease_dict["lease_end"]).date() if isinstance(lease_dict["lease_end"], pd.Timestamp) else lease_dict["lease_end"]
+        if "lease_date" in lease_dict and lease_dict["lease_date"] is not None:
+            response_dict["lease_date"] = pd.Timestamp(lease_dict["lease_date"]).date() if isinstance(lease_dict["lease_date"], pd.Timestamp) else lease_dict["lease_date"]
         
         # Get PDF URL if exists
         if lease_dict.get("generated_pdf_document_id"):
@@ -823,14 +1015,6 @@ async def list_leases(
             leases_df = leases_df[leases_df["state"] == state]
         logger.info(f"⏱️ [PERF] Filtering leases took {time.time() - filter_start:.2f}s")
         
-        # Read tenants
-        tenants_start = time.time()
-        tenants_df = read_table(NAMESPACE, TENANTS_TABLE)
-        logger.info(f"⏱️ [PERF] read_table(tenants) took {time.time() - tenants_start:.2f}s")
-        # Also filter tenants for active only
-        if "is_active" in tenants_df.columns:
-            tenants_df = tenants_df[tenants_df["is_active"].fillna(True) == True]
-        
         # Build response
         build_start = time.time()
         lease_items = []
@@ -839,17 +1023,42 @@ async def list_leases(
                 # Get property summary (pass the already-loaded properties_df to avoid re-reading)
                 property_summary = _get_property_summary(lease["property_id"], lease.get("unit_id"), properties_df)
                 
-                # Get tenants for this lease
-                lease_tenants = tenants_df[tenants_df["lease_id"] == lease["id"]]
+                # Get tenants from JSON column
+                tenants_json = lease.get("tenants")
+                lease_tenants = _deserialize_tenants(tenants_json) if tenants_json else []
+                # Set lease_id on all tenant responses
+                for tenant_resp in lease_tenants:
+                    tenant_resp.lease_id = UUID(lease["id"])
                 tenant_list = [
-                    {"first_name": t["first_name"], "last_name": t["last_name"]}
-                    for _, t in lease_tenants.iterrows()
+                    {"first_name": t.first_name, "last_name": t.last_name}
+                    for t in lease_tenants
                 ]
                 
                 # Get PDF URL if exists
                 pdf_url = None
-                if lease["generated_pdf_document_id"]:
+                if lease.get("generated_pdf_document_id"):
                     pdf_url = adls_service.get_blob_download_url(lease["generated_pdf_document_id"])
+                
+                # Handle dates - similar to get_lease
+                lease_start = lease.get("lease_start")
+                lease_end = lease.get("lease_end")
+                
+                if lease_start and pd.notna(lease_start):
+                    lease_start_date = pd.Timestamp(lease_start).date()
+                else:
+                    # Default to today if missing
+                    lease_start_date = date.today()
+                
+                if lease_end and pd.notna(lease_end):
+                    lease_end_date = pd.Timestamp(lease_end).date()
+                else:
+                    # Default to lease_start + 1 year if missing
+                    lease_end_date = lease_start_date + pd.Timedelta(days=365)
+                
+                # Ensure lease_end >= lease_start (fix invalid data)
+                if lease_end_date < lease_start_date:
+                    logger.warning(f"Lease {lease['id']} has invalid dates: lease_end ({lease_end_date}) < lease_start ({lease_start_date}). Setting lease_end = lease_start.")
+                    lease_end_date = lease_start_date
                 
                 lease_items.append(LeaseListItem(
                     id=UUID(lease["id"]),
@@ -858,10 +1067,10 @@ async def list_leases(
                     lease_number=int(lease.get("lease_number", 0)),
                     property=PropertySummary(**property_summary),
                     tenants=tenant_list,
-                    commencement_date=pd.Timestamp(lease["commencement_date"]).date(),
-                    termination_date=pd.Timestamp(lease["termination_date"]).date(),
+                    lease_start=lease_start_date,
+                    lease_end=lease_end_date,
                     monthly_rent=Decimal(str(lease["monthly_rent"])),
-                    status=lease["status"],
+                    status=lease.get("status", "draft"),  # Default to "draft" if missing
                     pdf_url=pdf_url,
                     created_at=pd.Timestamp(lease["created_at"]).to_pydatetime()
                 ))
@@ -916,34 +1125,21 @@ async def get_lease(
         lease = leases_df.iloc[0]
         
         # Check if lease is active - handle pandas Series properly
-        if hasattr(lease, 'is_active') and not lease.get("is_active", True):
+        if lease.get("is_active") is False or (pd.notna(lease.get("is_active")) and not lease.get("is_active", True)):
             raise HTTPException(status_code=404, detail="Lease not found")
         
-        # Verify ownership
-        if lease["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized to view this lease")
+        # Verify ownership via property
+        _verify_property_ownership(lease["property_id"], user_id)
         
         # Get property summary
         property_summary = _get_property_summary(lease["property_id"], lease.get("unit_id"))
         
-        # Get tenants
-        tenants_df = read_table(NAMESPACE, TENANTS_TABLE)
-        lease_tenants = tenants_df[tenants_df["lease_id"] == str(lease_id)]
-        
-        tenant_responses = []
-        for _, tenant in lease_tenants.iterrows():
-            tenant_responses.append(TenantResponse(
-                id=UUID(tenant["id"]),
-                lease_id=UUID(tenant["lease_id"]),
-                tenant_order=tenant["tenant_order"],
-                first_name=tenant["first_name"],
-                last_name=tenant["last_name"],
-                email=tenant.get("email"),
-                phone=tenant.get("phone"),
-                signed_date=pd.Timestamp(tenant["signed_date"]).date() if tenant.get("signed_date") else None,
-                created_at=pd.Timestamp(tenant["created_at"]).to_pydatetime(),
-                updated_at=pd.Timestamp(tenant["updated_at"]).to_pydatetime()
-            ))
+        # Get tenants from JSON column
+        tenants_json = lease.get("tenants")
+        tenant_responses = _deserialize_tenants(tenants_json) if tenants_json else []
+        # Set lease_id on all tenant responses
+        for tenant_resp in tenant_responses:
+            tenant_resp.lease_id = lease_id
         
         # Get PDF and LaTeX URLs if they exist
         pdf_url = None
@@ -966,21 +1162,55 @@ async def get_lease(
                 response_dict[key] = None
         
         response_dict["id"] = UUID(lease["id"])
-        response_dict["user_id"] = UUID(lease["user_id"])
+        response_dict["user_id"] = UUID(user_id)  # Get from current_user, not from lease (since user_id is removed from schema)
         response_dict["property_id"] = UUID(lease["property_id"])
         response_dict["unit_id"] = UUID(lease["unit_id"]) if lease.get("unit_id") else None
         # Handle lease_number - default to 0 if missing (for existing leases created before this field was added)
         response_dict["lease_number"] = int(lease.get("lease_number", 0)) if lease.get("lease_number") is not None and not pd.isna(lease.get("lease_number")) else 0
         response_dict["property"] = PropertySummary(**property_summary)
         response_dict["tenants"] = tenant_responses
-        response_dict["moveout_costs"] = _deserialize_moveout_costs(lease.get("moveout_costs", "[]"))
-        response_dict["pets"] = _deserialize_pets(lease.get("pets"))
+        # Deserialize moveout_costs from JSON (like tenants)
+        moveout_costs_json = lease.get("moveout_costs")
+        response_dict["moveout_costs"] = _deserialize_moveout_costs(moveout_costs_json)
+        
+        # Deserialize pets from JSON (like tenants)
+        pets_json = lease.get("pets")
+        if pets_json:
+            response_dict["pets"] = _deserialize_pets(pets_json)
+        elif lease.get("pet_description"):
+            # Fallback to old pet_description format for backward compatibility
+            try:
+                pet_descriptions = json.loads(lease["pet_description"])
+                response_dict["pets"] = [{"type": p.get("pet_type"), "breed": p.get("breed"), "name": p.get("pet_name"), "weight": p.get("weight"), "isEmotionalSupport": False} for p in pet_descriptions]
+            except:
+                response_dict["pets"] = []
+        else:
+            response_dict["pets"] = []
         response_dict["pdf_url"] = pdf_url
         response_dict["latex_url"] = latex_url
-        response_dict["commencement_date"] = pd.Timestamp(lease["commencement_date"]).date()
-        response_dict["termination_date"] = pd.Timestamp(lease["termination_date"]).date()
+        
+        # Convert dates - handle potential None/NaN values
+        lease_start = lease.get("lease_start")
+        lease_end = lease.get("lease_end")
+        
+        if lease_start and pd.notna(lease_start):
+            response_dict["lease_start"] = pd.Timestamp(lease_start).date()
+        else:
+            # Default to today if missing
+            response_dict["lease_start"] = date.today()
+            
+        if lease_end and pd.notna(lease_end):
+            response_dict["lease_end"] = pd.Timestamp(lease_end).date()
+        else:
+            # Default to lease_start + 1 year if missing
+            response_dict["lease_end"] = response_dict["lease_start"] + pd.Timedelta(days=365)
+        
+        # Ensure lease_end >= lease_start (fix invalid data)
+        if response_dict["lease_end"] < response_dict["lease_start"]:
+            logger.warning(f"Lease {lease_id} has invalid dates: lease_end ({response_dict['lease_end']}) < lease_start ({response_dict['lease_start']}). Setting lease_end = lease_start.")
+            response_dict["lease_end"] = response_dict["lease_start"]
+        
         response_dict["lease_date"] = pd.Timestamp(lease["lease_date"]).date() if lease.get("lease_date") and pd.notna(lease.get("lease_date")) else None
-        response_dict["signed_date"] = pd.Timestamp(lease["signed_date"]).date() if lease.get("signed_date") and pd.notna(lease.get("signed_date")) else None
         response_dict["created_at"] = pd.Timestamp(lease["created_at"]).to_pydatetime()
         response_dict["updated_at"] = pd.Timestamp(lease["updated_at"]).to_pydatetime()
         
@@ -1018,9 +1248,8 @@ async def generate_lease_pdf(
         if hasattr(lease, 'is_active') and not lease.get("is_active", True):
             raise HTTPException(status_code=404, detail="Lease not found")
         
-        # Verify ownership
-        if lease["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify ownership via property
+        _verify_property_ownership(lease["property_id"], user_id)
         
         # Check if PDF already exists (unless regenerate is True)
         if not request.regenerate and lease.get("generated_pdf_document_id"):
@@ -1043,17 +1272,17 @@ async def generate_lease_pdf(
         # Get property data
         property_summary = _get_property_summary(lease["property_id"], lease.get("unit_id"))
         
-        # Get tenants
-        tenants_df = read_table(NAMESPACE, TENANTS_TABLE)
-        lease_tenants = tenants_df[tenants_df["lease_id"] == str(lease_id)]
+        # Get tenants from JSON column
+        tenants_json = lease.get("tenants")
+        lease_tenants = _deserialize_tenants(tenants_json) if tenants_json else []
         tenants = [
             {
-                "first_name": t["first_name"],
-                "last_name": t["last_name"],
-                "email": t.get("email"),
-                "phone": t.get("phone")
+                "first_name": t.first_name,
+                "last_name": t.last_name,
+                "email": t.email,
+                "phone": t.phone
             }
-            for _, t in lease_tenants.iterrows()
+            for t in lease_tenants
         ]
         
         # Generate PDF
@@ -1158,9 +1387,8 @@ async def delete_lease_pdf(
         
         lease = lease_row.iloc[0]
         
-        # Verify ownership
-        if lease["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify ownership via property
+        _verify_property_ownership(lease["property_id"], user_id)
         
         # Get PDF blob name
         pdf_blob_name = lease.get("generated_pdf_document_id")
@@ -1226,9 +1454,8 @@ async def proxy_lease_pdf_download(
         lease_rows = lease_rows.sort_values("updated_at", ascending=False)
         lease = lease_rows.iloc[0]
         
-        # Verify ownership
-        if lease["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify ownership via property
+        _verify_property_ownership(lease["property_id"], user_id)
         
         # Determine which PDF to download
         if document_type == "holding_fee":
@@ -1305,10 +1532,8 @@ async def delete_lease(
             logger.warning(f"Delete attempt: Lease {lease_id} already deleted")
             raise HTTPException(status_code=404, detail="Lease not found")
         
-        # Verify ownership
-        if lease["user_id"] != user_id:
-            logger.warning(f"Delete attempt: Lease {lease_id} unauthorized for user {user_id}")
-            raise HTTPException(status_code=403, detail="Not authorized")
+        # Verify ownership via property
+        _verify_property_ownership(lease["property_id"], user_id)
         
         # Can only delete drafts
         if lease["status"] != "draft":
@@ -1325,15 +1550,7 @@ async def delete_lease(
         catalog = get_catalog()
         table = catalog.load_table((*NAMESPACE, LEASES_TABLE))
         table.delete(EqualTo("id", str(lease_id)))
-        logger.info(f"Hard deleted all rows for lease {lease_id}")
-        
-        # Also delete associated tenants
-        try:
-            tenants_table = catalog.load_table((*NAMESPACE, TENANTS_TABLE))
-            tenants_table.delete(EqualTo("lease_id", str(lease_id)))
-            logger.info(f"Hard deleted all tenants for lease {lease_id}")
-        except Exception as e:
-            logger.warning(f"Failed to delete tenants for lease {lease_id}: {e}")
+        logger.info(f"Hard deleted all rows for lease {lease_id} (tenants are stored in JSON column, so no separate deletion needed)")
         
         logger.info(f"Successfully hard-deleted lease {lease_id}")
         return None
@@ -1361,27 +1578,17 @@ async def list_tenants(
         if len(lease_row) == 0:
             raise HTTPException(status_code=404, detail="Lease not found")
         
-        if lease_row.iloc[0]["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        lease = lease_row.iloc[0]
         
-        # Get tenants
-        tenants_df = read_table(NAMESPACE, TENANTS_TABLE)
-        lease_tenants = tenants_df[tenants_df["lease_id"] == str(lease_id)]
+        # Verify ownership via property
+        _verify_property_ownership(lease["property_id"], user_id)
         
-        tenant_responses = []
-        for _, tenant in lease_tenants.iterrows():
-            tenant_responses.append(TenantResponse(
-                id=UUID(tenant["id"]),
-                lease_id=UUID(tenant["lease_id"]),
-                tenant_order=tenant["tenant_order"],
-                first_name=tenant["first_name"],
-                last_name=tenant["last_name"],
-                email=tenant.get("email"),
-                phone=tenant.get("phone"),
-                signed_date=pd.Timestamp(tenant["signed_date"]).date() if tenant.get("signed_date") else None,
-                created_at=pd.Timestamp(tenant["created_at"]).to_pydatetime(),
-                updated_at=pd.Timestamp(tenant["updated_at"]).to_pydatetime()
-            ))
+        # Get tenants from JSON column
+        tenants_json = lease.get("tenants")
+        tenant_responses = _deserialize_tenants(tenants_json) if tenants_json else []
+        # Set lease_id on all tenant responses
+        for tenant_resp in tenant_responses:
+            tenant_resp.lease_id = lease_id
         
         return tenant_responses
         

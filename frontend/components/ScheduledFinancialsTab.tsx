@@ -11,6 +11,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Edit2, Trash2, Check, X, ChevronDown, ChevronRight, DollarSign, TrendingUp, Zap } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
+// Interface matches EXACT backend field order: ACTUAL table schema
+// id, property_id, expense_type, item_name, purchase_price, depreciation_rate,
+// count, annual_cost, principal, interest_rate, notes, created_at, updated_at, is_active
 interface ScheduledExpense {
   id: string;
   property_id: string;
@@ -23,12 +26,15 @@ interface ScheduledExpense {
   principal?: number;
   interest_rate?: number;
   notes?: string;
-  is_active: boolean;
   created_at: string;
   updated_at: string;
-  calculated_annual_cost?: number;
+  is_active: boolean;
+  calculated_annual_cost?: number; // Computed field (not in table)
 }
 
+// Interface matches EXACT backend field order: ACTUAL table schema
+// id, property_id, revenue_type, item_name, annual_amount, appreciation_rate,
+// property_value, value_added_amount, notes, created_at, updated_at, is_active
 interface ScheduledRevenue {
   id: string;
   property_id: string;
@@ -39,10 +45,10 @@ interface ScheduledRevenue {
   property_value?: number;
   value_added_amount?: number;
   notes?: string;
-  is_active: boolean;
   created_at: string;
   updated_at: string;
-  calculated_annual_amount?: number;
+  is_active: boolean;
+  calculated_annual_amount?: number; // Computed field (not in table)
 }
 
 interface Props {
@@ -169,10 +175,23 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
   // Expense handlers
   const handleAddExpense = async () => {
     try {
+      // VALIDATION: Required fields
+      if (!expenseForm.expense_type) {
+        alert('Please select an expense type');
+        return;
+      }
+      if (!expenseForm.item_name || expenseForm.item_name.trim() === '') {
+        alert('Please enter an item name');
+        return;
+      }
+      
+      // Build payload in EXACT backend field order (matching ACTUAL table schema)
+      // id, property_id, expense_type, item_name, purchase_price, depreciation_rate,
+      // count, annual_cost, principal, interest_rate, notes, created_at, updated_at, is_active
       const payload: any = {
-        property_id: propertyId,
-        expense_type: expenseForm.expense_type,
-        item_name: expenseForm.item_name,
+        property_id: propertyId, // REQUIRED
+        expense_type: expenseForm.expense_type, // REQUIRED
+        item_name: expenseForm.item_name.trim(), // REQUIRED
       };
 
       if (expenseForm.expense_type === 'capex') {
@@ -186,10 +205,65 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
         payload.interest_rate = parseFloat(expenseForm.interest_rate);
       }
 
-      console.log('📝 [EXPENSE] Creating expense with payload:', payload);
-      await apiClient.post('/scheduled-expenses', payload);
+      // Build ordered payload respecting ACTUAL backend table schema order
+      // id, property_id, expense_type, item_name, purchase_price, depreciation_rate,
+      // count, annual_cost, principal, interest_rate, notes, created_at, updated_at, is_active
+      const BACKEND_FIELD_ORDER = [
+        "id", "property_id", "expense_type", "item_name", "purchase_price", "depreciation_rate",
+        "count", "annual_cost", "principal", "interest_rate", "notes",
+        "created_at", "updated_at", "is_active"
+      ];
+      
+      const orderedPayload: any = {};
+      for (const field of BACKEND_FIELD_ORDER) {
+        if (field in payload) {
+          orderedPayload[field] = payload[field];
+        }
+      }
+      // Add any extra fields that might not be in the order list
+      for (const key of Object.keys(payload)) {
+        if (!BACKEND_FIELD_ORDER.includes(key) && !orderedPayload.hasOwnProperty(key)) {
+          orderedPayload[key] = payload[key];
+        }
+      }
+
+      console.log('📝 [EXPENSE] Creating expense with ordered payload:', orderedPayload);
+      console.log('📝 [EXPENSE] Payload field order:', Object.keys(orderedPayload));
+      const isPIExpense = expenseForm.expense_type === 'pi';
+      await apiClient.post('/scheduled-expenses', orderedPayload);
       resetExpenseForm();
-      fetchExpenses();
+      await fetchExpenses();
+      
+      // If P&I expense, fetch revenues to show principal paydown
+      if (isPIExpense) {
+        // Wait a moment for backend to create the revenue, then fetch
+        setTimeout(async () => {
+          try {
+            // Fetch revenues directly to get the latest data
+            const revenuesResponse = await apiClient.get<{ items: ScheduledRevenue[]; total: number }>(
+              `/scheduled-revenue?property_id=${propertyId}`
+            );
+            // Also update state
+            await fetchRevenues();
+            
+            // Find the principal paydown revenue that was automatically created
+            const principalPaydown = revenuesResponse.items.find(
+              r => r.revenue_type === 'principal_paydown' && r.is_active
+            );
+            if (principalPaydown && principalPaydown.annual_amount) {
+              const principalPaydownFormatted = new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              }).format(principalPaydown.annual_amount);
+              alert(`✅ P&I expense created!\n\nPrincipal paydown (automatically added to scheduled revenue): ${principalPaydownFormatted}/year`);
+            }
+          } catch (err) {
+            console.error('❌ [REVENUE] Error fetching principal paydown:', err);
+          }
+        }, 500);
+      }
     } catch (err) {
       console.error('❌ [EXPENSE] Error creating:', err);
       alert(`Failed to create expense: ${(err as Error).message}`);
@@ -203,6 +277,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
       };
 
       const expense = expenses.find(e => e.id === expenseId);
+      const isPIExpense = expense?.expense_type === 'pi';
       if (expense?.expense_type === 'capex') {
         payload.purchase_price = parseFloat(expenseForm.purchase_price);
         payload.depreciation_rate = parseFloat(expenseForm.depreciation_rate);
@@ -216,7 +291,38 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
 
       await apiClient.put(`/scheduled-expenses/${expenseId}`, payload);
       resetExpenseForm();
-      fetchExpenses();
+      await fetchExpenses();
+      
+      // If P&I expense was updated, fetch revenues to show principal paydown
+      if (isPIExpense) {
+        // Wait a moment for backend to update the revenue, then fetch
+        setTimeout(async () => {
+          try {
+            // Fetch revenues directly to get the latest data
+            const revenuesResponse = await apiClient.get<{ items: ScheduledRevenue[]; total: number }>(
+              `/scheduled-revenue?property_id=${propertyId}`
+            );
+            // Also update state
+            await fetchRevenues();
+            
+            // Find the principal paydown revenue that was automatically updated
+            const principalPaydown = revenuesResponse.items.find(
+              r => r.revenue_type === 'principal_paydown' && r.is_active
+            );
+            if (principalPaydown && principalPaydown.annual_amount) {
+              const principalPaydownFormatted = new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              }).format(principalPaydown.annual_amount);
+              alert(`✅ P&I expense updated!\n\nPrincipal paydown (automatically updated in scheduled revenue): ${principalPaydownFormatted}/year`);
+            }
+          } catch (err) {
+            console.error('❌ [REVENUE] Error fetching principal paydown:', err);
+          }
+        }, 500);
+      }
     } catch (err) {
       console.error('❌ [EXPENSE] Error updating:', err);
       alert(`Failed to update expense: ${(err as Error).message}`);
@@ -268,6 +374,9 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
   // Revenue handlers
   const handleAddRevenue = async () => {
     try {
+      // Build payload in EXACT backend field order (matching SCHEDULED_REVENUE_FIELD_ORDER)
+      // id, property_id, revenue_type, item_name, notes, is_active,
+      // annual_amount, appreciation_rate, property_value, value_added_amount, created_at, updated_at
       const payload: any = {
         property_id: propertyId,
         revenue_type: revenueForm.revenue_type,
@@ -283,7 +392,31 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
         payload.value_added_amount = parseFloat(revenueForm.value_added_amount);
       }
 
-      await apiClient.post('/scheduled-revenue', payload);
+      // Build ordered payload respecting ACTUAL backend table schema order
+      // id, property_id, revenue_type, item_name, annual_amount, appreciation_rate,
+      // property_value, value_added_amount, notes, created_at, updated_at, is_active
+      const BACKEND_FIELD_ORDER = [
+        "id", "property_id", "revenue_type", "item_name", "annual_amount", "appreciation_rate",
+        "property_value", "value_added_amount", "notes",
+        "created_at", "updated_at", "is_active"
+      ];
+      
+      const orderedPayload: any = {};
+      for (const field of BACKEND_FIELD_ORDER) {
+        if (field in payload) {
+          orderedPayload[field] = payload[field];
+        }
+      }
+      // Add any extra fields that might not be in the order list
+      for (const key of Object.keys(payload)) {
+        if (!BACKEND_FIELD_ORDER.includes(key) && !orderedPayload.hasOwnProperty(key)) {
+          orderedPayload[key] = payload[key];
+        }
+      }
+
+      console.log('📝 [REVENUE] Creating revenue with ordered payload:', orderedPayload);
+      console.log('📝 [REVENUE] Payload field order:', Object.keys(orderedPayload));
+      await apiClient.post('/scheduled-revenue', orderedPayload);
       resetRevenueForm();
       fetchRevenues();
     } catch (err) {

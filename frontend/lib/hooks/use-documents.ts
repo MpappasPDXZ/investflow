@@ -1,100 +1,103 @@
-/**
- * React Query hooks for documents
- */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../api-client';
-import type { Document, DocumentListResponse, DocumentUploadResponse } from '../types';
+import { apiClient } from '@/lib/api-client';
 
 export interface DocumentFilters {
-  property_id?: string;
+  property_id: string; // Required
   unit_id?: string;
   tenant_id?: string;
   document_type?: string;
-  skip?: number;
-  limit?: number;
 }
 
-export function useDocuments(filters: DocumentFilters = {}) {
+export interface Document {
+  id: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  document_type: string;
+  property_id?: string;
+  unit_id?: string;
+  tenant_id?: string;
+  display_name?: string;
+  uploaded_at: string;
+  created_at: string;
+  blob_location: string;
+}
+
+export interface DocumentListResponse {
+  items: Document[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export function useDocuments(filters: DocumentFilters) {
   return useQuery<DocumentListResponse>({
     queryKey: ['documents', filters],
-    queryFn: () => {
+    queryFn: async () => {
       const params = new URLSearchParams();
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined) params.append(key, String(value));
-      });
-      const queryString = params.toString();
-      return apiClient.get<DocumentListResponse>(`/documents${queryString ? `?${queryString}` : ''}`);
-    },
-    refetchOnMount: 'always', // Always refetch when component mounts
-    staleTime: 0, // Consider data stale immediately
-  });
-}
-
-export function useDocument(documentId: string) {
-  return useQuery<Document>({
-    queryKey: ['document', documentId],
-    queryFn: () => apiClient.get<Document>(`/documents/${documentId}`),
-    enabled: !!documentId,
-  });
-}
-
-export function useDocumentDownloadUrl(documentId: string) {
-  return useQuery<{ download_url: string }>({
-    queryKey: ['document-download', documentId],
-    queryFn: () => apiClient.get<{ download_url: string }>(`/documents/${documentId}/download`),
-    enabled: !!documentId,
-    staleTime: 1000 * 60 * 60, // 1 hour (SAS tokens valid for 24 hours)
-  });
-}
-
-export function useUploadDocument() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      file,
-      documentType,
-      displayName,
-      propertyId,
-      unitId,
-      tenantId,
-    }: {
-      file: File;
-      documentType: string;
-      displayName?: string;
-      propertyId?: string;
-      unitId?: string;
-      tenantId?: string;
-    }) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('document_type', documentType);
-      if (displayName) formData.append('display_name', displayName);
-      if (propertyId) formData.append('property_id', propertyId);
-      if (unitId) formData.append('unit_id', unitId);
-      if (tenantId) formData.append('tenant_id', tenantId);
+      params.append('property_id', filters.property_id);
+      if (filters.unit_id) params.append('unit_id', filters.unit_id);
+      if (filters.tenant_id) params.append('tenant_id', filters.tenant_id);
+      if (filters.document_type) params.append('document_type', filters.document_type);
       
-      return apiClient.upload<DocumentUploadResponse>('/documents/upload', formData);
+      const response = await apiClient.get(`/documents?${params.toString()}`);
+      return response as DocumentListResponse;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['documents'] });
-    },
+    enabled: !!filters.property_id, // Only fetch when property_id is provided
   });
 }
 
 export function useDeleteDocument() {
   const queryClient = useQueryClient();
-
+  
   return useMutation({
-    mutationFn: (documentId: string) => apiClient.delete(`/documents/${documentId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['documents'] });
+    mutationFn: async (documentId: string) => {
+      await apiClient.delete(`/documents/${documentId}`);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['documents'] });
+      await queryClient.refetchQueries({ queryKey: ['documents'] });
     },
   });
 }
 
+export interface UploadDocumentParams {
+  file: File;
+  documentType: string;
+  propertyId?: string;
+  unitId?: string;
+  tenantId?: string;
+  displayName?: string;
+}
 
-
-
-
-
+export function useUploadDocument() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (params: UploadDocumentParams) => {
+      const formData = new FormData();
+      formData.append('file', params.file);
+      formData.append('document_type', params.documentType);
+      
+      if (params.propertyId) {
+        formData.append('property_id', params.propertyId);
+      }
+      if (params.unitId) {
+        formData.append('unit_id', params.unitId);
+      }
+      if (params.tenantId) {
+        formData.append('tenant_id', params.tenantId);
+      }
+      if (params.displayName) {
+        formData.append('display_name', params.displayName);
+      }
+      
+      const response = await apiClient.upload<{ document: Document }>('/documents/upload', formData);
+      return response;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['documents'] });
+      await queryClient.refetchQueries({ queryKey: ['documents'] });
+    },
+  });
+}

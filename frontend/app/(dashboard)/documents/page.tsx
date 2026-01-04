@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,11 @@ import {
 import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
 import { ReceiptViewer } from "@/components/ReceiptViewer";
+import { useDocuments, useDeleteDocument } from "@/lib/hooks/use-documents";
+import { useProperties } from "@/lib/hooks/use-properties";
+import { useTenants, useTenant } from "@/lib/hooks/use-tenants";
+import { useUnits } from "@/lib/hooks/use-units";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface Document {
   id: string;
@@ -53,6 +59,7 @@ interface Document {
   document_type: string;
   property_id?: string;
   unit_id?: string;
+  tenant_id?: string;
   display_name?: string;
   uploaded_at: string;
   created_at: string;
@@ -80,16 +87,26 @@ const DOCUMENT_TYPES = [
 
 // Photo types vs Document types for filtering
 const PHOTO_TYPES = ["photo", "inspection"];
-const DOCUMENT_TYPES_FILTER = ["receipt", "lease", "background_check", "contract", "invoice", "other"];
+// Exclude background_check - those are shown on the background check page only
+const DOCUMENT_TYPES_FILTER = ["receipt", "lease", "contract", "invoice", "other"];
 
 export default function DocumentsPage() {
   const searchParams = useSearchParams();
   const typeFilter = searchParams.get("type"); // "document" | "photo" | null (all)
   
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedProperty, setSelectedProperty] = useState<string>("all");
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
+  const { data: propertiesData } = useProperties();
+  const { data: documentsData, isLoading } = useDocuments(
+    selectedPropertyId ? { property_id: selectedPropertyId } : { property_id: "" }
+  );
+  const deleteDocument = useDeleteDocument();
+  const queryClient = useQueryClient();
+
+  const properties = propertiesData?.items || [];
+  const allDocuments = documentsData?.items || [];
+  
+  // Filter out receipt documents - those are managed via Expenses page
+  const documents = allDocuments.filter((doc: Document) => doc.document_type !== "receipt");
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -97,53 +114,102 @@ export default function DocumentsPage() {
   const [editForm, setEditForm] = useState({
     display_name: "",
     property_id: "",
+    unit_id: "",
+    tenant_id: "",
     document_type: "",
   });
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [docsRes, propsRes] = await Promise.all([
-        apiClient.get("/documents"),
-        apiClient.get("/properties"),
-      ]);
-
-      const docsData = docsRes as any;
-      const propsData = propsRes as any;
-
-      // Filter out receipt documents - those are managed via Expenses page
-      const allDocs = docsData.items || docsData.data?.items || docsData || [];
-      const nonReceiptDocs = allDocs.filter((doc: Document) => doc.document_type !== "receipt");
-      setDocuments(nonReceiptDocs);
-      setProperties(propsData.items || propsData.data?.items || propsData || []);
-    } catch (err) {
-      console.error("Error fetching data:", err);
-    } finally {
-      setLoading(false);
+  
+  // Fetch tenants for the property - use editingDoc.property_id if available, otherwise use editForm.property_id
+  // This ensures tenants load immediately when dialog opens
+  const propertyIdForTenants = editingDoc?.property_id || editForm.property_id;
+  const { data: editTenantsData } = useTenants(
+    propertyIdForTenants && propertyIdForTenants !== "unassigned" 
+      ? { property_id: propertyIdForTenants } 
+      : undefined
+  );
+  const editTenants = editTenantsData?.tenants || [];
+  
+  // If document has a tenant_id but tenant is not in the list, fetch it individually
+  const documentTenantId = editingDoc?.tenant_id;
+  const { data: documentTenantData } = useTenant(documentTenantId || "");
+  const documentTenant = documentTenantData;
+  
+  // Combine tenants list with the document's tenant if it's not already in the list
+  const allEditTenants = useMemo(() => {
+    const tenantMap = new Map(editTenants.map(t => [t.id, t]));
+    // If document has a tenant that's not in the property's tenant list, add it
+    if (documentTenant && documentTenant.id && !tenantMap.has(documentTenant.id)) {
+      tenantMap.set(documentTenant.id, documentTenant);
     }
-  };
+    return Array.from(tenantMap.values());
+  }, [editTenants, documentTenant]);
+  
+  const { data: editUnitsData } = useUnits(editForm.property_id && editForm.property_id !== "unassigned" ? editForm.property_id : "");
+  const allEditUnits = editUnitsData?.items || [];
+  
+  // Get units for the currently selected property in the edit form (for multi-family properties)
+  const editFormPropertyUnits = useMemo(() => {
+    if (!editForm.property_id || editForm.property_id === "unassigned") return [];
+    return allEditUnits.filter(u => u.property_id === editForm.property_id);
+  }, [allEditUnits, editForm.property_id]);
 
   const handleDelete = async (documentId: string) => {
     if (!confirm("Delete this document?")) return;
     try {
-      await apiClient.delete(`/documents/${documentId}`);
-      setDocuments(documents.filter((doc) => doc.id !== documentId));
+      await deleteDocument.mutateAsync(documentId);
     } catch (err) {
       console.error("Error deleting document:", err);
+      alert("Failed to delete document");
     }
   };
 
   const handleDownload = async (doc: Document) => {
     try {
+      // Use proxy endpoint for IE compatibility (forces download via Content-Disposition header)
+      const token = localStorage.getItem('auth_token');
+      const proxyUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/documents/${doc.id}/proxy`;
+      
+      // Check if browser supports download attribute
+      const supportsDownload = 'download' in document.createElement('a');
+      
+      // Get direct download URL as fallback
       const response = (await apiClient.get(`/documents/${doc.id}/download`)) as any;
-      window.open(response.download_url || response.data?.download_url, "_blank");
+      const downloadUrl = response.download_url || response.data?.download_url;
+      
+      if (supportsDownload && downloadUrl) {
+        // Modern browsers - use direct download
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = doc.display_name || doc.file_name || 'document';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        // IE or browsers without download support - use proxy
+        const proxyResponse = await fetch(proxyUrl, {
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : ''
+          }
+        });
+        
+        if (!proxyResponse.ok) {
+          throw new Error('Download failed');
+        }
+        
+        const blob = await proxyResponse.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // Don't set a.download - proxy already sets Content-Disposition header
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
     } catch (err) {
       console.error("Error downloading:", err);
+      alert('Failed to download document');
     }
   };
 
@@ -152,6 +218,8 @@ export default function DocumentsPage() {
     setEditForm({
       display_name: doc.display_name || "",
       property_id: doc.property_id || "unassigned",
+      unit_id: doc.unit_id || "",
+      tenant_id: doc.tenant_id || "",
       document_type: doc.document_type || "other",
     });
     setEditDialogOpen(true);
@@ -162,7 +230,53 @@ export default function DocumentsPage() {
 
     setSaving(true);
     try {
+      // Build updateData in vault table field order (backend will merge and reorder):
+      // id, user_id, property_id, unit_id, blob_location, container_name, blob_name,
+      // file_name, file_type, document_type, document_metadata, display_name, tenant_id,
+      // is_deleted, file_size, uploaded_at, expires_at, created_at, updated_at
       const updateData: any = {};
+
+      // Handle property assignment (required field)
+      // Backend requires property_id even when clear_property is true
+      if (editForm.property_id === "unassigned") {
+        updateData.clear_property = true;
+        // Still need to send a property_id for validation, use the original if available
+        // or the first property as fallback
+        if (editingDoc.property_id) {
+          updateData.property_id = editingDoc.property_id;
+        } else if (properties.length > 0) {
+          updateData.property_id = properties[0].id;
+        } else {
+          throw new Error("Cannot unassign property: no property available for validation");
+        }
+      } else if (editForm.property_id && editForm.property_id !== editingDoc.property_id) {
+        updateData.property_id = editForm.property_id;
+      } else if (editingDoc.property_id) {
+        // Always send property_id (required)
+        updateData.property_id = editingDoc.property_id;
+      } else if (editForm.property_id) {
+        // Use the form property_id if document doesn't have one
+        updateData.property_id = editForm.property_id;
+      } else {
+        // Fallback to first property if nothing else available
+        if (properties.length > 0) {
+          updateData.property_id = properties[0].id;
+        } else {
+          throw new Error("Property ID is required");
+        }
+      }
+      
+      // Handle unit assignment - only send if changed
+      const currentUnitId = editingDoc.unit_id || "";
+      if (editForm.unit_id !== currentUnitId) {
+        updateData.unit_id = editForm.unit_id || null;
+      }
+      
+      // Handle tenant assignment - only send if changed
+      const currentTenantId = editingDoc.tenant_id || "";
+      if (editForm.tenant_id !== currentTenantId) {
+        updateData.tenant_id = editForm.tenant_id || null;
+      }
 
       // Only include document_type if it has a value
       if (editForm.document_type) {
@@ -174,34 +288,31 @@ export default function DocumentsPage() {
         updateData.display_name = editForm.display_name.trim();
       }
 
-      // Handle property assignment
-      if (editForm.property_id === "unassigned") {
-        updateData.clear_property = true;
-      } else if (editForm.property_id) {
-        updateData.property_id = editForm.property_id;
-      }
-
-      console.log("Updating document:", editingDoc.id, "with data:", updateData);
+      console.log("[DOCUMENT] 📤 Updating document:", editingDoc.id);
+      console.log("[DOCUMENT] 📤 Update payload:", updateData);
+      console.log("[DOCUMENT] 📤 Payload field order:", Object.keys(updateData));
+      console.log("[DOCUMENT] 📤 Payload VALUES:");
+      Object.entries(updateData).forEach(([key, value]) => {
+        console.log(`  ${key}: ${value} (type: ${typeof value})`);
+      });
 
       const response = (await apiClient.patch(
         `/documents/${editingDoc.id}`,
         updateData
       )) as Document;
       
-      console.log("Update response:", response);
+      console.log("[DOCUMENT] ✅ Update response:", response);
 
-      // Update the document in our local state
-      setDocuments(
-        documents.map((doc) =>
-          doc.id === editingDoc.id
-            ? {
-                ...doc,
-                ...response,
-                property_id: editForm.property_id === "unassigned" ? undefined : editForm.property_id,
-              }
-            : doc
-        )
-      );
+      // Optimistically update the local state instead of refetching all documents
+      queryClient.setQueryData(['documents', { property_id: selectedPropertyId }], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          items: oldData.items.map((doc: Document) => 
+            doc.id === editingDoc.id ? { ...doc, ...response } : doc
+          )
+        };
+      });
 
       setEditDialogOpen(false);
       setEditingDoc(null);
@@ -261,27 +372,15 @@ export default function DocumentsPage() {
 
   // Remove the eager photo URL fetching - ReceiptViewer now handles lazy loading
 
-  // Filter documents by type (from URL) and property
-  const typeFilteredDocs = typeFilter === "photo"
+  // Filter documents by type (from URL)
+  const filteredDocs = typeFilter === "photo"
     ? documents.filter((d) => PHOTO_TYPES.includes(d.document_type))
     : typeFilter === "document"
-    ? documents.filter((d) => DOCUMENT_TYPES_FILTER.includes(d.document_type))
+    ? documents.filter((d) => 
+        DOCUMENT_TYPES_FILTER.includes(d.document_type) && 
+        d.document_type !== "background_check" // Explicitly exclude background checks
+      )
     : documents; // Show all if no filter
-    
-  const filteredDocs =
-    selectedProperty === "all"
-      ? typeFilteredDocs
-      : selectedProperty === "unassigned"
-      ? typeFilteredDocs.filter((d) => !d.property_id)
-      : typeFilteredDocs.filter((d) => d.property_id === selectedProperty);
-
-  // Group by property (for documents view)
-  const groupedByProperty = filteredDocs.reduce((acc, doc) => {
-    const key = doc.property_id || "unassigned";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(doc);
-    return acc;
-  }, {} as Record<string, Document[]>);
 
   // Group photos by property (similar to expenses page)
   const photosByProperty = typeFilter === "photo" ? 
@@ -293,10 +392,53 @@ export default function DocumentsPage() {
     }, {} as Record<string, Document[]>) 
     : {};
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-32">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Show property selection if no property is selected
+  if (!selectedPropertyId) {
+    return (
+      <div className="p-8">
+        <div className="mb-6">
+          <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            {typeFilter === "photo" ? (
+              <><Image className="h-5 w-5" /> Photos</>
+            ) : typeFilter === "document" ? (
+              <><FileText className="h-5 w-5" /> Documents</>
+            ) : (
+              <><FileText className="h-5 w-5" /> Vault</>
+            )}
+          </h1>
+          <p className="text-sm text-gray-600 mt-1">
+            Select a property to view documents
+          </p>
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <Label htmlFor="property-select" className="text-sm font-medium mb-2 block">
+              Select Property
+            </Label>
+            <select
+              id="property-select"
+              value={selectedPropertyId}
+              onChange={(e) => setSelectedPropertyId(e.target.value)}
+              className="px-2 py-1.5 border border-gray-300 rounded text-sm w-full"
+              required
+            >
+              <option value="">Select Property</option>
+              {properties.map((prop) => (
+                <option key={prop.id} value={prop.id}>
+                  {prop.display_name || prop.address_line1 || prop.id}
+                </option>
+              ))}
+            </select>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -317,27 +459,26 @@ export default function DocumentsPage() {
             )}
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            {filteredDocs.length} {typeFilter === "photo" ? "photos" : typeFilter === "document" ? "documents" : "files"} across {properties.length} properties
+            {filteredDocs.length} {typeFilter === "photo" ? "photos" : typeFilter === "document" ? "documents" : "files"}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-            <SelectTrigger className="w-[200px] h-8 text-xs">
-              <SelectValue placeholder="Filter by property" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Properties</SelectItem>
-              <SelectItem value="unassigned">Unassigned</SelectItem>
-              {properties.map((prop) => (
-                <SelectItem key={prop.id} value={prop.id}>
-                  {prop.display_name || prop.address_line1 || "Property"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Link href="/documents/add">
-            <Button className="bg-black text-white hover:bg-gray-800 h-8 text-xs">
-              <Plus className="h-3 w-3 mr-1.5" />
+          <select
+            value={selectedPropertyId}
+            onChange={(e) => setSelectedPropertyId(e.target.value)}
+            className="px-2 py-1.5 border border-gray-300 rounded text-sm w-full md:w-auto min-w-[200px]"
+            required
+          >
+            <option value="">Select Property</option>
+            {properties.map((prop) => (
+              <option key={prop.id} value={prop.id}>
+                {prop.display_name || prop.address_line1 || prop.id}
+              </option>
+            ))}
+          </select>
+          <Link href={`/documents/add?property_id=${selectedPropertyId}`}>
+            <Button className="bg-black text-white hover:bg-gray-800 h-7 text-xs px-2">
+              <Plus className="h-3 w-3 mr-1" />
               Add Document
             </Button>
           </Link>
@@ -557,35 +698,32 @@ export default function DocumentsPage() {
           </CardContent>
         </Card>
       ) : (
-        /* Documents grouped by property */
-        Object.entries(groupedByProperty).map(([propertyId, docs]) => (
-          <Card key={propertyId} className="overflow-hidden">
-            <CardHeader className="py-3 px-4 bg-muted/50">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <Building2 className="h-4 w-4" />
-                {propertyId === "unassigned"
-                  ? "Unassigned Documents"
-                  : getPropertyName(propertyId)}
-                <Badge variant="secondary" className="ml-auto text-xs">
-                  {docs.length}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            
-            {/* Desktop Table View */}
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow className="text-xs">
-                    <TableHead className="w-[35%] text-xs">Name</TableHead>
-                    <TableHead className="w-[12%] text-xs">Type</TableHead>
-                    <TableHead className="w-[10%] text-xs">Size</TableHead>
-                    <TableHead className="w-[12%] text-xs">Date</TableHead>
-                    <TableHead className="w-[31%] text-right text-xs">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {docs.map((doc) => (
+        /* Documents for selected property */
+        <Card className="overflow-hidden">
+          <CardHeader className="py-3 px-4 bg-muted/50">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              {getPropertyName(selectedPropertyId)}
+              <Badge variant="secondary" className="ml-auto text-xs">
+                {filteredDocs.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          
+          {/* Desktop Table View */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs">
+                  <TableHead className="w-[35%] text-xs">Name</TableHead>
+                  <TableHead className="w-[12%] text-xs">Type</TableHead>
+                  <TableHead className="w-[10%] text-xs">Size</TableHead>
+                  <TableHead className="w-[12%] text-xs">Date</TableHead>
+                  <TableHead className="w-[31%] text-right text-xs">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredDocs.map((doc: Document) => (
                     <TableRow key={doc.id} className="text-xs">
                       <TableCell className="py-2">
                         <div className="flex items-center gap-2">
@@ -676,7 +814,7 @@ export default function DocumentsPage() {
             
             {/* Mobile Card View */}
             <div className="md:hidden divide-y">
-              {docs.map((doc) => (
+              {filteredDocs.map((doc: Document) => (
                 <div key={doc.id} className="p-4 space-y-3">
                   {/* Document Info */}
                   <div className="flex items-start gap-3">
@@ -756,37 +894,29 @@ export default function DocumentsPage() {
               ))}
             </div>
           </Card>
-        ))
       )}
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Document</DialogTitle>
+            <DialogDescription>
+              Update document metadata including property, tenant, type, and display name.
+            </DialogDescription>
           </DialogHeader>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <p className="text-sm text-blue-800">
+              <strong>Note:</strong> You can only edit metadata (property, tenant, type, name). To change the file itself, delete this document and upload a new one.
+            </p>
+          </div>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="display_name">Display Name</Label>
-              <Input
-                id="display_name"
-                value={editForm.display_name}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, display_name: e.target.value })
-                }
-                placeholder={editingDoc?.file_name || "Enter a name"}
-              />
-              <p className="text-xs text-muted-foreground">
-                Original: {editingDoc?.file_name}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="property">Property</Label>
+              <Label htmlFor="property">Property *</Label>
               <Select
                 value={editForm.property_id}
                 onValueChange={(val) =>
-                  setEditForm({ ...editForm, property_id: val })
+                  setEditForm({ ...editForm, property_id: val, unit_id: "", tenant_id: "" })
                 }
               >
                 <SelectTrigger id="property">
@@ -797,6 +927,54 @@ export default function DocumentsPage() {
                   {properties.map((prop) => (
                     <SelectItem key={prop.id} value={prop.id}>
                       {prop.display_name || prop.address_line1 || "Property"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Unit Selection - Only show if property has units (multi-family) */}
+            {editForm.property_id && editForm.property_id !== "unassigned" && editFormPropertyUnits.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="unit_id">Unit (optional)</Label>
+                <Select
+                  value={editForm.unit_id || "__none__"}
+                  onValueChange={(val) =>
+                    setEditForm({ ...editForm, unit_id: val === "__none__" ? "" : val })
+                  }
+                >
+                  <SelectTrigger id="unit_id">
+                    <SelectValue placeholder="Select unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {editFormPropertyUnits.map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id}>
+                        {unit.unit_number}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Label htmlFor="tenant_id">Tenant (optional)</Label>
+              <Select
+                value={editForm.tenant_id || "__none__"}
+                onValueChange={(val) =>
+                  setEditForm({ ...editForm, tenant_id: val === "__none__" ? "" : val })
+                }
+                disabled={!editForm.property_id || editForm.property_id === "unassigned"}
+              >
+                <SelectTrigger id="tenant_id">
+                  <SelectValue placeholder="Select tenant" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {allEditTenants.map((tenant) => (
+                    <SelectItem key={tenant.id} value={tenant.id}>
+                      {tenant.first_name} {tenant.last_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -822,6 +1000,21 @@ export default function DocumentsPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="display_name">Display Name</Label>
+              <Input
+                id="display_name"
+                value={editForm.display_name}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, display_name: e.target.value })
+                }
+                placeholder={editingDoc?.file_name || "Enter a name"}
+              />
+              <p className="text-xs text-muted-foreground">
+                Original: {editingDoc?.file_name}
+              </p>
             </div>
           </div>
           <DialogFooter>

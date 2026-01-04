@@ -82,6 +82,9 @@ class LeaseGeneratorService:
         # --- STRING VARIABLES ---
         tenant_names = ", ".join([f"{t.get('first_name', '')} {t.get('last_name', '')}" for t in tenants])
         owner_name = self._escape_latex(lease_data.get("owner_name", "S&M Axios Heartland Holdings, LLC"))
+        manager_name = self._escape_latex(lease_data.get("manager_name", "Sarah Pappas"))
+        manager_address = self._escape_latex(lease_data.get("manager_address", "1606 S 208th St, Elkhorn, NE 68022"))
+        payment_method = self._escape_latex(lease_data.get("payment_method", "TurboTenant"))
         full_address = property_data.get("address", "")
         property_address = full_address  # For header
         property_description = property_data.get("description", "Residential property")
@@ -92,6 +95,23 @@ class LeaseGeneratorService:
         appliances_provided = lease_data.get("appliances_provided", "")
         attic_usage = lease_data.get("attic_usage", "")
         holding_fee_date = lease_data.get("holding_fee_date", "")
+        notes = lease_data.get("notes", "").strip()
+        
+        # Rent due fields
+        rent_due_day = lease_data.get("rent_due_day", 1)
+        rent_due_by_day = lease_data.get("rent_due_by_day", 5)
+        rent_due_by_time = lease_data.get("rent_due_by_time", "6pm")
+        
+        # Format day numbers with ordinal suffix
+        def ordinal(n):
+            if 10 <= n % 100 <= 20:
+                suffix = 'th'
+            else:
+                suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+            return f"{n}{suffix}"
+        
+        rent_due_day_str = ordinal(int(rent_due_day))
+        rent_due_by_day_str = ordinal(int(rent_due_by_day))
         year_built_raw = property_data.get("year_built", "1978")
         try:
             year_built_float = float(year_built_raw)
@@ -101,8 +121,9 @@ class LeaseGeneratorService:
             year_built_s = "1978"
         
         # --- DATE VARIABLES ---
-        commencement_date = self._parse_date(lease_data.get("commencement_date"))
-        termination_date = self._parse_date(lease_data.get("termination_date"))
+        # Map lease_start/lease_end to commencement_date/termination_date for backward compatibility
+        commencement_date = self._parse_date(lease_data.get("lease_start") or lease_data.get("commencement_date"))
+        termination_date = self._parse_date(lease_data.get("lease_end") or lease_data.get("termination_date"))
         lease_date = self._parse_date(lease_data.get("lease_date"))
         
         # Format dates for display
@@ -111,19 +132,6 @@ class LeaseGeneratorService:
         lease_date_str = lease_date.strftime("%B %d, %Y") if lease_date else "\\underline{\\hspace{3cm}}"
         
         # --- DECIMAL VARIABLES (for calculations) ---
-        monthly_rent_decimal = Decimal(str(lease_data.get("monthly_rent") or "0"))
-        
-        # Calculate prorated rent
-        prorated_rent_decimal = Decimal("0")
-        if commencement_date and commencement_date.day != 1:
-            days_after_first = commencement_date.day - 1
-            prorated_percentage = (Decimal("30") - Decimal(str(days_after_first))) / Decimal("30")
-            prorated_rent_decimal = (monthly_rent_decimal * prorated_percentage).quantize(Decimal("0.01"))
-        
-        # --- CURRENCY VARIABLES (formatted strings) ---
-        monthly_rent = self._format_currency(lease_data.get("monthly_rent") or Decimal("0"))
-        security_deposit = self._format_currency(lease_data.get("security_deposit") or Decimal("0"))
-        holding_fee_amount = self._format_currency(lease_data.get("holding_fee_amount") or Decimal("0"))
         # Convert late fees to Decimal, handling strings, numbers, and None
         def _to_decimal(value):
             if value is None or value == "" or (isinstance(value, float) and pd.isna(value)):
@@ -132,6 +140,19 @@ class LeaseGeneratorService:
                 return Decimal(str(value))
             except (ValueError, TypeError):
                 return Decimal("0")
+        
+        monthly_rent_decimal = Decimal(str(lease_data.get("monthly_rent") or "0"))
+        
+        # Prorated rent: use prorated_first_month_rent if show_prorated_rent is true
+        show_prorated_rent = lease_data.get("show_prorated_rent", False)
+        prorated_rent_decimal = Decimal("0")
+        if show_prorated_rent and lease_data.get("prorated_first_month_rent"):
+            prorated_rent_decimal = _to_decimal(lease_data.get("prorated_first_month_rent"))
+        
+        # --- CURRENCY VARIABLES (formatted strings) ---
+        monthly_rent = self._format_currency(lease_data.get("monthly_rent") or Decimal("0"))
+        security_deposit = self._format_currency(lease_data.get("security_deposit") or Decimal("0"))
+        holding_fee_amount = self._format_currency(lease_data.get("holding_fee_amount") or Decimal("0"))
         
         late_fee_1_val = _to_decimal(lease_data.get("late_fee_day_1_10"))
         late_fee_2_val = _to_decimal(lease_data.get("late_fee_day_11"))
@@ -167,7 +188,8 @@ class LeaseGeneratorService:
         offstreet_parking_spots = int(lease_data.get("offstreet_parking_spots", 0) or 0)
         parking_spaces = int(lease_data.get("parking_spaces", 0) or 0)
         early_termination_notice_days = lease_data.get("early_termination_notice_days", 60)
-        year_built = lease_data.get("lead_paint_year_built") or property_data.get("year_built") or 1978
+        early_termination_fee_months = lease_data.get("early_termination_fee_months", 2)
+        year_built = lease_data.get("disclosure_lead_paint") or lease_data.get("lead_paint_year_built") or property_data.get("year_built") or 1978
         # Convert year_built to int then string (handle float, string, None, NaN)
         try:
             if year_built is None:
@@ -188,11 +210,11 @@ class LeaseGeneratorService:
         has_shared_driveway = lease_data.get("has_shared_driveway", False)
         has_garage_door_opener = bool(lease_data.get("has_garage_door_opener", False))
         is_multi_family = lease_data.get("unit_id") is not None and lease_data.get("unit_id") != ""
-        show_prorated_rent = lease_data.get("show_prorated_rent", False)
         early_termination_allowed = lease_data.get("early_termination_allowed", False)
         garage_outlets_prohibited = lease_data.get("garage_outlets_prohibited", False)
         lead_paint_disclosure = lease_data.get("lead_paint_disclosure", False)
         has_attic = lease_data.get("has_attic", False)
+        auto_convert_month_to_month = lease_data.get("auto_convert_month_to_month", False)
         
         # Check if property is in Omaha
         property_city = property_data.get("city", "").lower()
@@ -254,19 +276,19 @@ This Lease creates joint and several liability in the case of multiple Tenants. 
 Landlord hereby leases the Premises located at: \textbf{''' + full_address + r'''} (``Premises''). Description: ''' + property_description + r'''.
 
 \section{2. LEASE TERM AND RENEWAL}
-The Lease shall begin on \textbf{''' + commencement_str + r'''} (``Commencement Date'') and end on \textbf{''' + termination_str + r'''} (``Termination Date'').
+The Lease shall begin on \textbf{''' + commencement_str + r'''} (``Commencement Date'') and end on \textbf{''' + termination_str + r'''} (``Termination Date'').''' + (r'''
 
 \textbf{Automatic Month-to-Month Conversion:} Unless either party provides written notice of intent to terminate at least thirty (30) days prior to the Termination Date (or any subsequent month-end during a month-to-month tenancy), this Lease shall automatically convert to a month-to-month tenancy upon the same terms and conditions, except as modified herein.
 
 \textbf{Rent Adjustment During Month-to-Month:} Landlord may adjust the monthly rent upon thirty (30) days' prior written notice to Tenant. The adjusted rent shall take effect on the first day of the month following the expiration of the notice period.
 
-\textbf{Termination of Month-to-Month Tenancy:} Either party may terminate the month-to-month tenancy by providing at least thirty (30) days' written notice prior to the end of any monthly rental period. Such notice shall be delivered in accordance with Section 29 (Notice) of this Lease.
+\textbf{Termination of Month-to-Month Tenancy:} Either party may terminate the month-to-month tenancy by providing at least thirty (30) days' written notice prior to the end of any monthly rental period. Such notice shall be delivered in accordance with Section 29 (Notice) of this Lease.''' if auto_convert_month_to_month else '') + r'''
 
 \section{3. LEASE PAYMENTS (RENT)}
-Tenant agrees to pay Landlord as rent for the Premises the amount of \textbf{\$''' + monthly_rent + r'''} per month. Rent is due on the \textbf{1st day of each month}. Rent paid by the \textbf{5th of the month by 6pm} is not considered late.
+Tenant agrees to pay Landlord as rent for the Premises the amount of \textbf{\$''' + monthly_rent + r'''} per month. Rent is due on the \textbf{''' + rent_due_day_str + r''' day of each month}. Rent paid by the \textbf{''' + rent_due_by_day_str + r''' of the month by ''' + rent_due_by_time + r'''} is not considered late.
 \begin{itemize}
-    \item \textbf{Payment Method:} Rent shall be paid exclusively via \textbf{TurboTenant}. If Tenant experiences any technical issues with TurboTenant, Tenant must notify Landlord immediately via email or text message. In the event there is a technical issue that cannot be resolved before rent is due, Landlord will accept payment by \textbf{check} made payable to \textbf{''' + owner_name + r'''}.''' + (r'''
-    \item \textbf{Prorated Rent:} If the Commencement Date is not the 1st of the month, the first month's rent shall be prorated based on \$''' + monthly_rent + r''' $\times$ (30 - days after 1st) / 30 (rounded to the nearest cent) to \textbf{\$''' + prorated_rent_str + r'''}. ''' if show_prorated_rent else '') + r'''
+    \item \textbf{Payment Method:} Rent shall be paid exclusively via \textbf{''' + payment_method + r'''}. If Tenant experiences any technical issues with ''' + payment_method + r''', Tenant must notify Landlord immediately via email or text message. In the event there is a technical issue that cannot be resolved before rent is due, Landlord will accept payment by \textbf{check} made payable to \textbf{''' + owner_name + r'''}.''' + (r'''
+    \item \textbf{Prorated Rent:} This lease is prorated for the partial month between the Commencement Date and the end of the month and shall be for \textbf{\$''' + prorated_rent_str + r'''}. ''' if show_prorated_rent else '') + r'''
 \end{itemize}
 
 \section{4. LATE CHARGES}
@@ -276,7 +298,7 @@ Tenant agrees to pay Landlord as rent for the Premises the amount of \textbf{\$'
         # This applies to both single-family and multi-family properties
         if late_fee_3 != "0.00" or late_fee_4 != "0.00":
             # Full 4-tier structure (NE standard)
-            latex += r'''If rent is not paid by the \textbf{5th at 6pm}, a late fee of \textbf{\$''' + late_fee_1 + r'''} will be assessed. If rent and late fee are not paid by the \textbf{11th}, the late fee increases to \textbf{\$''' + late_fee_2 + r'''}. If not paid by the \textbf{16th}, the late fee increases to \textbf{\$''' + late_fee_3 + r'''}. If not paid by the \textbf{21st}, the late fee increases to \textbf{\$''' + late_fee_4 + r'''}. If rent and all late fees are not paid in full prior to the next month's rent due date (the 5th), an automatic eviction notice will be given.'''
+            latex += r'''If rent is not paid by the \textbf{''' + rent_due_by_day_str + r''' at ''' + rent_due_by_time + r'''}, a late fee of \textbf{\$''' + late_fee_1 + r'''} will be assessed. If rent and late fee are not paid by the \textbf{11th}, the late fee increases to \textbf{\$''' + late_fee_2 + r'''}. If not paid by the \textbf{16th}, the late fee increases to \textbf{\$''' + late_fee_3 + r'''}. If not paid by the \textbf{21st}, the late fee increases to \textbf{\$''' + late_fee_4 + r'''}. If rent and all late fees are not paid in full prior to the next month's rent due date (the ''' + rent_due_by_day_str + r'''), an automatic eviction notice will be given.'''
         else:
             # Simplified 2-tier structure (MO or when only first two tiers are set)
             latex += r'''If rent is not paid by the due date, Tenant agrees to pay a late fee of \textbf{\$''' + late_fee_1 + r'''}. If payment remains unpaid after the 11th, an additional late fee of \textbf{\$''' + late_fee_2 + r'''} will be assessed.'''
@@ -284,9 +306,9 @@ Tenant agrees to pay Landlord as rent for the Premises the amount of \textbf{\$'
         latex += r'''
 
 \section{5. INSUFFICIENT FUNDS (NSF)}
-Payments made via \textbf{TurboTenant} are processed electronically and will either complete successfully or be declined at the time of transaction; therefore, NSF fees do not apply to TurboTenant payments. However, if Tenant pays by \textbf{check} (as permitted under Section 3 for technical issues only), and such check is returned to Landlord due to insufficient funds, stop payment, or closed account, Tenant agrees to pay a fee of \textbf{\$''' + nsf_fee + r'''} for each returned check. This NSF fee is \textit{in addition to} any applicable late fees assessed under Section 4.
+Payments made via \textbf{''' + payment_method + r'''} are processed electronically and will either complete successfully or be declined at the time of transaction; therefore, NSF fees do not apply to ''' + payment_method + r''' payments. However, if Tenant pays by \textbf{check} (as permitted under Section 3 for technical issues only), and such check is returned to Landlord due to insufficient funds, stop payment, or closed account, Tenant agrees to pay a fee of \textbf{\$''' + nsf_fee + r'''} for each returned check. This NSF fee is \textit{in addition to} any applicable late fees assessed under Section 4.
 
-\textit{Example: If Tenant pays January rent by check on the 4th and the check is returned for insufficient funds on the 8th, Tenant owes: (1) the original rent amount, (2) the applicable late fee (since rent was not successfully paid by the 5th at 6pm), and (3) the \$''' + nsf_fee + r''' NSF fee.}
+\textit{Example: If Tenant pays January rent by check on the 4th and the check is returned for insufficient funds on the 8th, Tenant owes: (1) the original rent amount, (2) the applicable late fee (since rent was not successfully paid by the ''' + rent_due_by_day_str + r''' at ''' + rent_due_by_time + r'''), and (3) the \$''' + nsf_fee + r''' NSF fee.}
 
 \section{6. SECURITY DEPOSIT}
 At the signing of this Lease, Tenant shall deposit with Landlord the sum of \textbf{\$''' + security_deposit + r'''} as a Security Deposit. This deposit secures the performance of this Lease. Landlord may use the deposit to cover unpaid rent or damages beyond normal wear and tear. The deposit shall be returned within ''' + str(deposit_return_days) + r''' days after termination of the tenancy, less itemized deductions, per ''' + state + r''' law.''' + (r'''
@@ -431,8 +453,12 @@ Tenant will, at Tenant's sole expense, keep and maintain the Premises in good, c
             early_termination_allowed=early_termination_allowed,
             early_termination_fee_amount=early_termination_fee_amount,
             early_termination_notice_days=early_termination_notice_days,
+            early_termination_fee_months=early_termination_fee_months,
             garage_outlets_prohibited=garage_outlets_prohibited,
-            is_omaha=is_omaha
+            is_omaha=is_omaha,
+            owner_name=owner_name,
+            manager_name=manager_name,
+            manager_address=manager_address
         )
         
         # Add move-out costs section
@@ -445,8 +471,15 @@ Tenant will, at Tenant's sole expense, keep and maintain the Premises in good, c
 The descriptive headings used herein are for convenience of reference only, and they are not intended to have any effect whatsoever in determining the rights or obligations of the Landlord or Tenant.
 '''
         
+        # Add notes section if notes exist and are more than one word
+        if notes and len(notes.split()) > 1:
+            latex += r'''
+\section{40.5. ADDITIONAL TERMS AND CONDITIONS}
+''' + self._escape_latex(notes) + r'''
+'''
+        
         # Add signatures
-        latex += self._generate_signatures(tenants)
+        latex += self._generate_signatures(tenants, manager_name=manager_name)
         
         latex += r'''
 \end{document}
@@ -475,8 +508,12 @@ The descriptive headings used herein are for convenience of reference only, and 
         early_termination_allowed: bool,
         early_termination_fee_amount: str,
         early_termination_notice_days: int,
+        early_termination_fee_months: int,
         garage_outlets_prohibited: bool,
-        is_omaha: bool
+        is_omaha: bool,
+        owner_name: str,
+        manager_name: str,
+        manager_address: str
     ) -> str:
         """Generate sections 20-38"""
         latex = r'''
@@ -518,7 +555,7 @@ Further, Tenant represents that he or she has relied solely on his or her own ju
 \section{29. NOTICE}
 Any notice required or otherwise given pursuant to this Lease shall be in writing and mailed certified return receipt requested, postage prepaid, or delivered by overnight delivery service, if to Tenant, at the Premise and if to Landlord, at the address for payment of rent. Either party may change such addresses from time to time by providing notice as set forth above.
 \begin{itemize}
-    \item \textbf{Landlord:} S\&M Axios Heartland Holdings, LLC, c/o Sarah Pappas, 1606 S 208th St, Elkhorn, NE 68022 (Phone: 402-482-6195).
+    \item \textbf{Landlord:} ''' + owner_name + r''', c/o ''' + manager_name + r''', ''' + manager_address + r'''.
     \item \textbf{Tenant:} At the Premises.
 \end{itemize}
 
@@ -654,7 +691,7 @@ In the event of any legal action by the parties arising out of this Lease, the l
 '''
         
         if early_termination_allowed:
-            latex += r'''    \item \textbf{Early Termination:} Tenant may terminate early with ''' + str(early_termination_notice_days) + r''' days' notice AND payment of a 2-month rent fee (\textbf{\$''' + early_termination_fee_amount + r'''}). The Security Deposit shall NOT be applied toward this fee.
+            latex += r'''    \item \textbf{Early Termination:} Tenant may terminate early with ''' + str(early_termination_notice_days) + r''' days' notice AND payment of a ''' + str(early_termination_fee_months) + r'''-month rent fee (\textbf{\$''' + early_termination_fee_amount + r'''}). The Security Deposit shall NOT be applied toward this fee.
 '''
         
         if garage_outlets_prohibited:
@@ -713,7 +750,7 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
         
         return latex
     
-    def _generate_signatures(self, tenants: List[Dict[str, Any]]) -> str:
+    def _generate_signatures(self, tenants: List[Dict[str, Any]], manager_name: str = "Sarah Pappas") -> str:
         """Generate signature section"""
         latex = r'''
 \vspace{2em}
@@ -729,7 +766,7 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
 \noindent\begin{tabularx}{\textwidth}{@{}X X@{}}
 \rule{7cm}{0.4pt} & \rule{7cm}{0.4pt} \\
 \textbf{Landlord:} S\&M Axios Heartland Holdings, LLC & \textbf{Date} \\
-\textit{By: Sarah Pappas, Member} & \\[3em]
+\textit{By: ''' + self._escape_latex(manager_name) + r''', Member} & \\[3em]
 '''
         
         # Add signature lines for each tenant
@@ -1066,11 +1103,11 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
         # Owner info
         owner_name = self._escape_latex(lease_data.get("owner_name", "S&M Axios Heartland Holdings, LLC"))
         
-        # Anticipated move-in date
-        commencement_date = lease_data.get("commencement_date")
-        if commencement_date:
-            parsed_date = self._parse_date(commencement_date)
-            move_in_date_str = parsed_date.strftime("%B %d, %Y") if parsed_date else str(commencement_date)
+        # Anticipated move-in date - use lease_start (with fallback to commencement_date for backward compatibility)
+        move_in_date = lease_data.get("lease_start") or lease_data.get("commencement_date")
+        if move_in_date:
+            parsed_date = self._parse_date(move_in_date)
+            move_in_date_str = parsed_date.strftime("%B %d, %Y") if parsed_date else str(move_in_date)
         else:
             move_in_date_str = "[Move-In Date]"
         

@@ -31,13 +31,13 @@ class ExpenseService:
             self._financial_performance_service = financial_performance_service
         return self._financial_performance_service
     
-    def _get_table(self):
+    def _get_table(self, use_cache=True):
         """Get the expenses table with caching"""
         import time
         now = time.time()
         
         # Return cached table if still valid
-        if self._table_cache is not None and self._table_cache_time is not None:
+        if use_cache and self._table_cache is not None and self._table_cache_time is not None:
             if now - self._table_cache_time < self._cache_ttl:
                 return self._table_cache
         
@@ -68,19 +68,25 @@ class ExpenseService:
             expense_id = str(uuid.uuid4())
             now = datetime.utcnow()
             
+            # Set has_receipt based on document_storage_id
+            has_receipt = expense_data.document_storage_id is not None
+            
+            # Build record in EXACT Iceberg table field order:
+            # id, property_id, unit_id, description, vendor, expense_type, expense_category, 
+            # document_storage_id, notes, amount, date, has_receipt, created_at, updated_at
             record = {
                 "id": expense_id,
                 "property_id": str(expense_data.property_id),
                 "unit_id": str(expense_data.unit_id) if expense_data.unit_id else None,
                 "description": expense_data.description,
-                "date": expense_data.date,
-                "amount": Decimal(str(expense_data.amount)),  # Convert to Decimal
                 "vendor": expense_data.vendor,
                 "expense_type": expense_data.expense_type.value,
                 "expense_category": expense_data.expense_category.value if expense_data.expense_category else None,
                 "document_storage_id": str(expense_data.document_storage_id) if expense_data.document_storage_id else None,
-                "is_planned": expense_data.is_planned,
                 "notes": expense_data.notes,
+                "amount": Decimal(str(expense_data.amount)),  # Convert to Decimal
+                "date": expense_data.date,
+                "has_receipt": has_receipt,
                 "created_at": now,
                 "updated_at": now
             }
@@ -121,15 +127,13 @@ class ExpenseService:
     
     def get_expense(
         self,
-        expense_id: uuid.UUID,
-        user_id: uuid.UUID
+        expense_id: uuid.UUID
     ) -> Optional[Dict[str, Any]]:
         """
-        Get an expense by ID (with user access check via property ownership)
+        Get an expense by ID
         
         Args:
             expense_id: Expense ID
-            user_id: User ID for access control
         
         Returns:
             Expense dictionary or None if not found
@@ -138,14 +142,18 @@ class ExpenseService:
             import time
             start = time.time()
             
-            table = self._get_table()
+            # Force fresh table load to avoid stale cache issues
+            table = self._get_table(use_cache=False)
             logger.info(f"[PERF] get_expense: Table loaded in {time.time() - start:.3f}s")
             
             scan_start = time.time()
             # Query for the expense by ID only
+            expense_id_str = str(expense_id)
+            logger.info(f"[DEBUG] get_expense: Searching for expense_id: {expense_id_str} (type: {type(expense_id_str)})")
+            
+            # Try without limit first to see if limit is causing issues
             scan = table.scan(
-                row_filter=EqualTo("id", str(expense_id)),
-                limit=1  # Only need one result
+                row_filter=EqualTo("id", expense_id_str)
             )
             
             logger.info(f"[PERF] get_expense: Scan setup in {time.time() - scan_start:.3f}s")
@@ -154,26 +162,40 @@ class ExpenseService:
             # Get first result - scan.to_arrow() returns a Table
             arrow_table = scan.to_arrow()
             logger.info(f"[PERF] get_expense: Arrow conversion in {time.time() - arrow_start:.3f}s")
+            logger.info(f"[DEBUG] get_expense: Found {len(arrow_table)} rows for expense_id: {expense_id_str}")
+            
+            # If we got results, take the first one
+            if len(arrow_table) > 0:
+                arrow_table = arrow_table.slice(0, 1)  # Take only first row
             
             if len(arrow_table) > 0:
                 result = arrow_table.to_pylist()[0]
+                # Clean up data: convert 'None' strings to None
+                if result.get('unit_id') == 'None' or result.get('unit_id') == '':
+                    result['unit_id'] = None
+                # Ensure unit_id is UUID or None
+                if result.get('unit_id') and not isinstance(result['unit_id'], uuid.UUID):
+                    try:
+                        result['unit_id'] = uuid.UUID(result['unit_id'])
+                    except (ValueError, TypeError):
+                        result['unit_id'] = None
                 
-                # Verify property ownership
-                properties_table = self.catalog.load_table(f"{self.namespace}.properties")
-                props_scan = properties_table.scan(
-                    row_filter=EqualTo("id", result["property_id"]),
-                    limit=1
-                )
-                props_arrow = props_scan.to_arrow()
+                # Convert 'None' strings to None for document_storage_id
+                if result.get('document_storage_id') == 'None' or result.get('document_storage_id') == '':
+                    result['document_storage_id'] = None
+                # Ensure document_storage_id is UUID or None
+                if result.get('document_storage_id') and not isinstance(result['document_storage_id'], uuid.UUID):
+                    try:
+                        result['document_storage_id'] = uuid.UUID(result['document_storage_id'])
+                    except (ValueError, TypeError):
+                        result['document_storage_id'] = None
                 
-                if len(props_arrow) == 0:
-                    logger.warning(f"Expense {expense_id} references non-existent property {result['property_id']}")
-                    return None
-                
-                property_owner = props_arrow.to_pylist()[0]["user_id"]
-                if property_owner != str(user_id):
-                    logger.warning(f"User {user_id} attempted to access expense {expense_id} owned by {property_owner}")
-                    return None
+                # Ensure has_receipt is a proper Python bool (not numpy.bool_)
+                if 'has_receipt' in result:
+                    if result['has_receipt'] is None:
+                        result['has_receipt'] = result.get('document_storage_id') is not None
+                    else:
+                        result['has_receipt'] = bool(result['has_receipt'])
                 
                 logger.info(f"[PERF] get_expense: Total time {time.time() - start:.3f}s")
                 logger.info(f"[DEBUG] Retrieved expense date: {result.get('date')} (type: {type(result.get('date'))})")
@@ -188,7 +210,6 @@ class ExpenseService:
     
     def list_expenses(
         self,
-        user_id: uuid.UUID,
         property_id: Optional[uuid.UUID] = None,
         unit_id: Optional[uuid.UUID] = None,
         start_date: Optional[date] = None,
@@ -198,11 +219,10 @@ class ExpenseService:
         limit: int = 100
     ) -> tuple[List[Dict[str, Any]], int]:
         """
-        List expenses with optional filters (filtered by property ownership)
+        List expenses filtered by property_id and optional filters
         
         Args:
-            user_id: User ID
-            property_id: Optional property filter
+            property_id: Property ID (required for filtering)
             unit_id: Optional unit filter
             start_date: Optional start date filter
             end_date: Optional end date filter
@@ -216,33 +236,14 @@ class ExpenseService:
         try:
             table = self._get_table()
             
-            # Get user's property IDs
-            properties_table = self.catalog.load_table(f"{self.namespace}.properties")
-            props_scan = properties_table.scan(
-                row_filter=EqualTo("user_id", str(user_id))
-            )
-            user_property_ids = [p["id"] for p in props_scan.to_arrow().to_pylist()]
-            
-            if not user_property_ids:
-                # User has no properties, so no expenses
-                return [], 0
-            
-            # Build filter - start with property ownership
+            # Build filter - property_id is required
             filters = []
             
-            if property_id:
-                # If specific property requested, verify user owns it
-                if str(property_id) not in user_property_ids:
-                    return [], 0
-                filters.append(EqualTo("property_id", str(property_id)))
-            else:
-                # Filter by all user's properties
-                # Use OR conditions for multiple properties
-                if len(user_property_ids) == 1:
-                    filters.append(EqualTo("property_id", user_property_ids[0]))
-                else:
-                    from pyiceberg.expressions import In
-                    filters.append(In("property_id", user_property_ids))
+            if not property_id:
+                # If no property_id provided, return empty (expenses are stored by property_id)
+                return [], 0
+            
+            filters.append(EqualTo("property_id", str(property_id)))
             
             if unit_id:
                 filters.append(EqualTo("unit_id", str(unit_id)))
@@ -265,12 +266,60 @@ class ExpenseService:
                 # Query
                 scan = table.scan(row_filter=row_filter)
             else:
-                # No filters, scan all
-                scan = table.scan()
+                # Should not happen since property_id is required
+                return [], 0
             
             # Collect all results - scan.to_arrow() returns a Table
             arrow_table = scan.to_arrow()
             all_expenses = arrow_table.to_pylist()
+            
+            # Clean up data: convert 'None' strings to None, and ensure proper types
+            for expense in all_expenses:
+                # Convert 'None' strings to None for unit_id
+                if expense.get('unit_id') == 'None' or expense.get('unit_id') == '':
+                    expense['unit_id'] = None
+                # Ensure unit_id is UUID or None
+                if expense.get('unit_id') and not isinstance(expense['unit_id'], uuid.UUID):
+                    try:
+                        expense['unit_id'] = uuid.UUID(expense['unit_id'])
+                    except (ValueError, TypeError):
+                        expense['unit_id'] = None
+                
+                # Convert 'None' strings to None for document_storage_id
+                if expense.get('document_storage_id') == 'None' or expense.get('document_storage_id') == '':
+                    expense['document_storage_id'] = None
+                # Ensure document_storage_id is UUID or None
+                if expense.get('document_storage_id') and not isinstance(expense['document_storage_id'], uuid.UUID):
+                    try:
+                        expense['document_storage_id'] = uuid.UUID(expense['document_storage_id'])
+                    except (ValueError, TypeError):
+                        expense['document_storage_id'] = None
+                
+                # Ensure has_receipt is a proper Python bool (not numpy.bool_)
+                if 'has_receipt' in expense:
+                    if expense['has_receipt'] is None:
+                        expense['has_receipt'] = expense.get('document_storage_id') is not None
+                    else:
+                        expense['has_receipt'] = bool(expense['has_receipt'])
+            
+            # Deduplicate by expense ID - keep the most recent version (by updated_at)
+            expense_dict = {}
+            for expense in all_expenses:
+                expense_id = expense.get('id')
+                if expense_id:
+                    if expense_id not in expense_dict:
+                        expense_dict[expense_id] = expense
+                    else:
+                        # Keep the one with the latest updated_at
+                        existing_updated = expense_dict[expense_id].get('updated_at')
+                        current_updated = expense.get('updated_at')
+                        if current_updated and existing_updated:
+                            if current_updated > existing_updated:
+                                expense_dict[expense_id] = expense
+                        elif current_updated:
+                            expense_dict[expense_id] = expense
+            
+            all_expenses = list(expense_dict.values())
             
             # Sort by date descending
             all_expenses.sort(key=lambda x: x["date"], reverse=True)
@@ -286,16 +335,14 @@ class ExpenseService:
     
     def get_expense_summary(
         self,
-        user_id: uuid.UUID,
-        property_id: Optional[uuid.UUID] = None,
+        property_id: uuid.UUID,
         year: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Get expense summary with yearly subtotals (filtered by property ownership)
+        Get expense summary with yearly subtotals for a property
         
         Args:
-            user_id: User ID
-            property_id: Optional property filter
+            property_id: Property ID (required)
             year: Optional year filter
         
         Returns:
@@ -304,54 +351,16 @@ class ExpenseService:
         try:
             table = self._get_table()
             
-            # Get user's property IDs
-            properties_table = self.catalog.load_table(f"{self.namespace}.properties")
-            props_scan = properties_table.scan(
-                row_filter=EqualTo("user_id", str(user_id))
-            )
-            user_property_ids = [p["id"] for p in props_scan.to_arrow().to_pylist()]
-            
-            if not user_property_ids:
-                # User has no properties, return empty summary
-                return {
-                    "yearly_totals": [],
-                    "type_totals": {},
-                    "grand_total": 0,
-                    "total_count": 0
-                }
-            
-            # Build filter
-            filters = []
-            
-            if property_id:
-                # If specific property requested, verify user owns it
-                if str(property_id) not in user_property_ids:
-                    return {
-                        "yearly_totals": [],
-                        "type_totals": {},
-                        "grand_total": 0,
-                        "total_count": 0
-                    }
-                filters.append(EqualTo("property_id", str(property_id)))
-            else:
-                # Filter by all user's properties
-                if len(user_property_ids) == 1:
-                    filters.append(EqualTo("property_id", user_property_ids[0]))
-                else:
-                    from pyiceberg.expressions import In
-                    filters.append(In("property_id", user_property_ids))
+            # Build filter - property_id is required
+            filters = [EqualTo("property_id", str(property_id))]
             
             # Combine filters
-            if len(filters) > 0:
-                row_filter = filters[0]
-                for f in filters[1:]:
-                    row_filter = And(row_filter, f)
-                
-                # Query
-                scan = table.scan(row_filter=row_filter)
-            else:
-                # No filters
-                scan = table.scan()
+            row_filter = filters[0]
+            for f in filters[1:]:
+                row_filter = And(row_filter, f)
+            
+            # Query
+            scan = table.scan(row_filter=row_filter)
             
             # Collect all results - scan.to_arrow() returns a Table
             arrow_table = scan.to_arrow()
@@ -414,7 +423,6 @@ class ExpenseService:
     def update_expense(
         self,
         expense_id: uuid.UUID,
-        user_id: uuid.UUID,
         expense_data: ExpenseUpdate
     ) -> Optional[Dict[str, Any]]:
         """
@@ -422,22 +430,29 @@ class ExpenseService:
         
         Args:
             expense_id: Expense ID
-            user_id: User ID for access control
             expense_data: Updated expense data
         
         Returns:
             Updated expense dictionary or None if not found
         """
         try:
+            logger.info(f"[UPDATE] Getting existing expense {expense_id}")
             # Get existing expense
-            existing = self.get_expense(expense_id, user_id)
+            existing = self.get_expense(expense_id)
             
             if not existing:
+                logger.warning(f"[UPDATE] Expense {expense_id} not found in database")
                 return None
+            
+            logger.info(f"[UPDATE] Found existing expense {expense_id}, property_id: {existing.get('property_id')}")
             
             # Update fields
             update_dict = expense_data.model_dump(exclude_unset=True)
             logger.info(f"[DEBUG] Update dict before processing: {update_dict}")
+            
+            # Track if document_storage_id is being updated
+            document_storage_id_updated = "document_storage_id" in update_dict
+            
             for key, value in update_dict.items():
                 if value is not None:
                     if key in ["property_id", "unit_id", "document_storage_id"] and value:
@@ -449,8 +464,19 @@ class ExpenseService:
                     elif key == "date" and value:
                         logger.info(f"[DEBUG] Updating date: {value} (type: {type(value)})")
                         existing[key] = value
+                    elif key == "has_receipt":
+                        # Explicit has_receipt update
+                        existing[key] = value
                     else:
                         existing[key] = value
+            
+            # Update has_receipt if document_storage_id was changed but has_receipt wasn't explicitly set
+            if document_storage_id_updated and "has_receipt" not in update_dict:
+                existing["has_receipt"] = existing.get("document_storage_id") is not None and existing.get("document_storage_id") != "None" and existing.get("document_storage_id") != ""
+            
+            # Ensure has_receipt exists (for backward compatibility with old records)
+            if "has_receipt" not in existing:
+                existing["has_receipt"] = existing.get("document_storage_id") is not None and existing.get("document_storage_id") != "None" and existing.get("document_storage_id") != ""
             
             logger.info(f"[DEBUG] Date after update: {existing.get('date')} (type: {type(existing.get('date'))})")
             existing["updated_at"] = datetime.utcnow()
@@ -459,15 +485,80 @@ class ExpenseService:
             if "amount" in existing and not isinstance(existing["amount"], Decimal):
                 existing["amount"] = Decimal(str(existing["amount"]))
             
-            # Get fresh table reference for writes to avoid lock issues
-            table = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
+            # Use efficient upsert instead of delete+append
+            import pandas as pd
+            from app.core.iceberg import upsert_data_with_schema_cast
             
-            table.delete(EqualTo("id", str(expense_id)))
+            # Ensure all UUID fields are strings (not UUID objects) before creating DataFrame
+            # get_expense() converts UUID strings to UUID objects, but DataFrame needs strings
+            existing_for_df = existing.copy()
+            uuid_fields = ['id', 'property_id', 'unit_id', 'document_storage_id']
+            for field in uuid_fields:
+                if field in existing_for_df:
+                    value = existing_for_df[field]
+                    if value is None:
+                        existing_for_df[field] = None
+                    elif isinstance(value, uuid.UUID):
+                        existing_for_df[field] = str(value)
+                    elif value == 'None' or value == '':
+                        existing_for_df[field] = None
+                    else:
+                        # Already a string, keep it
+                        existing_for_df[field] = str(value)
             
-            import pyarrow as pa
-            schema = table.schema().as_arrow()
-            arrow_table = pa.Table.from_pylist([existing], schema=schema)
-            table.append(arrow_table)
+            # Also ensure date is a date object (not datetime)
+            if 'date' in existing_for_df and existing_for_df['date']:
+                if isinstance(existing_for_df['date'], datetime):
+                    existing_for_df['date'] = existing_for_df['date'].date()
+            
+            # Rebuild dict in EXACT Iceberg table field order:
+            # id, property_id, unit_id, description, vendor, expense_type, expense_category, 
+            # document_storage_id, notes, amount, date, has_receipt, created_at, updated_at
+            ordered_dict = {
+                "id": existing_for_df.get("id"),
+                "property_id": existing_for_df.get("property_id"),
+                "unit_id": existing_for_df.get("unit_id"),
+                "description": existing_for_df.get("description"),
+                "vendor": existing_for_df.get("vendor"),
+                "expense_type": existing_for_df.get("expense_type"),
+                "expense_category": existing_for_df.get("expense_category"),
+                "document_storage_id": existing_for_df.get("document_storage_id"),
+                "notes": existing_for_df.get("notes"),
+                "amount": existing_for_df.get("amount"),
+                "date": existing_for_df.get("date"),
+                "has_receipt": existing_for_df.get("has_receipt"),
+                "created_at": existing_for_df.get("created_at"),
+                "updated_at": existing_for_df.get("updated_at")
+            }
+            
+            # Convert ordered dict to DataFrame for upsert
+            df = pd.DataFrame([ordered_dict])
+            
+            # Handle potential duplicate rows by deleting all existing rows with this ID first
+            # This ensures we don't hit "duplicate rows" errors during upsert
+            try:
+                table = self._get_table()
+                # Delete all existing rows with this ID (handles duplicates)
+                # Note: table.delete() takes the expression directly, not as a keyword argument
+                table.delete(EqualTo("id", str(expense_id)))
+                logger.info(f"[UPDATE] Deleted existing row(s) for expense {expense_id}, appending updated row")
+                
+                # Append the updated row (since we deleted the old one)
+                from app.core.iceberg import append_data
+                append_data(
+                    namespace=(self.namespace,),
+                    table_name=self.table_name,
+                    data=df
+                )
+            except Exception as delete_error:
+                logger.warning(f"[UPDATE] Error during delete-append: {delete_error}, trying upsert instead")
+                # Fallback to upsert if delete-append fails
+                upsert_data_with_schema_cast(
+                    namespace=(self.namespace,),
+                    table_name=self.table_name,
+                    data=df,
+                    join_cols=["id"]
+                )
             
             logger.info(f"Updated expense: {expense_id}")
             
@@ -475,21 +566,16 @@ class ExpenseService:
             self._table_cache = None
             self._table_cache_time = None
             
-            # Invalidate financial performance cache for this property (async, non-blocking)
+            # Invalidate financial performance cache for this property (non-blocking)
             try:
-                import asyncio
                 fp_service = self._get_financial_performance_service()
-                # Fire and forget - don't block expense update
-                asyncio.create_task(
-                    asyncio.to_thread(
-                        fp_service.invalidate_cache,
-                        uuid.UUID(existing['property_id']),
-                        user_id,  # Pass user_id for recalculation
-                        uuid.UUID(existing['unit_id']) if existing.get('unit_id') else None
-                    )
+                fp_service.invalidate_cache(
+                    property_id=uuid.UUID(existing['property_id']),
+                    user_id=None,  # user_id not needed for cache invalidation
+                    unit_id=uuid.UUID(existing['unit_id']) if existing.get('unit_id') else None
                 )
             except Exception as cache_err:
-                logger.warning(f"Failed to queue financial performance cache invalidation: {cache_err}")
+                logger.warning(f"Failed to invalidate financial performance cache: {cache_err}")
             
             return existing
             
@@ -499,22 +585,20 @@ class ExpenseService:
     
     def delete_expense(
         self,
-        expense_id: uuid.UUID,
-        user_id: uuid.UUID
+        expense_id: uuid.UUID
     ) -> bool:
         """
         Delete an expense
         
         Args:
             expense_id: Expense ID
-            user_id: User ID for access control
         
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Verify expense exists and belongs to user
-            existing = self.get_expense(expense_id, user_id)
+            # Verify expense exists
+            existing = self.get_expense(expense_id)
             
             if not existing:
                 return False
@@ -535,7 +619,7 @@ class ExpenseService:
                 fp_service = self._get_financial_performance_service()
                 fp_service.invalidate_cache(
                     property_id=uuid.UUID(existing['property_id']),
-                    user_id=user_id,  # Pass user_id for recalculation
+                    user_id=None,  # user_id not needed for cache invalidation
                     unit_id=uuid.UUID(existing['unit_id']) if existing.get('unit_id') else None
                 )
             except Exception as cache_err:
@@ -558,13 +642,12 @@ def create_expense(user_id: uuid.UUID, expense_data: ExpenseCreate) -> Dict[str,
     return expense_service.create_expense(user_id, expense_data)
 
 
-def get_expense(expense_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Dict[str, Any]]:
+def get_expense(expense_id: uuid.UUID) -> Optional[Dict[str, Any]]:
     """Get an expense by ID"""
-    return expense_service.get_expense(expense_id, user_id)
+    return expense_service.get_expense(expense_id)
 
 
 def list_expenses(
-    user_id: uuid.UUID,
     property_id: Optional[uuid.UUID] = None,
     unit_id: Optional[uuid.UUID] = None,
     start_date: Optional[date] = None,
@@ -573,9 +656,8 @@ def list_expenses(
     skip: int = 0,
     limit: int = 100
 ) -> tuple[List[Dict[str, Any]], int]:
-    """List expenses with filters"""
+    """List expenses with filters (property_id required)"""
     return expense_service.list_expenses(
-        user_id=user_id,
         property_id=property_id,
         unit_id=unit_id,
         start_date=start_date,
@@ -587,13 +669,11 @@ def list_expenses(
 
 
 def get_expense_summary(
-    user_id: uuid.UUID,
-    property_id: Optional[uuid.UUID] = None,
+    property_id: uuid.UUID,
     year: Optional[int] = None
 ) -> Dict[str, Any]:
-    """Get expense summary with yearly subtotals"""
+    """Get expense summary with yearly subtotals for a property"""
     return expense_service.get_expense_summary(
-        user_id=user_id,
         property_id=property_id,
         year=year
     )
@@ -601,13 +681,12 @@ def get_expense_summary(
 
 def update_expense(
     expense_id: uuid.UUID,
-    user_id: uuid.UUID,
     expense_data: ExpenseUpdate
 ) -> Optional[Dict[str, Any]]:
     """Update an expense"""
-    return expense_service.update_expense(expense_id, user_id, expense_data)
+    return expense_service.update_expense(expense_id, expense_data)
 
 
-def delete_expense(expense_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+def delete_expense(expense_id: uuid.UUID) -> bool:
     """Delete an expense"""
-    return expense_service.delete_expense(expense_id, user_id)
+    return expense_service.delete_expense(expense_id)

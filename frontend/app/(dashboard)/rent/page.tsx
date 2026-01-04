@@ -13,7 +13,8 @@ import {
   ChevronRight,
   Building2,
   FileText,
-  Eye
+  Eye,
+  Download
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useRents, useDeleteRent } from '@/lib/hooks/use-rent';
@@ -33,13 +34,16 @@ interface GroupedByProperty {
 
 export default function RentPage() {
   const router = useRouter();
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
   const [expandedProperties, setExpandedProperties] = useState<Set<string>>(new Set());
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set()); // "propertyId-year"
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [hasInitializedExpansion, setHasInitializedExpansion] = useState(false);
   
   const { data: propertiesData } = useProperties();
-  const { data: rentsData, isLoading } = useRents(); // No filters - just user_id auth
+  const { data: rentsData, isLoading } = useRents(
+    selectedPropertyId ? { property_id: selectedPropertyId } : {}
+  );
   const deleteRent = useDeleteRent();
   
   const properties = propertiesData?.items || [];
@@ -162,26 +166,31 @@ export default function RentPage() {
     }
   };
 
-  // Auto-expand current year on initial load
+  // Auto-expand all properties and years when property is selected
+  // Use rents.length and a stable key to avoid infinite loops
+  const rentsKey = rents.length > 0 ? rents.map(r => `${r.id}-${r.property_id}`).join(',') : '';
   useEffect(() => {
-    if (!hasInitializedExpansion && rents.length > 0) {
-      const currentYear = new Date().getFullYear();
+    if (selectedPropertyId && rents.length > 0 && !hasInitializedExpansion) {
       const newExpandedYears = new Set<string>();
       const newExpandedProperties = new Set<string>();
       
+      // Expand all properties and all years
       rents.forEach(rent => {
+        newExpandedProperties.add(rent.property_id);
         const year = rent.rent_period_year || new Date(rent.payment_date).getFullYear();
-        if (year === currentYear) {
-          newExpandedProperties.add(rent.property_id);
-          newExpandedYears.add(`${rent.property_id}-${currentYear}`);
-        }
+        newExpandedYears.add(`${rent.property_id}-${year}`);
       });
       
       setExpandedProperties(newExpandedProperties);
       setExpandedYears(newExpandedYears);
       setHasInitializedExpansion(true);
+    } else if (!selectedPropertyId) {
+      // Reset expansion when no property is selected
+      setExpandedProperties(new Set());
+      setExpandedYears(new Set());
+      setHasInitializedExpansion(false);
     }
-  }, [rents, hasInitializedExpansion]);
+  }, [selectedPropertyId, rentsKey, hasInitializedExpansion]);
 
   // Calculate totals
   const grandTotal = rents.reduce((sum, r) => sum + Number(r.amount), 0);
@@ -197,6 +206,87 @@ export default function RentPage() {
   const formatAmount = (amt: number) => 
     amt > 0 ? `$${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '-';
 
+  const exportToCSV = () => {
+    if (!rents || rents.length === 0) {
+      alert('No rent payments to export');
+      return;
+    }
+
+    // CSV escape function: escape quotes and wrap in quotes if contains comma, quote, or newline
+    const escapeCsv = (value: string | number | boolean | null | undefined): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headers = [
+      'ID', 
+      'Property', 
+      'Unit', 
+      'Tenant', 
+      'Revenue Description', 
+      'Is Non-IRS Revenue', 
+      'Is One-Time Fee', 
+      'Rent Period Month', 
+      'Rent Period Year', 
+      'Rent Period Start', 
+      'Rent Period End', 
+      'Amount', 
+      'Payment Date', 
+      'Payment Method', 
+      'Transaction Reference', 
+      'Is Late', 
+      'Late Fee', 
+      'Notes', 
+      'Created At', 
+      'Updated At'
+    ];
+
+    const rows = rents.map(rent => {
+      return [
+        escapeCsv(rent.id || ''),
+        escapeCsv(rent.property_name || getPropertyName(rent.property_id) || ''),
+        escapeCsv(rent.unit_name || ''),
+        escapeCsv(rent.tenant_name || ''),
+        escapeCsv(rent.revenue_description || ''),
+        escapeCsv(rent.is_non_irs_revenue ? 'Yes' : 'No'),
+        escapeCsv(rent.is_one_time_fee ? 'Yes' : 'No'),
+        escapeCsv(rent.rent_period_month || ''),
+        escapeCsv(rent.rent_period_year || ''),
+        escapeCsv(rent.rent_period_start || ''),
+        escapeCsv(rent.rent_period_end || ''),
+        escapeCsv(Number(rent.amount || 0).toFixed(2)),
+        escapeCsv(rent.payment_date || ''),
+        escapeCsv(rent.payment_method || ''),
+        escapeCsv(rent.transaction_reference || ''),
+        escapeCsv(rent.is_late ? 'Yes' : 'No'),
+        escapeCsv(rent.late_fee ? Number(rent.late_fee).toFixed(2) : ''),
+        escapeCsv(rent.notes || ''),
+        escapeCsv(rent.created_at || ''),
+        escapeCsv(rent.updated_at || '')
+      ];
+    });
+
+    const csv = [
+      headers.map(escapeCsv).join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    // Download
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rents_${selectedPropertyId ? getPropertyName(selectedPropertyId).replace(/[^a-z0-9]/gi, '_') : 'all'}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-3 max-w-6xl mx-auto">
       {/* Header */}
@@ -208,29 +298,60 @@ export default function RentPage() {
           </h1>
           <p className="text-xs text-gray-500">Track rent payments received</p>
         </div>
-        <Link href="/rent/log">
-          <Button size="sm" className="bg-black text-white hover:bg-gray-800 h-7 text-xs px-2">
-            <Plus className="h-3 w-3 mr-1" />
-            Log Payment
+        <div className="flex gap-1.5">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={exportToCSV}
+            disabled={!selectedPropertyId || !rents?.length}
+            className="h-7 text-xs px-2"
+          >
+            <Download className="h-3 w-3 mr-1" />
+            Export
           </Button>
-        </Link>
+          <Link href="/rent/log">
+            <Button size="sm" className="bg-black text-white hover:bg-gray-800 h-7 text-xs px-2">
+              <Plus className="h-3 w-3 mr-1" />
+              Log Payment
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Property Filter - Required */}
+      <div className="mb-2">
+        <select
+          value={selectedPropertyId}
+          onChange={(e) => setSelectedPropertyId(e.target.value)}
+          className="px-2 py-1.5 border border-gray-300 rounded text-sm w-full md:w-auto min-w-[200px]"
+          required
+        >
+          <option value="">Select Property</option>
+          {properties.map((prop) => (
+            <option key={prop.id} value={prop.id}>
+              {prop.display_name || prop.address_line1 || prop.id}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Summary Row */}
-      <div className="flex gap-3 mb-3 text-xs">
-        <div className="bg-blue-50 px-2 py-1 rounded">
-          <span className="text-blue-600">Total:</span>{' '}
-          <span className="font-bold text-blue-900">
-            ${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </span>
+      {selectedPropertyId && (
+        <div className="flex gap-3 mb-3 text-xs">
+          <div className="bg-blue-50 px-2 py-1 rounded">
+            <span className="text-blue-600">Total:</span>{' '}
+            <span className="font-bold text-blue-900">
+              ${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="bg-green-50 px-2 py-1 rounded">
+            <span className="text-green-600">IRS Total:</span>{' '}
+            <span className="font-bold text-green-900">
+              ${irsTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+          </div>
         </div>
-        <div className="bg-green-50 px-2 py-1 rounded">
-          <span className="text-green-600">IRS Total:</span>{' '}
-          <span className="font-bold text-green-900">
-            ${irsTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </span>
-        </div>
-      </div>
+      )}
 
       {/* Loading State */}
       {isLoading && (
@@ -238,7 +359,15 @@ export default function RentPage() {
       )}
 
       {/* Empty State */}
-      {!isLoading && rents.length === 0 && (
+      {!isLoading && !selectedPropertyId && (
+        <Card>
+          <CardContent className="py-8 text-center text-gray-500">
+            <DollarSign className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">Please select a property to view rent payments</p>
+          </CardContent>
+        </Card>
+      )}
+      {!isLoading && selectedPropertyId && rents.length === 0 && (
         <Card>
           <CardContent className="py-8 text-center text-gray-500">
             <DollarSign className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -251,7 +380,7 @@ export default function RentPage() {
       )}
 
       {/* Grouped by Property */}
-      {sortedPropertyIds.map(propId => {
+      {selectedPropertyId && sortedPropertyIds.map(propId => {
         const propertyRents = groupedByProperty[propId];
         const years = groupedByPropertyAndYear[propId] || {};
         const sortedYears = Object.keys(years).map(Number).sort((a, b) => b - a);

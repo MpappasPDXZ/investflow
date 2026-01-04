@@ -77,30 +77,51 @@ export default function ExportExpensesPage() {
     }
 
     // Convert to CSV - removed 'Is Planned' column
+    // CSV escape function: escape quotes and wrap in quotes if contains comma, quote, or newline
+    const escapeCsv = (value: string): string => {
+      const str = String(value || '');
+      // If contains comma, quote, or newline, wrap in quotes and escape internal quotes
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
     const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
     const rows = filteredExpenses.map(exp => {
       const unitDesc = getUnitDescription(exp.property_id, exp.unit_id);
       
       return [
-        exp.id,
-        properties?.items.find(p => p.id === exp.property_id)?.display_name || '',
-        unitDesc,
-        exp.date,
-        `"${exp.description.replace(/"/g, '""')}"`,
-        Number(exp.amount).toFixed(2),
-        exp.vendor || '',
-        exp.expense_type,
-        exp.expense_category || '',
-        `"${(exp.notes || '').replace(/"/g, '""')}"`,
-        exp.document_storage_id ? 'Yes' : 'No',
-        exp.created_at,
-        exp.updated_at
+        escapeCsv(String(exp.id || '')),
+        escapeCsv(String(properties?.items.find(p => p.id === exp.property_id)?.display_name || '')),
+        escapeCsv(String(unitDesc || '')),
+        escapeCsv(String(exp.date || '')),
+        escapeCsv(String(exp.description || '')),
+        escapeCsv(String(Number(exp.amount || 0).toFixed(2))),
+        escapeCsv(String(exp.vendor || '')),
+        escapeCsv(String(exp.expense_type || '')),
+        escapeCsv(String(exp.expense_category || '')),
+        escapeCsv(String(exp.notes || '')),
+        escapeCsv((() => {
+          // Handle has_receipt: true, false, null, undefined
+          // Explicitly check for boolean false (not just falsy)
+          if (exp.has_receipt === true || exp.has_receipt === 'true') return 'Yes';
+          if (exp.has_receipt === false || exp.has_receipt === 'false') return 'No';
+          // If has_receipt is null/undefined, check document_storage_id
+          if (exp.has_receipt == null) {
+            return exp.document_storage_id ? 'Yes' : 'No';
+          }
+          // Default to No if we can't determine
+          return 'No';
+        })()),
+        escapeCsv(String(exp.created_at || '')),
+        escapeCsv(String(exp.updated_at || ''))
       ];
     });
 
     const csv = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      headers.map(escapeCsv).join(','),
+      ...rows.map(row => row.join(','))
     ].join('\n');
 
     // Download

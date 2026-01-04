@@ -426,7 +426,7 @@ export default function LogRentPage() {
                 Property <span className="text-red-500">*</span>
               </Label>
               <Select
-                value={formData.property_id}
+                value={formData.property_id || ''}
                 onValueChange={(value) => setFormData({ ...formData, property_id: value })}
               >
                 <SelectTrigger className="text-xs mt-1.5 h-8">
@@ -449,7 +449,7 @@ export default function LogRentPage() {
                   Unit <span className="text-red-500">*</span>
                 </Label>
                 <Select
-                  value={formData.unit_id}
+                  value={formData.unit_id || ''}
                   onValueChange={(value) => setFormData({ ...formData, unit_id: value })}
                 >
                   <SelectTrigger className="text-xs mt-1.5 h-8">
@@ -473,7 +473,7 @@ export default function LogRentPage() {
                 Tenant (optional)
               </Label>
               <Select
-                value={formData.tenant_id || undefined}
+                value={formData.tenant_id || 'none'}
                 onValueChange={(value) => setFormData({ ...formData, tenant_id: value === 'none' ? '' : value })}
               >
                 <SelectTrigger className="text-xs mt-1.5 h-8">
@@ -808,7 +808,7 @@ export default function LogRentPage() {
                   Payment Method
                 </Label>
                 <Select
-                  value={formData.payment_method}
+                  value={formData.payment_method || ''}
                   onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
                 >
                   <SelectTrigger className="text-xs mt-1.5 h-8">

@@ -28,26 +28,45 @@ export interface WalkthroughArea {
   photos?: WalkthroughAreaPhoto[];
 }
 
+// Field order matching backend Iceberg table schema
+const WALKTHROUGHS_FIELD_ORDER = [
+  "id",
+  "property_id",
+  "unit_id",
+  "property_display_name",
+  "unit_number",
+  "walkthrough_type",
+  "walkthrough_date",
+  "status",
+  "inspector_name",
+  "tenant_name",
+  "tenant_signature_date",
+  "landlord_signature_date",
+  "notes",
+  "generated_pdf_blob_name",
+  "areas_json",
+  "is_active",
+  "created_at",
+  "updated_at",
+];
+
 export interface WalkthroughCreate {
   property_id: string;
   unit_id?: string;
+  property_display_name?: string;
+  unit_number?: string;
   walkthrough_type: 'move_in' | 'move_out' | 'periodic' | 'maintenance';
   walkthrough_date: string;
   inspector_name?: string;
   tenant_name?: string;
-  tenant_signed?: boolean;
   tenant_signature_date?: string;
-  landlord_signed?: boolean;
   landlord_signature_date?: string;
-  overall_condition?: 'excellent' | 'good' | 'fair' | 'poor';
   notes?: string;
   areas: WalkthroughArea[];
 }
 
 export interface Walkthrough extends WalkthroughCreate {
   id: string;
-  user_id: string;
-  walkthrough_number: number;
   status: 'draft' | 'pending_signature' | 'completed';
   generated_pdf_blob_name?: string;
   pdf_url?: string;
@@ -57,15 +76,15 @@ export interface Walkthrough extends WalkthroughCreate {
 
 export interface WalkthroughListItem {
   id: string;
-  user_id: string;
   property_id: string;
   unit_id?: string;
+  property_display_name?: string;
+  unit_number?: string;
   walkthrough_type: 'move_in' | 'move_out' | 'periodic' | 'maintenance';
   walkthrough_date: string;
   inspector_name?: string;
   tenant_name?: string;
   status: 'draft' | 'pending_signature' | 'completed';
-  overall_condition: 'excellent' | 'good' | 'fair' | 'poor';
   generated_pdf_blob_name?: string;
   pdf_url?: string;
   areas_count: number;  // Number of areas (simplified - no full area data)
@@ -82,20 +101,69 @@ export function useWalkthroughs() {
   const queryClient = useQueryClient();
 
   const createWalkthrough = async (walkthroughData: WalkthroughCreate): Promise<Walkthrough> => {
-    console.log('📤 [WALKTHROUGH] Creating walkthrough with payload:', JSON.stringify(walkthroughData, null, 2));
+    // Build ordered payload respecting backend field order (like leases)
+    const orderedPayload: any = {};
+    
+    // Add fields in exact backend order
+    for (const field of WALKTHROUGHS_FIELD_ORDER) {
+      if (walkthroughData.hasOwnProperty(field) && walkthroughData[field as keyof WalkthroughCreate] !== undefined) {
+        orderedPayload[field] = walkthroughData[field as keyof WalkthroughCreate];
+      }
+    }
+    
+    // Add areas (not in field order, handled separately by backend)
+    if (walkthroughData.areas) {
+      orderedPayload.areas = walkthroughData.areas;
+    }
+    
+    // Add any remaining fields not in the order list (for backward compatibility)
+    for (const key in walkthroughData) {
+      if (!WALKTHROUGHS_FIELD_ORDER.includes(key) && key !== 'areas' && !orderedPayload.hasOwnProperty(key)) {
+        orderedPayload[key] = walkthroughData[key as keyof WalkthroughCreate];
+      }
+    }
+    
+    console.log('📝 [WALKTHROUGH] Creating walkthrough with ordered payload:', orderedPayload);
+    console.log('📝 [WALKTHROUGH] Payload field order:', Object.keys(orderedPayload));
+    
     try {
-      const response = await apiClient.post('/walkthroughs', walkthroughData);
+      const response = await apiClient.post('/walkthroughs', orderedPayload);
       queryClient.invalidateQueries({ queryKey: ['walkthroughs'] });
       return response as Walkthrough;
     } catch (error) {
       console.error('❌ [WALKTHROUGH] Error creating walkthrough:', error);
-      console.error('📤 [WALKTHROUGH] Payload that failed:', JSON.stringify(walkthroughData, null, 2));
+      console.error('📤 [WALKTHROUGH] Payload that failed:', JSON.stringify(orderedPayload, null, 2));
       throw error;
     }
   };
 
   const updateWalkthrough = async (walkthroughId: string, walkthroughData: Partial<WalkthroughCreate>): Promise<Walkthrough> => {
-    const response = await apiClient.put(`/walkthroughs/${walkthroughId}`, walkthroughData);
+    // Build ordered payload respecting backend field order (like leases)
+    const orderedPayload: any = {};
+    
+    // Add fields in exact backend order
+    for (const field of WALKTHROUGHS_FIELD_ORDER) {
+      if (walkthroughData.hasOwnProperty(field) && walkthroughData[field as keyof WalkthroughCreate] !== undefined) {
+        orderedPayload[field] = walkthroughData[field as keyof WalkthroughCreate];
+      }
+    }
+    
+    // Add areas (not in field order, handled separately by backend)
+    if (walkthroughData.areas) {
+      orderedPayload.areas = walkthroughData.areas;
+    }
+    
+    // Add any remaining fields not in the order list (for backward compatibility)
+    for (const key in walkthroughData) {
+      if (!WALKTHROUGHS_FIELD_ORDER.includes(key) && key !== 'areas' && !orderedPayload.hasOwnProperty(key)) {
+        orderedPayload[key] = walkthroughData[key as keyof WalkthroughCreate];
+      }
+    }
+    
+    console.log('📝 [WALKTHROUGH] Updating walkthrough with ordered payload:', orderedPayload);
+    console.log('📝 [WALKTHROUGH] Payload field order:', Object.keys(orderedPayload));
+    
+    const response = await apiClient.put(`/walkthroughs/${walkthroughId}`, orderedPayload);
     queryClient.invalidateQueries({ queryKey: ['walkthroughs'] });
     queryClient.invalidateQueries({ queryKey: ['walkthrough', walkthroughId] });
     return response as Walkthrough;
@@ -170,6 +238,16 @@ export function useWalkthroughs() {
     return result as WalkthroughAreaPhoto;
   };
 
+  const deleteAreaPhoto = async (
+    walkthroughId: string,
+    areaId: string,
+    documentId: string
+  ): Promise<void> => {
+    await apiClient.delete(`/walkthroughs/${walkthroughId}/areas/${areaId}/photos/${documentId}`);
+    queryClient.invalidateQueries({ queryKey: ['walkthrough', walkthroughId] });
+    queryClient.invalidateQueries({ queryKey: ['walkthroughs'] });
+  };
+
   const deleteWalkthrough = async (id: string) => {
     await apiClient.delete(`/walkthroughs/${id}`);
     queryClient.invalidateQueries({ queryKey: ['walkthroughs'] });
@@ -182,6 +260,7 @@ export function useWalkthroughs() {
     getWalkthrough, 
     generatePDF,
     uploadAreaPhoto,
+    deleteAreaPhoto,
     deleteWalkthrough 
   };
 }

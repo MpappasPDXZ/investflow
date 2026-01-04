@@ -10,18 +10,7 @@ export function useProperties(options?: { enabled?: boolean }) {
     queryKey: ['properties'],
     enabled: options?.enabled !== false, // Default to true for backward compatibility
     queryFn: async () => {
-      const startTime = performance.now();
-      console.log('📤 [PROPERTIES] GET /api/v1/properties - Request');
-      try {
-        const result = await apiClient.get<PropertyListResponse>('/properties');
-        const elapsed = performance.now() - startTime;
-        console.log(`⏱️ [PERF] Properties API call completed in ${elapsed.toFixed(2)}ms`);
-        return result;
-      } catch (error) {
-        const elapsed = performance.now() - startTime;
-        console.log(`⏱️ [PERF] Properties API call failed after ${elapsed.toFixed(2)}ms`);
-        throw error;
-      }
+      return await apiClient.get<PropertyListResponse>('/properties');
     },
   });
 }
@@ -30,7 +19,6 @@ export function useProperty(propertyId: string) {
   return useQuery<Property>({
     queryKey: ['property', propertyId],
     queryFn: () => {
-      console.log(`📤 [PROPERTY] GET /api/v1/properties/${propertyId} - Request`);
       return apiClient.get<Property>(`/properties/${propertyId}`);
     },
     enabled: !!propertyId,
@@ -42,11 +30,9 @@ export function useCreateProperty() {
 
   return useMutation({
     mutationFn: (data: Partial<Property>) => {
-      console.log('📤 [PROPERTY] POST /api/v1/properties - Request:', data);
       return apiClient.post<Property>('/properties', data);
     },
-    onSuccess: (data) => {
-      console.log('✅ [PROPERTY] POST /api/v1/properties - Response:', data);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
     },
   });

@@ -401,7 +401,7 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
                 <th className="text-right p-2 font-semibold">Op. Exp. %</th>
                 <th className="text-right p-2 font-semibold bg-blue-50">Cash Flow</th>
                 <th className="text-right p-2 font-semibold">CoC %</th>
-                <th className="text-right p-2 font-semibold">Revenue</th>
+                <th className="text-right p-2 font-semibold">Sch. Rev.</th>
                 <th className="text-right p-2 font-semibold">Total Return</th>
                 <th className="text-right p-2 font-semibold">Total %</th>
               </tr>

@@ -149,19 +149,36 @@ export default function EditExpensePage() {
         submittingDate: formData.date
       });
       
-      await updateExpense.mutateAsync({
+      // Build payload in EXACT Iceberg table field order:
+      // id, property_id, unit_id, description, vendor, expense_type, expense_category, 
+      // document_storage_id, notes, amount, date, has_receipt, created_at, updated_at
+      const payloadData = {
+        property_id: formData.property_id,
+        unit_id: formData.unit_id || undefined,
+        description: formData.description,
+        vendor: formData.vendor || undefined,
+        expense_type: formData.expense_type as any,
+        expense_category: formData.expense_category as any,
+        document_storage_id: expense?.document_storage_id || undefined,
+        notes: formData.notes || undefined,
+        amount: parseFloat(formData.amount),
+        date: formData.date,
+      };
+      
+      const payload = {
         id: expenseId,
-        data: {
-          description: formData.description,
-          date: formData.date,
-          amount: parseFloat(formData.amount),
-          vendor: formData.vendor || undefined,
-          expense_type: formData.expense_type as any,
-          expense_category: formData.expense_category as any,
-          unit_id: formData.unit_id || undefined,
-          notes: formData.notes || undefined,
-        },
+        data: payloadData,
+      };
+      
+      console.log('[PAGE] 📤 Expense Update Payload (EXACT Iceberg order):');
+      console.log('[PAGE] 📤 Full payload:', JSON.stringify(payload, null, 2));
+      console.log('[PAGE] 📤 Payload field order:', Object.keys(payloadData));
+      console.log('[PAGE] 📤 Payload VALUES:');
+      Object.entries(payloadData).forEach(([key, value]) => {
+        console.log(`  ${key}:`, value, `(type: ${typeof value})`);
       });
+      
+      await updateExpense.mutateAsync(payload);
       
       console.log('[PAGE] ✅ Expense updated successfully, navigating to expenses list');
       router.push('/expenses');
@@ -174,7 +191,7 @@ export default function EditExpensePage() {
   };
 
   const hasUnits = units.length > 0;
-  const hasReceipt = expense?.document_storage_id;
+  const hasReceipt = expense?.has_receipt ?? (expense?.document_storage_id ? true : false);
 
   console.log(`[PAGE] 📊 Render state:`, {
     loadingExpense,
@@ -316,6 +333,7 @@ export default function EditExpensePage() {
                   <option value="capex">Capital Expenditure</option>
                   <option value="rehab">Rehab</option>
                   <option value="pandi">Principal & Interest</option>
+                  <option value="tax">Tax</option>
                   <option value="utilities">Utilities</option>
                   <option value="insurance">Insurance</option>
                   <option value="property_management">Property Management</option>
@@ -361,7 +379,11 @@ export default function EditExpensePage() {
                         <Check className="h-4 w-4" />
                         <span>Receipt attached</span>
                       </div>
-                      <ReceiptViewer expenseId={expenseId} />
+                      <ReceiptViewer 
+                        expenseId={expenseId}
+                        documentId={expense?.document_storage_id}
+                        fileName={expense?.description || 'Receipt'}
+                      />
                     </div>
                   ) : receiptUploaded ? (
                     <div className="flex items-center gap-2 text-sm text-green-700">

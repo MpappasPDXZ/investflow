@@ -47,7 +47,6 @@ async def create_expense_with_receipt(
     expense_type: str = Form(...),
     expense_category: Optional[str] = Form(None),
     unit_id: Optional[str] = Form(None),
-    is_planned: bool = Form(False),
     notes: Optional[str] = Form(None),
     document_type: Optional[str] = Form("receipt"),
     file: UploadFile = File(...),
@@ -84,7 +83,6 @@ async def create_expense_with_receipt(
             expense_type=ExpenseType(expense_type),
             expense_category=ExpenseCategory(expense_category) if expense_category else None,
             document_storage_id=UUID(document["id"]),
-            is_planned=is_planned,
             notes=notes
         )
         
@@ -98,7 +96,7 @@ async def create_expense_with_receipt(
 
 @router.get("", response_model=ExpenseListResponse)
 async def list_expenses_endpoint(
-    property_id: Optional[UUID] = Query(None, description="Filter by property ID"),
+    property_id: UUID = Query(..., description="Filter by property ID (required)"),
     unit_id: Optional[UUID] = Query(None, description="Filter by unit ID"),
     start_date: Optional[date] = Query(None, description="Filter by start date"),
     end_date: Optional[date] = Query(None, description="Filter by end date"),
@@ -107,11 +105,9 @@ async def list_expenses_endpoint(
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)
 ):
-    """List expenses for the current user"""
+    """List expenses for a property (user must be logged in)"""
     try:
-        user_id = UUID(current_user["sub"])
         expenses, total = expense_service.list_expenses(
-            user_id=user_id,
             property_id=property_id,
             unit_id=unit_id,
             start_date=start_date,
@@ -136,15 +132,13 @@ async def list_expenses_endpoint(
 
 @router.get("/summary", response_model=ExpenseSummaryResponse)
 async def get_expense_summary_endpoint(
-    property_id: Optional[UUID] = Query(None, description="Filter by property ID"),
+    property_id: UUID = Query(..., description="Property ID (required)"),
     year: Optional[int] = Query(None, description="Filter by year"),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get expense summary with yearly subtotals"""
+    """Get expense summary with yearly subtotals for a property (user must be logged in)"""
     try:
-        user_id = UUID(current_user["sub"])
         summary = expense_service.get_expense_summary(
-            user_id=user_id,
             property_id=property_id,
             year=year
         )
@@ -159,10 +153,9 @@ async def get_expense_endpoint(
     expense_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get an expense by ID"""
+    """Get an expense by ID (user must be logged in)"""
     try:
-        user_id = UUID(current_user["sub"])
-        expense_dict = expense_service.get_expense(expense_id, user_id)
+        expense_dict = expense_service.get_expense(expense_id)
         
         if not expense_dict:
             raise HTTPException(status_code=404, detail="Expense not found")
@@ -181,11 +174,10 @@ async def update_expense_endpoint(
     expense_data: ExpenseUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Update an expense"""
+    """Update an expense (user must be logged in)"""
     try:
-        user_id = UUID(current_user["sub"])
         logger.info(f"[UPDATE] Updating expense {expense_id}: {expense_data.model_dump(exclude_unset=True)}")
-        expense_dict = expense_service.update_expense(expense_id, user_id, expense_data)
+        expense_dict = expense_service.update_expense(expense_id, expense_data)
         
         if not expense_dict:
             raise HTTPException(status_code=404, detail="Expense not found")
@@ -204,10 +196,9 @@ async def delete_expense_endpoint(
     expense_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete an expense"""
+    """Delete an expense (user must be logged in)"""
     try:
-        user_id = UUID(current_user["sub"])
-        success = expense_service.delete_expense(expense_id, user_id)
+        success = expense_service.delete_expense(expense_id)
         
         if not success:
             raise HTTPException(status_code=404, detail="Expense not found")
@@ -225,10 +216,9 @@ async def get_expense_receipt(
     expense_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get receipt download URL for an expense"""
+    """Get receipt download URL for an expense (user must be logged in)"""
     try:
-        user_id = UUID(current_user["sub"])
-        expense_dict = expense_service.get_expense(expense_id, user_id)
+        expense_dict = expense_service.get_expense(expense_id)
         
         if not expense_dict:
             raise HTTPException(status_code=404, detail="Expense not found")
@@ -257,10 +247,9 @@ async def proxy_expense_receipt_download(
     expense_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Proxy download for expense receipt (forces actual download instead of opening in browser)"""
+    """Proxy download for expense receipt (user must be logged in)"""
     try:
-        user_id = UUID(current_user["sub"])
-        expense_dict = expense_service.get_expense(expense_id, user_id)
+        expense_dict = expense_service.get_expense(expense_id)
         
         if not expense_dict:
             raise HTTPException(status_code=404, detail="Expense not found")

@@ -15,6 +15,40 @@ export default function DashboardLayout({
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
+  // Suppress Fast Refresh logging
+  useEffect(() => {
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    const originalError = console.error;
+    
+    console.log = (...args: any[]) => {
+      const message = args.join(' ');
+      if (!message.includes('[Fast Refresh]')) {
+        originalLog.apply(console, args);
+      }
+    };
+    
+    console.warn = (...args: any[]) => {
+      const message = args.join(' ');
+      if (!message.includes('[Fast Refresh]')) {
+        originalWarn.apply(console, args);
+      }
+    };
+    
+    console.error = (...args: any[]) => {
+      const message = args.join(' ');
+      if (!message.includes('[Fast Refresh]')) {
+        originalError.apply(console, args);
+      }
+    };
+    
+    return () => {
+      console.log = originalLog;
+      console.warn = originalWarn;
+      console.error = originalError;
+    };
+  }, []);
+
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem("auth_token");

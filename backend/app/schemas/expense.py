@@ -14,6 +14,7 @@ class ExpenseType(str, Enum):
     CAPEX = "capex"
     REHAB = "rehab"  # Initial repairs/renovation to make property rent-ready
     PANDI = "pandi"
+    TAX = "tax"  # Property taxes
     UTILITIES = "utilities"
     MAINTENANCE = "maintenance"
     INSURANCE = "insurance"
@@ -34,46 +35,65 @@ class ExpenseCategory(str, Enum):
 
 
 class ExpenseBase(BaseModel):
-    """Base expense schema with common fields"""
+    """
+    Base expense schema with fields ordered to match Iceberg schema column order.
+    Fields are grouped by type: string, decimal128, date32, boolean, timestamp
+    """
+    # STRING fields (in Iceberg order)
     property_id: UUID = Field(..., description="Property this expense belongs to")
-    unit_id: Optional[UUID] = Field(None, description="Optional unit this expense belongs to (for multi-unit properties)")
+    unit_id: Optional[UUID] = Field(None, description="Optional unit this expense belongs to")
     description: str = Field(..., max_length=500, description="Description of the expense")
-    date: datetime.date = Field(..., description="Date the expense occurred or is planned")
-    amount: Decimal = Field(..., ge=0, description="Expense amount")
     vendor: Optional[str] = Field(None, max_length=255, description="Vendor or service provider name")
-    expense_type: ExpenseType = Field(..., description="Expense type (capex, rehab, maintenance, etc.)")
-    expense_category: Optional[ExpenseCategory] = Field(None, description="Cost code category (co_equip, bulk_comm, subs, etc.)")
+    expense_type: ExpenseType = Field(..., description="Expense type")
+    expense_category: Optional[ExpenseCategory] = Field(None, description="Cost code category")
     document_storage_id: Optional[UUID] = Field(None, description="Link to receipt document")
-    is_planned: bool = Field(default=False, description="True if planned/future expense, false if actual/receipted")
     notes: Optional[str] = Field(None, description="Additional notes")
+    
+    # DECIMAL128 fields (in Iceberg order)
+    amount: Decimal = Field(..., ge=0, description="Expense amount (decimal128)")
+    
+    # DATE32 fields (in Iceberg order)
+    date: datetime.date = Field(..., description="Date the expense occurred (date32)")
+    
+    # BOOLEAN fields (in Iceberg order)
+    has_receipt: Optional[bool] = Field(None, description="Whether the expense has a receipt attached")
 
 
 class ExpenseCreate(ExpenseBase):
     """Schema for creating a new expense"""
-    pass  # created_by_user_id will be added from authenticated user
+    pass
 
 
 class ExpenseUpdate(BaseModel):
-    """Schema for updating an expense"""
+    """Schema for updating an expense - fields ordered by Iceberg type"""
+    # STRING fields
     unit_id: Optional[UUID] = None
     description: Optional[str] = Field(None, max_length=500)
-    date: Optional[datetime.date] = None
-    amount: Optional[Decimal] = Field(None, ge=0)
     vendor: Optional[str] = Field(None, max_length=255)
     expense_type: Optional[ExpenseType] = None
     expense_category: Optional[ExpenseCategory] = None
     document_storage_id: Optional[UUID] = None
-    is_planned: Optional[bool] = None
     notes: Optional[str] = None
+    
+    # DECIMAL128 fields
+    amount: Optional[Decimal] = Field(None, ge=0)
+    
+    # DATE32 fields
+    date: Optional[datetime.date] = None
+    
+    # BOOLEAN fields
+    has_receipt: Optional[bool] = None
 
 
 class ExpenseResponse(ExpenseBase):
-    """Schema for expense response"""
-    id: UUID
-    unit_id: Optional[UUID] = None
-    created_by_user_id: Optional[UUID] = None
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
+    """
+    Schema for expense response - includes system fields in Iceberg order.
+    Fields ordered: ExpenseBase fields + id (string), created_at, updated_at (timestamp)
+    """
+    # System fields (in Iceberg order)
+    id: UUID  # string in Iceberg
+    created_at: datetime.datetime  # timestamp in Iceberg
+    updated_at: datetime.datetime  # timestamp in Iceberg
 
     class Config:
         from_attributes = True

@@ -67,11 +67,11 @@ class LeaseBase(BaseModel):
     
     # Status & State
     state: str = Field(..., pattern="^(NE|MO)$", description="State code: NE or MO")
-    status: Optional[str] = Field("draft", pattern="^(draft|pending_signature|active|expired|terminated)$")
+    status: Optional[str] = Field("draft", pattern="^(draft|pending_signature|active|expired|terminated|final|other)$")
     
     # Dates
-    commencement_date: date
-    termination_date: date
+    lease_start: date
+    lease_end: date
     auto_convert_month_to_month: Optional[bool] = False
     lease_date: Optional[date] = None
     
@@ -123,9 +123,7 @@ class LeaseBase(BaseModel):
     # Pets
     pets_allowed: Optional[bool] = True
     pet_fee: Optional[Decimal] = Field(None, ge=0, description="Total pet fee (not deposits - state regulated)")
-    pet_description: Optional[str] = Field(None, max_length=500, description="e.g., '2 cats and 1 50lb dog'")
-    max_pets: Optional[int] = Field(2, ge=0)
-    pets: Optional[List[PetInfo]] = None
+    pets: Optional[List[PetInfo]] = None  # JSON string in database (like tenants)
     pet_deposit: Optional[Decimal] = Field(None, ge=0, description="Pet deposit amount per pet")
     additional_pet_fee: Optional[Decimal] = Field(None, ge=0, description="Fee for additional pets beyond the first")
     
@@ -184,7 +182,7 @@ class LeaseBase(BaseModel):
     moveout_costs: Optional[List[MoveOutCostItem]] = None
     
     # Missouri-Specific
-    methamphetamine_disclosure: Optional[bool] = None
+    disclosure_methamphetamine: Optional[bool] = None
     owner_name: Optional[str] = Field(None, max_length=200)
     owner_address: Optional[str] = Field(None, max_length=500)
     manager_name: Optional[str] = Field(None, max_length=200)
@@ -195,26 +193,23 @@ class LeaseBase(BaseModel):
     # Notes
     notes: Optional[str] = None
     
-    @field_validator('termination_date')
+    @field_validator('lease_end')
     @classmethod
-    def validate_termination_date(cls, v, info):
-        """Ensure termination date is after commencement date"""
-        if 'commencement_date' in info.data and v <= info.data['commencement_date']:
-            raise ValueError('Termination date must be after commencement date')
+    def validate_lease_end(cls, v, info):
+        """Ensure lease end date is on or after lease start date"""
+        if 'lease_start' in info.data and v < info.data['lease_start']:
+            raise ValueError('Lease end date must be on or after lease start date')
         return v
     
     @model_validator(mode='after')
     def validate_state_specific_fields(self):
         """Validate state-specific required fields"""
         if self.state == 'MO':
-            if self.methamphetamine_disclosure is None:
-                raise ValueError('Methamphetamine disclosure is required for Missouri leases')
+            # disclosure_methamphetamine is optional - only True if property had meth making
             if not self.owner_name:
                 raise ValueError('Owner name is required for Missouri leases')
-            if not self.owner_address:
-                raise ValueError('Owner address is required for Missouri leases')
-            if self.moveout_inspection_rights is None:
-                raise ValueError('Move-out inspection rights must be specified for Missouri leases')
+            # owner_address was merged into manager_address, so no longer required separately
+            # moveout_inspection_rights was removed from schema, so no longer validated
         
         return self
     
@@ -244,10 +239,11 @@ class LeaseCreate(LeaseBase):
 class LeaseUpdate(BaseModel):
     """Lease update (all fields optional except cannot change property/state)"""
     # Metadata
+    status: Optional[str] = Field(None, pattern="^(draft|pending_signature|active|expired|terminated|final|other)$", description="Lease status")
     
     # Dates
-    commencement_date: Optional[date] = None
-    termination_date: Optional[date] = None
+    lease_start: Optional[date] = None
+    lease_end: Optional[date] = None
     auto_convert_month_to_month: Optional[bool] = None
     lease_date: Optional[date] = None
     
@@ -293,9 +289,7 @@ class LeaseUpdate(BaseModel):
     utilities_provided_by_owner_city: Optional[str] = Field(None, max_length=1000)
     pets_allowed: Optional[bool] = None
     pet_fee: Optional[Decimal] = Field(None, ge=0)
-    pet_description: Optional[str] = Field(None, max_length=500)
-    max_pets: Optional[int] = Field(None, ge=0)
-    pets: Optional[List[PetInfo]] = None
+    pets: Optional[List[PetInfo]] = None  # JSON string in database (like tenants)
     pet_deposit: Optional[Decimal] = Field(None, ge=0)
     additional_pet_fee: Optional[Decimal] = Field(None, ge=0)
     parking_spaces: Optional[int] = Field(None, ge=0)
@@ -332,7 +326,7 @@ class LeaseUpdate(BaseModel):
     early_termination_fee_months: Optional[int] = Field(None, ge=0)
     early_termination_fee_amount: Optional[Decimal] = Field(None, ge=0)
     moveout_costs: Optional[List[MoveOutCostItem]] = None
-    methamphetamine_disclosure: Optional[bool] = None
+    disclosure_methamphetamine: Optional[bool] = None
     owner_name: Optional[str] = Field(None, max_length=200)
     owner_address: Optional[str] = Field(None, max_length=500)
     manager_name: Optional[str] = Field(None, max_length=200)
@@ -383,8 +377,8 @@ class LeaseListItem(BaseModel):
     lease_number: int = Field(..., description="Auto-incrementing lease number")
     property: PropertySummary
     tenants: List[dict]  # Just name info
-    commencement_date: date
-    termination_date: date
+    lease_start: date
+    lease_end: date
     monthly_rent: Decimal
     status: str
     pdf_url: Optional[str] = None

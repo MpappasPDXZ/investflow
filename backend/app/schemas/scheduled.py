@@ -48,15 +48,28 @@ class ScheduledExpenseUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class ScheduledExpenseResponse(ScheduledExpenseBase):
-    """Schema for scheduled expense response"""
+class ScheduledExpenseResponse(BaseModel):
+    """Schema for scheduled expense response - fields in EXACT Iceberg table order"""
     model_config = ConfigDict(json_encoders={Decimal: float})
     
+    # Fields in EXACT order matching ACTUAL table schema:
+    # id, property_id, expense_type, item_name, purchase_price, depreciation_rate,
+    # count, annual_cost, principal, interest_rate, notes, created_at, updated_at, is_active
     id: str
-    is_active: bool
+    property_id: str
+    expense_type: str
+    item_name: str
+    purchase_price: Optional[Decimal] = None
+    depreciation_rate: Optional[Decimal] = None
+    count: Optional[int] = None
+    annual_cost: Optional[Decimal] = None
+    principal: Optional[Decimal] = None
+    interest_rate: Optional[Decimal] = None
+    notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    calculated_annual_cost: Optional[Decimal] = None  # Computed field
+    is_active: bool
+    calculated_annual_cost: Optional[Decimal] = None  # Computed field (not in table)
 
 
 class ScheduledExpenseListResponse(BaseModel):
@@ -102,15 +115,26 @@ class ScheduledRevenueUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class ScheduledRevenueResponse(ScheduledRevenueBase):
-    """Schema for scheduled revenue response"""
+class ScheduledRevenueResponse(BaseModel):
+    """Schema for scheduled revenue response - fields in EXACT Iceberg table order"""
     model_config = ConfigDict(json_encoders={Decimal: float})
     
+    # Fields in EXACT order matching ACTUAL table schema:
+    # id, property_id, revenue_type, item_name, annual_amount, appreciation_rate,
+    # property_value, value_added_amount, notes, created_at, updated_at, is_active
     id: str
-    is_active: bool
+    property_id: str
+    revenue_type: str
+    item_name: str
+    annual_amount: Optional[Decimal] = None
+    appreciation_rate: Optional[Decimal] = None
+    property_value: Optional[Decimal] = None
+    value_added_amount: Optional[Decimal] = None
+    notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    calculated_annual_amount: Optional[Decimal] = None  # Computed field
+    is_active: bool
+    calculated_annual_amount: Optional[Decimal] = None  # Computed field (not in table)
 
 
 class ScheduledRevenueListResponse(BaseModel):

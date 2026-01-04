@@ -8,6 +8,7 @@ export interface FinancialPerformance {
   ytd_expenses: number;
   ytd_profit_loss: number;
   ytd_piti: number;
+  ytd_tax: number;
   ytd_utilities: number;
   ytd_maintenance: number;
   ytd_capex: number;
@@ -18,12 +19,14 @@ export interface FinancialPerformance {
   cumulative_expenses: number;
   cumulative_profit_loss: number;
   cumulative_piti: number;
+  cumulative_tax: number;
   cumulative_utilities: number;
   cumulative_maintenance: number;
   cumulative_capex: number;
   cumulative_insurance: number;
   cumulative_property_management: number;
   cumulative_other: number;
+  cash_invested: number | null;
   cash_on_cash: number | null;
   units: Array<{
     unit_id: string;

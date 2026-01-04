@@ -18,6 +18,7 @@ export default function AddPropertyPage() {
     purchase_price: '',
     purchase_date: '2024-10-23',
     down_payment: '',
+    cash_invested: '',
     current_market_value: '',
     property_status: 'evaluating',
     vacancy_rate: '0.07',
@@ -50,6 +51,7 @@ export default function AddPropertyPage() {
         purchase_price: parseFloat(formData.purchase_price) || 0,
         purchase_date: formData.purchase_date || '2024-10-23',
         down_payment: formData.down_payment ? parseFloat(formData.down_payment) : undefined,
+        cash_invested: formData.cash_invested ? parseFloat(formData.cash_invested) : undefined,
         current_market_value: formData.current_market_value ? parseFloat(formData.current_market_value) : undefined,
         property_status: formData.property_status,
         vacancy_rate: formData.vacancy_rate ? parseFloat(formData.vacancy_rate) : 0.07,
@@ -81,8 +83,40 @@ export default function AddPropertyPage() {
         }
       });
 
-      console.log('📝 [PROPERTY] Creating property:', payload);
-      const property = await apiClient.post<{ id: string }>('/properties', payload);
+      // Define the exact backend field order (from Iceberg schema)
+      const BACKEND_FIELD_ORDER = [
+        "id", "user_id", "display_name", "property_status", "purchase_date",
+        "monthly_rent_to_income_ratio", "address_line1", "address_line2", "city", "state",
+        "zip_code", "property_type", "has_units", "notes", "is_active",
+        "purchase_price", "square_feet", "down_payment", "cash_invested", "current_market_value",
+        "vacancy_rate", "unit_count", "bedrooms", "bathrooms", "year_built",
+        "current_monthly_rent", "created_at", "updated_at"
+      ];
+
+      // Build ordered payload respecting backend field order
+      const orderedPayload: any = {};
+      for (const field of BACKEND_FIELD_ORDER) {
+        if (field in payload) {
+          orderedPayload[field] = payload[field];
+        }
+      }
+      // Add any extra fields that might not be in the order list
+      for (const key of Object.keys(payload)) {
+        if (!BACKEND_FIELD_ORDER.includes(key) && !orderedPayload.hasOwnProperty(key)) {
+          orderedPayload[key] = payload[key];
+        }
+      }
+
+      // Log field order compliance
+      const payloadKeys = Object.keys(orderedPayload);
+      const orderedKeys = BACKEND_FIELD_ORDER.filter(f => payloadKeys.includes(f));
+      console.log('📋 [PROPERTY] Field order compliance check:');
+      console.log('   Expected order:', orderedKeys);
+      console.log('   Actual payload keys:', payloadKeys);
+      console.log('   ✅ Order matches:', JSON.stringify(orderedKeys) === JSON.stringify(payloadKeys.slice(0, orderedKeys.length)));
+      console.log('📝 [PROPERTY] Creating property with ordered payload:', orderedPayload);
+      
+      const property = await apiClient.post<{ id: string }>('/properties', orderedPayload);
       console.log('✅ [PROPERTY] Property created:', property);
 
       // Redirect to property detail page (where units can be added)
@@ -153,6 +187,18 @@ export default function AddPropertyPage() {
                   onChange={(e) => setFormData({ ...formData, down_payment: e.target.value })}
                   className="text-sm"
                   placeholder="Initial equity investment"
+                />
+              </div>
+              <div>
+                <Label htmlFor="cash_invested">Cash Invested</Label>
+                <Input
+                  id="cash_invested"
+                  type="number"
+                  step="0.01"
+                  value={formData.cash_invested}
+                  onChange={(e) => setFormData({ ...formData, cash_invested: e.target.value })}
+                  className="text-sm"
+                  placeholder="Total cash invested"
                 />
               </div>
               <div>

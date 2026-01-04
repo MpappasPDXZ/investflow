@@ -2,12 +2,56 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from io import BytesIO
 from pyiceberg.expressions import EqualTo, And
 from app.services.adls_service import adls_service
 from app.core.iceberg import get_catalog
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+def _fix_image_orientation(file_content: bytes, content_type: str) -> bytes:
+    """
+    Fix image orientation based on EXIF data.
+    Rotates/flips the image data itself so browsers display it correctly.
+    
+    Args:
+        file_content: Original image bytes
+        content_type: MIME type of the image
+        
+    Returns:
+        Corrected image bytes (or original if not an image or no EXIF data)
+    """
+    # Only process JPEG images (most common with EXIF orientation issues)
+    if not content_type.startswith('image/jpeg') and not content_type.startswith('image/jpg'):
+        return file_content
+    
+    try:
+        from PIL import Image
+        from PIL import ImageOps
+        
+        # Open image from bytes
+        img = Image.open(BytesIO(file_content))
+        
+        # Use ImageOps.exif_transpose() to automatically correct orientation
+        # This handles all EXIF orientation cases (1-8) correctly
+        # If no EXIF orientation data exists, it returns the image unchanged
+        corrected_img = ImageOps.exif_transpose(img)
+        
+        # Save corrected image to bytes, removing EXIF orientation to prevent double-rotation
+        # This ensures the image displays correctly in browsers without relying on EXIF
+        output = BytesIO()
+        corrected_img.save(output, format='JPEG', quality=95, exif=b'')
+        return output.getvalue()
+        
+    except ImportError:
+        # Pillow not installed, return original
+        logger.warning("Pillow not installed, cannot fix image orientation")
+        return file_content
+    except Exception as e:
+        # If anything goes wrong, return original image
+        logger.warning(f"Error fixing image orientation: {e}")
+        return file_content
 
 
 class DocumentService:
@@ -67,9 +111,12 @@ class DocumentService:
             Document metadata dictionary
         """
         try:
+            # Fix image orientation for JPEG images (fixes portrait photos rotated 90 degrees)
+            processed_content = _fix_image_orientation(file_content, content_type)
+            
             # Upload to ADLS
             blob_metadata = adls_service.upload_blob(
-                file_content=file_content,
+                file_content=processed_content,
                 filename=filename,
                 content_type=content_type,
                 user_id=str(user_id),
@@ -250,77 +297,111 @@ class DocumentService:
     def update_document(
         self,
         document_id: uuid.UUID,
-        user_id: uuid.UUID,
-        property_id: Optional[uuid.UUID] = None,
+        property_id: uuid.UUID,
+        user_id: Optional[uuid.UUID] = None,
         unit_id: Optional[uuid.UUID] = None,
+        tenant_id: Optional[uuid.UUID] = None,
         document_type: Optional[str] = None,
         display_name: Optional[str] = None,
         clear_property: bool = False
     ) -> Optional[Dict[str, Any]]:
         """
-        Update a document's metadata
+        Update a document's metadata using efficient upsert
         
         Args:
-            document_id: Document ID
-            user_id: User ID for access control
-            property_id: New property ID (or None to keep unchanged)
+            document_id: Document ID (primary key)
+            property_id: Property ID (required)
+            user_id: User ID for access control (optional)
             unit_id: New unit ID (or None to keep unchanged)
+            tenant_id: New tenant ID (or None to keep unchanged)
             document_type: New document type (or None to keep unchanged)
             display_name: Custom display name (or None to keep unchanged)
-            clear_property: If True, remove property association
+            clear_property: If True, remove property association (ignored if property_id is provided)
         
         Returns:
             Updated document or None if not found
         """
         try:
-            # Get the document
-            logger.info(f"update_document: Getting document {document_id} for user {user_id}")
-            document = self.get_document(document_id, user_id)
+            # Step 1: Get existing document by primary key (id)
+            table = self._get_table()
+            scan = table.scan(row_filter=EqualTo("id", str(document_id)))
+            arrow_table = scan.to_arrow()
             
-            if not document:
-                logger.warning(f"update_document: Document {document_id} not found for user {user_id}")
+            if len(arrow_table) == 0:
+                logger.warning(f"Document {document_id} not found")
                 return None
             
-            logger.info(f"update_document: Found document, getting table")
-            table = self._get_table()
+            document = arrow_table.to_pylist()[0]
             
-            # Delete old record
-            table.delete(
-                And(
-                    EqualTo("id", str(document_id)),
-                    EqualTo("user_id", str(user_id))
-                )
-            )
+            # Get user_id from document if not provided
+            if not user_id:
+                user_id = uuid.UUID(document.get("user_id"))
             
-            # Update fields
+            # Step 2: Merge frontend changes into existing document
+            # Start with existing document, then apply changes
+            updated_document = document.copy()
+            
+            # Apply changes from frontend
             if clear_property:
-                document["property_id"] = None
-            elif property_id is not None:
-                document["property_id"] = str(property_id)
+                updated_document["property_id"] = None
+            else:
+                updated_document["property_id"] = str(property_id)
             
             if unit_id is not None:
-                document["unit_id"] = str(unit_id)
+                updated_document["unit_id"] = str(unit_id) if unit_id else None
+            
+            if tenant_id is not None:
+                updated_document["tenant_id"] = str(tenant_id) if tenant_id else None
             
             if document_type is not None:
-                document["document_type"] = document_type
+                updated_document["document_type"] = document_type
             
-            # Set display_name directly (it's now a direct column)
             if display_name is not None:
-                document["display_name"] = display_name
+                updated_document["display_name"] = display_name
             
-            document["updated_at"] = datetime.utcnow()
+            # Update timestamp
+            updated_document["updated_at"] = datetime.utcnow()
             
-            # Insert updated record
-            import pyarrow as pa
-            schema = table.schema().as_arrow()
-            logger.info(f"Inserting updated document with schema fields: {[f.name for f in schema]}")
-            logger.info(f"Document keys: {list(document.keys())}")
-            arrow_table = pa.Table.from_pylist([document], schema=schema)
-            table.append(arrow_table)
+            # Ensure id and user_id are strings
+            updated_document["id"] = str(document_id)
+            updated_document["user_id"] = str(user_id)
+            
+            # Step 3: Fast update using delete-then-append (vault-specific, avoids duplicate row issues)
+            import pandas as pd
+            from app.core.iceberg import append_data
+            # EqualTo is already imported at the top of the file
+            
+            # Get table schema to ensure correct field order
+            table_schema = table.schema().as_arrow()
+            schema_field_names = [field.name for field in table_schema]
+            
+            # Build ordered dict in exact schema order
+            ordered_dict = {}
+            for field_name in schema_field_names:
+                value = updated_document.get(field_name)
+                # Convert UUID fields to strings
+                if field_name in ["id", "user_id", "property_id", "unit_id", "tenant_id"]:
+                    ordered_dict[field_name] = str(value) if value else None
+                else:
+                    ordered_dict[field_name] = value
+            
+            df = pd.DataFrame([ordered_dict])
+            
+            # Delete existing row(s) with this ID (handles duplicates)
+            table.delete(EqualTo("id", str(document_id)))
+            logger.info(f"[VAULT] Deleted existing row(s) for document {document_id}, appending updated row")
+            
+            # Append the updated row (fast, avoids upsert complexity)
+            append_data(
+                namespace=(self.namespace,),
+                table_name=self.table_name,
+                data=df
+            )
             
             logger.info(f"Updated document: {document_id}")
             
-            return document
+            # Return updated document
+            return updated_document
             
         except Exception as e:
             logger.error(f"Error updating document: {e}", exc_info=True)
@@ -447,9 +528,10 @@ def delete_document(document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
 
 def update_document(
     document_id: uuid.UUID,
-    user_id: uuid.UUID,
-    property_id: Optional[uuid.UUID] = None,
+    property_id: uuid.UUID,
+    user_id: Optional[uuid.UUID] = None,
     unit_id: Optional[uuid.UUID] = None,
+    tenant_id: Optional[uuid.UUID] = None,
     document_type: Optional[str] = None,
     display_name: Optional[str] = None,
     clear_property: bool = False
@@ -457,9 +539,10 @@ def update_document(
     """Update a document's metadata"""
     return document_service.update_document(
         document_id=document_id,
-        user_id=user_id,
         property_id=property_id,
+        user_id=user_id,
         unit_id=unit_id,
+        tenant_id=tenant_id,
         document_type=document_type,
         display_name=display_name,
         clear_property=clear_property

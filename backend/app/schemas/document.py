@@ -28,6 +28,7 @@ class DocumentResponse(BaseModel):
     document_type: Optional[DocumentType] = Field(None, description="Type of document")
     property_id: Optional[UUID] = Field(None, description="Associated property ID")
     unit_id: Optional[UUID] = Field(None, description="Associated unit ID")
+    tenant_id: Optional[UUID] = Field(None, description="Associated tenant ID")
     display_name: Optional[str] = Field(None, description="User-defined display name")
     document_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
     uploaded_by_user_id: Optional[UUID] = None
@@ -50,7 +51,7 @@ class DocumentResponse(BaseModel):
                 except ValueError:
                     doc_type = DocumentType.OTHER
             
-            # Handle property_id and unit_id - could be None or empty string
+            # Handle property_id, unit_id, and tenant_id - could be None or empty string
             property_id = doc.get("property_id")
             if property_id == "" or property_id == "None" or property_id is None:
                 property_id = None
@@ -58,6 +59,10 @@ class DocumentResponse(BaseModel):
             unit_id = doc.get("unit_id")
             if unit_id == "" or unit_id == "None" or unit_id is None:
                 unit_id = None
+            
+            tenant_id = doc.get("tenant_id")
+            if tenant_id == "" or tenant_id == "None" or tenant_id is None:
+                tenant_id = None
             
             # Handle user_id field
             user_id = doc.get("uploaded_by_user_id") or doc.get("user_id")
@@ -83,6 +88,7 @@ class DocumentResponse(BaseModel):
                 document_type=doc_type,
                 property_id=property_id,
                 unit_id=unit_id,
+                tenant_id=tenant_id,
                 display_name=display_name,
                 document_metadata=metadata,
                 uploaded_by_user_id=user_id,
@@ -99,8 +105,9 @@ class DocumentResponse(BaseModel):
 
 class DocumentUpdateRequest(BaseModel):
     """Schema for updating document metadata"""
-    property_id: Optional[UUID] = Field(None, description="Associate with property (null to remove)")
-    unit_id: Optional[UUID] = Field(None, description="Associate with unit")
+    property_id: UUID = Field(..., description="Property ID (required)")
+    unit_id: Optional[UUID] = Field(None, description="Associate with unit (null to remove)")
+    tenant_id: Optional[UUID] = Field(None, description="Associate with tenant (null to remove)")
     document_type: Optional[DocumentType] = Field(None, description="Document type")
     display_name: Optional[str] = Field(None, max_length=255, description="Custom display name")
     clear_property: Optional[bool] = Field(False, description="If true, removes property association")

@@ -4,6 +4,7 @@ Rental Comparables API endpoints
 import uuid
 import logging
 from datetime import datetime, date, timezone
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 import pandas as pd
@@ -23,7 +24,43 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/comparables", tags=["comparables"])
 
 NAMESPACE = ("investflow",)
-TABLE_NAME = "leases"  # Comparable property data is stored in leases table
+TABLE_NAME = "comps"  # Comparable property data is stored in comps table
+
+# Strict field order for comps table (must match Iceberg schema exactly)
+# Order from get_comparable_schema():
+COMPS_FIELD_ORDER = [
+    "id",
+    "property_id",
+    "unit_id",
+    "address",
+    "city",
+    "state",
+    "zip_code",
+    "property_type",
+    "is_furnished",
+    "bedrooms",
+    "bathrooms",
+    "square_feet",
+    "asking_price",
+    "has_fence",
+    "has_solid_flooring",
+    "has_quartz_granite",
+    "has_ss_appliances",
+    "has_shaker_cabinets",
+    "has_washer_dryer",
+    "garage_spaces",
+    "date_listed",
+    "date_rented",
+    "contacts",
+    "is_rented",
+    "last_rented_price",
+    "last_rented_year",
+    "is_subject_property",
+    "is_active",
+    "notes",
+    "created_at",
+    "updated_at",
+]
 
 
 def get_comparable_schema() -> pa.Schema:
@@ -51,7 +88,7 @@ def get_comparable_schema() -> pa.Schema:
         pa.field("has_ss_appliances", pa.bool_(), nullable=True),
         pa.field("has_shaker_cabinets", pa.bool_(), nullable=True),
         pa.field("has_washer_dryer", pa.bool_(), nullable=True),
-        pa.field("garage_spaces", pa.float32(), nullable=True),
+        pa.field("garage_spaces", pa.decimal128(3, 1), nullable=True),  # Supports .5 increments (0.5, 1.0, 1.5, etc.)
         # Listing data
         pa.field("date_listed", pa.date32(), nullable=False),
         pa.field("date_rented", pa.date32(), nullable=True),  # Date property was rented (for accurate DOZ)
@@ -67,6 +104,145 @@ def get_comparable_schema() -> pa.Schema:
         pa.field("created_at", pa.timestamp("us"), nullable=False),
         pa.field("updated_at", pa.timestamp("us"), nullable=False),
     ])
+
+
+def _load_comps_table():
+    """Load comps table (dedicated function, no shared functions)"""
+    catalog = get_catalog()
+    return catalog.load_table(f"{NAMESPACE[0]}.{TABLE_NAME}")
+
+
+def _convert_comparable_types(df: pd.DataFrame, table_schema) -> pd.DataFrame:
+    """Convert DataFrame types to match table schema (dedicated function, no shared functions)"""
+    # Get actual table schema field order
+    actual_field_order = [f.name for f in table_schema]
+    
+    # Ensure DataFrame columns are in exact order matching table schema
+    df = df[actual_field_order]
+    
+    # Convert timestamp columns to microseconds
+    for col in ['created_at', 'updated_at']:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], utc=True).dt.tz_localize(None)
+            df[col] = df[col].dt.floor('us')
+    
+    # Convert date columns
+    for col in ['date_listed', 'date_rented']:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col]).dt.date
+    
+    # Convert decimal columns to proper types
+    if 'bathrooms' in df.columns:
+        df['bathrooms'] = df['bathrooms'].apply(
+            lambda x: Decimal(str(round(float(x), 1))) if pd.notna(x) else Decimal('0')
+        )
+    if 'asking_price' in df.columns:
+        df['asking_price'] = df['asking_price'].apply(
+            lambda x: Decimal(str(round(float(x), 2))) if pd.notna(x) else Decimal('0')
+        )
+    if 'last_rented_price' in df.columns:
+        df['last_rented_price'] = df['last_rented_price'].apply(
+            lambda x: Decimal(str(round(float(x), 2))) if pd.notna(x) else None
+        )
+    if 'garage_spaces' in df.columns:
+        df['garage_spaces'] = df['garage_spaces'].apply(
+            lambda x: Decimal(str(round(float(x), 1))) if pd.notna(x) and x is not None else None
+        )
+    
+    # Convert integer columns
+    int_cols = ['bedrooms', 'square_feet', 'contacts', 'last_rented_year']
+    for col in int_cols:
+        if col in df.columns:
+            if col in ['bedrooms', 'square_feet']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+            else:
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')
+    
+    # Convert boolean columns
+    bool_cols = ['is_subject_property', 'is_active', 'is_furnished', 'has_fence', 
+                 'has_solid_flooring', 'has_quartz_granite', 'has_ss_appliances',
+                 'has_shaker_cabinets', 'has_washer_dryer', 'is_rented']
+    for col in bool_cols:
+        if col in df.columns:
+            if col in ['is_subject_property', 'is_active']:
+                df[col] = df[col].fillna(False).astype(bool)
+            else:
+                df[col] = df[col].astype('boolean')
+    
+    # Convert string columns
+    string_cols = ['id', 'property_id', 'address']
+    for col in string_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+            df[col] = df[col].fillna('')
+    
+    return df
+
+
+def _append_comparable(comparable_dict: dict):
+    """Append a comparable with strict field ordering (dedicated function, no shared functions)"""
+    try:
+        table = _load_comps_table()
+        table_schema = table.schema().as_arrow()
+        
+        # Get actual table schema field order
+        actual_field_order = [f.name for f in table_schema]
+        logger.info(f"📋 [COMPS] Actual table schema order: {actual_field_order}")
+        logger.info(f"📋 [COMPS] Expected field order: {COMPS_FIELD_ORDER}")
+        logger.info(f"📋 [COMPS] Comparable dict keys: {list(comparable_dict.keys())}")
+        
+        # Build DataFrame with fields in exact order matching ACTUAL table schema
+        ordered_dict = {}
+        for field_name in actual_field_order:
+            if field_name in comparable_dict:
+                ordered_dict[field_name] = comparable_dict[field_name]
+            else:
+                ordered_dict[field_name] = None
+        
+        df = pd.DataFrame([ordered_dict])
+        df = _convert_comparable_types(df, table_schema)
+        
+        # Convert to PyArrow and cast to schema
+        arrow_table = pa.Table.from_pandas(df)
+        arrow_table = arrow_table.cast(table_schema)
+        table.append(arrow_table)
+        
+        logger.info(f"✅ [COMPS] Appended comparable: {comparable_dict.get('id')}")
+        
+    except Exception as e:
+        logger.error(f"❌ [COMPS] Failed to append comparable: {e}", exc_info=True)
+        raise
+
+
+def _overwrite_comps_table(df: pd.DataFrame):
+    """Overwrite comps table with DataFrame (dedicated function, no shared functions)"""
+    try:
+        table = _load_comps_table()
+        table_schema = table.schema().as_arrow()
+        
+        # Get actual table schema field order
+        actual_field_order = [f.name for f in table_schema]
+        
+        # Ensure DataFrame has all required columns in correct order
+        for field_name in actual_field_order:
+            if field_name not in df.columns:
+                df[field_name] = None
+        
+        df = df[actual_field_order]
+        df = _convert_comparable_types(df, table_schema)
+        
+        # Convert to PyArrow and cast to schema
+        arrow_table = pa.Table.from_pandas(df)
+        arrow_table = arrow_table.cast(table_schema)
+        
+        # Overwrite table
+        table.overwrite(arrow_table)
+        
+        logger.info(f"✅ [COMPS] Overwrote comps table with {len(df)} rows")
+        
+    except Exception as e:
+        logger.error(f"❌ [COMPS] Failed to overwrite comps table: {e}", exc_info=True)
+        raise
 
 
 def ensure_table_exists():
@@ -268,9 +444,11 @@ async def create_comparable(
         if property_match.empty:
             raise HTTPException(status_code=404, detail="Property not found")
         
-        # Create comparable record
+        # Create comparable record in EXACT field order
         comparable_id = str(uuid.uuid4())
-        now = pd.Timestamp.now(tz=timezone.utc).floor('us')
+        now = datetime.utcnow()
+        
+        logger.info(f"📋 [COMPS] Creating comparable with field order: {COMPS_FIELD_ORDER}")
         
         # Convert date_listed to date object
         date_listed = comparable_data.date_listed.date() if hasattr(comparable_data.date_listed, 'date') else comparable_data.date_listed
@@ -282,43 +460,75 @@ async def create_comparable(
             from datetime import timedelta
             date_rented = date_listed + timedelta(days=30) if date_listed else None
         
-        comparable_dict = {
-            "id": comparable_id,
-            "property_id": comparable_data.property_id,
-            "unit_id": comparable_data.unit_id,
-            "address": comparable_data.address,
-            "city": comparable_data.city,
-            "state": comparable_data.state,
-            "zip_code": comparable_data.zip_code,
-            "property_type": comparable_data.property_type,
-            "is_furnished": comparable_data.is_furnished,
-            "bedrooms": comparable_data.bedrooms,
-            "bathrooms": float(comparable_data.bathrooms),
-            "square_feet": comparable_data.square_feet,
-            "asking_price": float(comparable_data.asking_price),
-            "has_fence": comparable_data.has_fence,
-            "has_solid_flooring": comparable_data.has_solid_flooring,
-            "has_quartz_granite": comparable_data.has_quartz_granite,
-            "has_ss_appliances": comparable_data.has_ss_appliances,
-            "has_shaker_cabinets": comparable_data.has_shaker_cabinets,
-            "has_washer_dryer": comparable_data.has_washer_dryer,
-            "garage_spaces": comparable_data.garage_spaces,
-            "date_listed": date_listed,
-            "date_rented": date_rented,
-            "contacts": None if comparable_data.is_rented else comparable_data.contacts,  # Contacts null if rented (not listed)
-            "is_rented": comparable_data.is_rented,
-            "last_rented_price": float(comparable_data.last_rented_price) if comparable_data.last_rented_price else None,
-            "last_rented_year": comparable_data.last_rented_year,
-            "is_subject_property": comparable_data.is_subject_property,
-            "is_active": True,
-            "notes": comparable_data.notes,
-            "created_at": now,
-            "updated_at": now,
-        }
+        # Build comparable_dict in EXACT field order matching COMPS_FIELD_ORDER
+        from decimal import Decimal
+        comparable_dict = {}
+        for field_name in COMPS_FIELD_ORDER:
+            if field_name == "id":
+                comparable_dict[field_name] = comparable_id
+            elif field_name == "property_id":
+                comparable_dict[field_name] = str(comparable_data.property_id)
+            elif field_name == "unit_id":
+                comparable_dict[field_name] = str(comparable_data.unit_id) if comparable_data.unit_id else None
+            elif field_name == "address":
+                comparable_dict[field_name] = comparable_data.address
+            elif field_name == "city":
+                comparable_dict[field_name] = comparable_data.city
+            elif field_name == "state":
+                comparable_dict[field_name] = comparable_data.state
+            elif field_name == "zip_code":
+                comparable_dict[field_name] = comparable_data.zip_code
+            elif field_name == "property_type":
+                comparable_dict[field_name] = comparable_data.property_type
+            elif field_name == "is_furnished":
+                comparable_dict[field_name] = comparable_data.is_furnished
+            elif field_name == "bedrooms":
+                comparable_dict[field_name] = comparable_data.bedrooms
+            elif field_name == "bathrooms":
+                comparable_dict[field_name] = Decimal(str(comparable_data.bathrooms))
+            elif field_name == "square_feet":
+                comparable_dict[field_name] = comparable_data.square_feet
+            elif field_name == "asking_price":
+                comparable_dict[field_name] = Decimal(str(comparable_data.asking_price))
+            elif field_name == "has_fence":
+                comparable_dict[field_name] = comparable_data.has_fence
+            elif field_name == "has_solid_flooring":
+                comparable_dict[field_name] = comparable_data.has_solid_flooring
+            elif field_name == "has_quartz_granite":
+                comparable_dict[field_name] = comparable_data.has_quartz_granite
+            elif field_name == "has_ss_appliances":
+                comparable_dict[field_name] = comparable_data.has_ss_appliances
+            elif field_name == "has_shaker_cabinets":
+                comparable_dict[field_name] = comparable_data.has_shaker_cabinets
+            elif field_name == "has_washer_dryer":
+                comparable_dict[field_name] = comparable_data.has_washer_dryer
+            elif field_name == "garage_spaces":
+                comparable_dict[field_name] = Decimal(str(round(float(comparable_data.garage_spaces or 0), 1))) if comparable_data.garage_spaces is not None else None
+            elif field_name == "date_listed":
+                comparable_dict[field_name] = date_listed
+            elif field_name == "date_rented":
+                comparable_dict[field_name] = date_rented
+            elif field_name == "contacts":
+                comparable_dict[field_name] = None if comparable_data.is_rented else comparable_data.contacts
+            elif field_name == "is_rented":
+                comparable_dict[field_name] = comparable_data.is_rented
+            elif field_name == "last_rented_price":
+                comparable_dict[field_name] = Decimal(str(comparable_data.last_rented_price)) if comparable_data.last_rented_price else None
+            elif field_name == "last_rented_year":
+                comparable_dict[field_name] = comparable_data.last_rented_year
+            elif field_name == "is_subject_property":
+                comparable_dict[field_name] = comparable_data.is_subject_property
+            elif field_name == "is_active":
+                comparable_dict[field_name] = True
+            elif field_name == "notes":
+                comparable_dict[field_name] = comparable_data.notes
+            elif field_name == "created_at":
+                comparable_dict[field_name] = now
+            elif field_name == "updated_at":
+                comparable_dict[field_name] = now
         
-        # Convert to DataFrame and append
-        df = pd.DataFrame([comparable_dict])
-        append_data(NAMESPACE, TABLE_NAME, df)
+        # Append using dedicated function (respects field order)
+        _append_comparable(comparable_dict)
         
         logger.info(f"✅ Comparable created: {comparable_id}")
         
@@ -407,13 +617,42 @@ async def update_comparable(
         
         # Update the row
         updated_row.update(update_data)
-        updated_row['updated_at'] = pd.Timestamp.now(tz=timezone.utc).floor('us')
+        updated_row['updated_at'] = datetime.utcnow()
         
-        # Convert to DataFrame (single row)
-        updated_df = pd.DataFrame([updated_row])
+        # Convert decimal fields properly
+        if 'garage_spaces' in update_data and update_data['garage_spaces'] is not None:
+            updated_row['garage_spaces'] = Decimal(str(round(float(update_data['garage_spaces']), 1)))
+        if 'bathrooms' in update_data:
+            updated_row['bathrooms'] = Decimal(str(round(float(update_data['bathrooms']), 1)))
+        if 'asking_price' in update_data:
+            updated_row['asking_price'] = Decimal(str(round(float(update_data['asking_price']), 2)))
+        if 'last_rented_price' in update_data and update_data['last_rented_price'] is not None:
+            updated_row['last_rented_price'] = Decimal(str(round(float(update_data['last_rented_price']), 2)))
         
-        # Use upsert_data which handles all type conversions properly
-        upsert_data(NAMESPACE, TABLE_NAME, updated_df, join_cols=["id"])
+        # Build updated row in EXACT field order
+        table = _load_comps_table()
+        table_schema = table.schema().as_arrow()
+        actual_field_order = [f.name for f in table_schema]
+        
+        ordered_dict = {}
+        for field_name in actual_field_order:
+            if field_name in updated_row:
+                ordered_dict[field_name] = updated_row[field_name]
+            else:
+                ordered_dict[field_name] = None
+        
+        # Convert to DataFrame (single row) in exact order
+        updated_df = pd.DataFrame([ordered_dict])
+        updated_df = updated_df[actual_field_order]
+        updated_df = _convert_comparable_types(updated_df, table_schema)
+        
+        # Read all data, update the row, and overwrite
+        all_df = read_table(NAMESPACE, TABLE_NAME)
+        all_df = all_df[all_df['id'] != comparable_id]  # Remove old row
+        all_df = pd.concat([all_df, updated_df], ignore_index=True)  # Add updated row
+        
+        # Overwrite using dedicated function (respects field order)
+        _overwrite_comps_table(all_df)
         
         logger.info(f"✅ Comparable updated: {comparable_id}")
         
@@ -469,14 +708,35 @@ async def delete_comparable(
             from pyiceberg.expressions import EqualTo
             table.delete(EqualTo("id", comparable_id))
         else:
-            # Soft delete using upsert_data
+            # Soft delete - update is_active and overwrite table
             updated_row = df.loc[comp_idx[0]].copy()
             updated_row['is_active'] = False
-            updated_row['updated_at'] = pd.Timestamp.now(tz=timezone.utc).floor('us')
+            updated_row['updated_at'] = datetime.utcnow()
             
-            # Convert to DataFrame and upsert
-            updated_df = pd.DataFrame([updated_row])
-            upsert_data(NAMESPACE, TABLE_NAME, updated_df, join_cols=["id"])
+            # Build updated row in EXACT field order
+            table = _load_comps_table()
+            table_schema = table.schema().as_arrow()
+            actual_field_order = [f.name for f in table_schema]
+            
+            ordered_dict = {}
+            for field_name in actual_field_order:
+                if field_name in updated_row:
+                    ordered_dict[field_name] = updated_row[field_name]
+                else:
+                    ordered_dict[field_name] = None
+            
+            # Convert to DataFrame and update
+            updated_df = pd.DataFrame([ordered_dict])
+            updated_df = updated_df[actual_field_order]
+            updated_df = _convert_comparable_types(updated_df, table_schema)
+            
+            # Read all data, update the row, and overwrite
+            all_df = read_table(NAMESPACE, TABLE_NAME)
+            all_df = all_df[all_df['id'] != comparable_id]  # Remove old row
+            all_df = pd.concat([all_df, updated_df], ignore_index=True)  # Add updated row
+            
+            # Overwrite using dedicated function (respects field order)
+            _overwrite_comps_table(all_df)
         
         logger.info(f"✅ Comparable {'deleted' if hard_delete else 'deactivated'}: {comparable_id}")
         
