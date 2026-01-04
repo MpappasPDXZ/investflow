@@ -75,6 +75,8 @@ dist/
 .DS_Store
 *.sublime-project
 *.sublime-workspace
+*.code-workspace
+.vscode-test/
 
 # Logs
 logs/
@@ -101,6 +103,8 @@ Thumbs.db
 
 # Docker
 .dockerignore
+docker-compose.override.yml
+*.dockerfile
 
 # Azure
 .azure/
@@ -117,6 +121,11 @@ warehouse.json
 *.db
 *.sqlite
 *.sqlite3
+
+# Backup files
+*.parquet
+*.backup
+*.bak
 
 # Documentation builds
 docs/_build/
