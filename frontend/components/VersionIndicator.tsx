@@ -12,7 +12,7 @@ export function VersionIndicator() {
 
   return (
     <div className="fixed bottom-2 right-2 bg-black text-white text-xs px-2 py-1 rounded shadow-lg z-50 font-mono">
-      v1.3.0 - Built: {buildTime}
+      v2.0.0 - Built: {buildTime}
     </div>
   );
 }
