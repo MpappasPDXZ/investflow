@@ -124,7 +124,7 @@ export interface PropertySummary {
   year_built?: number;
 }
 
-export interface Lease extends LeaseCreate {
+export interface Lease extends Omit<LeaseCreate, 'lease_start' | 'lease_end'> {
   id: string;
   user_id: string;
   lease_number: number;
@@ -207,24 +207,24 @@ export function useLeases() {
   const createLease = async (leaseData: LeaseCreate): Promise<Lease> => {
     // Build ordered payload respecting backend field order
     const orderedPayload: any = {};
-    
+
     // Add fields in exact backend order
     for (const field of LEASES_FIELD_ORDER) {
       if (leaseData.hasOwnProperty(field) && leaseData[field as keyof LeaseCreate] !== undefined) {
         orderedPayload[field] = leaseData[field as keyof LeaseCreate];
       }
     }
-    
+
     // Add any remaining fields not in the order list (for backward compatibility)
     for (const key in leaseData) {
       if (!LEASES_FIELD_ORDER.includes(key) && !orderedPayload.hasOwnProperty(key)) {
         orderedPayload[key] = leaseData[key as keyof LeaseCreate];
       }
     }
-    
+
     console.log('📝 [LEASE] Creating lease with ordered payload:', orderedPayload);
     console.log('📝 [LEASE] Payload field order:', Object.keys(orderedPayload));
-    
+
     const response = await apiClient.post('/leases', orderedPayload);
     return response as Lease;
   };
@@ -232,24 +232,24 @@ export function useLeases() {
   const updateLease = async (leaseId: string, leaseData: Partial<LeaseCreate>): Promise<Lease> => {
     // Build ordered payload respecting backend field order
     const orderedPayload: any = {};
-    
+
     // Add fields in exact backend order
     for (const field of LEASES_FIELD_ORDER) {
       if (leaseData.hasOwnProperty(field) && leaseData[field as keyof LeaseCreate] !== undefined) {
         orderedPayload[field] = leaseData[field as keyof LeaseCreate];
       }
     }
-    
+
     // Add any remaining fields not in the order list (for backward compatibility)
     for (const key in leaseData) {
       if (!LEASES_FIELD_ORDER.includes(key) && !orderedPayload.hasOwnProperty(key)) {
         orderedPayload[key] = leaseData[key as keyof LeaseCreate];
       }
     }
-    
+
     console.log('📝 [LEASE] Updating lease with ordered payload:', orderedPayload);
     console.log('📝 [LEASE] Payload field order:', Object.keys(orderedPayload));
-    
+
     const response = await apiClient.put(`/leases/${leaseId}`, orderedPayload);
     return response as Lease;
   };
@@ -265,7 +265,7 @@ export function useLeases() {
     if (filters.status && filters.status !== 'all') params.append('status', filters.status);
     if (filters.state && filters.state !== 'all') params.append('state', filters.state);
     if (filters.active_only) params.append('active_only', 'true');
-    
+
     const response = await apiClient.get(`/leases?${params}`);
     return response as LeaseListResponse;
   };
@@ -284,13 +284,13 @@ export function useLeases() {
     await apiClient.delete(`/leases/${id}`);
   };
 
-  return { 
+  return {
     createLease,
     updateLease,
-    listLeases, 
-    getLease, 
-    generatePDF, 
-    deleteLease 
+    listLeases,
+    getLease,
+    generatePDF,
+    deleteLease
   };
 }
 
@@ -321,7 +321,7 @@ export function useLeasesList(filters: {
       if (filters.status && filters.status !== 'all') params.append('status', filters.status);
       if (filters.state && filters.state !== 'all') params.append('state', filters.state);
       if (filters.active_only) params.append('active_only', 'true');
-      
+
       console.log(`📤 [LEASES] GET /api/v1/leases?${params} - Request`);
       try {
         const result = await apiClient.get<LeaseListResponse>(`/leases?${params}`);

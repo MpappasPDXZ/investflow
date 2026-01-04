@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
-import { Building2, Receipt, LogIn, LogOut, Plus, List, FileDown, Home, FileText, User, Lock, Image, Droplet, Banknote, Wallet, FileSignature, CheckCircle, ClipboardList, ClipboardCheck, DollarSign, Camera, ListChecks, Users } from 'lucide-react';
+import { Building2, Receipt, LogIn, LogOut, Plus, List, Home, FileText, User, Lock, Image, Droplet, Banknote, Wallet, FileSignature, CheckCircle, ClipboardList, ClipboardCheck, DollarSign, Camera, ListChecks, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Sidebar() {
@@ -34,9 +34,9 @@ export function Sidebar() {
           {/* Clickable Logo/Title - 20% larger, goes to profile */}
           <Link href="/profile" className="block px-3 py-4 hover:bg-gray-50 transition-colors rounded-lg cursor-pointer">
             <div className="flex items-center gap-2.5">
-              <img 
-                src="/logo.png" 
-                alt="InvestFlow" 
+              <img
+                src="/logo.png"
+                alt="InvestFlow"
                 className="h-8 w-8 object-contain flex-shrink-0"
               />
               <span className="text-xl font-bold">
@@ -45,7 +45,7 @@ export function Sidebar() {
               </span>
             </div>
           </Link>
-          
+
           <SidebarGroupContent>
             <SidebarMenu>
               {isAuthenticated && (
@@ -195,14 +195,6 @@ export function Sidebar() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild className="text-[11px]">
-                      <Link href="/expenses/export">
-                        <FileDown className="h-3.5 w-3.5" />
-                        <span>Export Expenses</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
 
                   {/* Vault Section (Documents & Photos) */}
                   <SidebarMenuItem>
@@ -260,7 +252,7 @@ export function Sidebar() {
                   </SidebarMenuItem>
                 </>
               )}
-              
+
               {!isAuthenticated && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>

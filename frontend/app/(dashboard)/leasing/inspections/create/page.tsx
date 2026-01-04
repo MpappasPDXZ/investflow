@@ -14,9 +14,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { 
-  ClipboardCheck, 
-  Camera, 
+import {
+  ClipboardCheck,
+  Camera,
   Save,
   ArrowLeft,
   X,
@@ -24,24 +24,28 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-// Default areas for residential property inspection with floor assignments
+// Default areas for residential property inspection
 const DEFAULT_AREAS = [
-  { floor: 'Floor 1', area_name: 'Kitchen' },
-  { floor: 'Floor 1', area_name: 'Dining Room' },
-  { floor: 'Floor 1', area_name: 'Living Room' },
-  { floor: 'Floor 1', area_name: 'Garage' },
-  { floor: 'Floor 1', area_name: 'Exterior Back' },
-  { floor: 'Floor 1', area_name: 'Exterior Front' },
-  { floor: 'Basement', area_name: 'Basement' },
-  { floor: 'Basement', area_name: 'Laundry Room' },
-  { floor: 'Basement', area_name: 'HVAC' },
-  { floor: 'Basement', area_name: 'Bathroom' },
-  { floor: 'Floor 2', area_name: 'Stairs and Hallway' },
-  { floor: 'Floor 2', area_name: 'Bathroom' },
-  { floor: 'Floor 2', area_name: 'Bedroom 1' },
-  { floor: 'Floor 2', area_name: 'Bedroom 2' },
-  { floor: 'Floor 2', area_name: 'Bedroom 3' },
-  { floor: 'Floor 3', area_name: 'Attic' },
+  'Living Room',
+  'Kitchen',
+  'Dining Room',
+  'Master Bedroom',
+  'Bedroom 2',
+  'Bedroom 3',
+  'Bathroom 1',
+  'Bathroom 2',
+  'Hallway',
+  'Closets',
+  'Garage',
+  'Exterior - Front',
+  'Exterior - Back',
+  'Basement',
+  'Laundry Room',
+  'HVAC/Mechanical',
+  'Windows & Doors',
+  'Flooring',
+  'Walls & Ceilings',
+  'Appliances'
 ];
 
 interface AreaInspection {
@@ -57,10 +61,10 @@ export default function InspectionCreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { createWalkthrough } = useWalkthroughs();
-  
+
   const { data: propertiesData } = useProperties();
   const properties = propertiesData?.items || [];
-  
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -72,7 +76,7 @@ export default function InspectionCreatePage() {
     inspector_name: 'Sarah Pappas, Manager S&M Axios Heartland Holdings LLC',
     notes: '',
   });
-  
+
   // Areas state - managed as array like pets/tenants
   const [areas, setAreas] = useState<AreaInspection[]>([]);
   const [newAreaName, setNewAreaName] = useState('');
@@ -80,7 +84,7 @@ export default function InspectionCreatePage() {
   // Load units when property is selected
   const { data: unitsData } = useUnits(formData.property_id || undefined);
   const units = unitsData?.items || [];
-  
+
   // Load tenants when property is selected
   const { data: tenantsData } = useTenants(
     formData.property_id ? { property_id: formData.property_id } : undefined
@@ -94,9 +98,9 @@ export default function InspectionCreatePage() {
   // Initialize areas when type and property are selected
   useEffect(() => {
     if (formData.walkthrough_type && formData.property_id && areas.length === 0) {
-      const initialAreas: AreaInspection[] = DEFAULT_AREAS.map((area) => ({
-        floor: area.floor,
-        area_name: area.area_name,
+      const initialAreas: AreaInspection[] = DEFAULT_AREAS.map((name) => ({
+        floor: 'Floor 1',
+        area_name: name,
         inspection_status: '',
         notes: '',
         photos: [],
@@ -131,28 +135,28 @@ export default function InspectionCreatePage() {
       alert('Please select a property');
       return;
     }
-    
+
     if (!formData.tenant_name) {
       alert('Please select a tenant');
       return;
     }
-    
+
     if (areas.length === 0) {
       alert('Please add at least one inspection area');
       return;
     }
-    
+
     // Filter to only areas with inspection status
     const areasWithStatus = areas.filter(a => a.inspection_status);
-    
+
     if (areasWithStatus.length === 0) {
       alert('Please set inspection status for at least one area before saving');
       return;
     }
-    
+
     setSaving(true);
     setError(null);
-    
+
     try {
       const walkthroughData = {
         property_id: formData.property_id,
@@ -170,9 +174,9 @@ export default function InspectionCreatePage() {
           issues: [],
         })),
       };
-      
+
       const newWalkthrough = await createWalkthrough(walkthroughData);
-      
+
       // Redirect to edit page to add photos
       router.push(`/leasing/inspections/${newWalkthrough.id}/edit?refresh=true`);
     } catch (error: any) {
@@ -219,11 +223,11 @@ export default function InspectionCreatePage() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Property *</Label>
-              <Select 
-                value={formData.property_id} 
+              <Select
+                value={formData.property_id}
                 onValueChange={(v) => setFormData({...formData, property_id: v, unit_id: ''})}
               >
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger className="h-7 text-xs">
                   <SelectValue placeholder="Select property..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -237,11 +241,11 @@ export default function InspectionCreatePage() {
             {isMultiFamily && (
               <div className="space-y-1">
                 <Label className="text-xs">Unit</Label>
-                <Select 
-                  value={formData.unit_id} 
+                <Select
+                  value={formData.unit_id}
                   onValueChange={(v) => setFormData({...formData, unit_id: v})}
                 >
-                  <SelectTrigger className="h-8 text-xs">
+                  <SelectTrigger className="h-7 text-xs">
                     <SelectValue placeholder="Select unit..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -257,12 +261,12 @@ export default function InspectionCreatePage() {
           {/* Tenant Selection */}
           <div className="space-y-1">
             <Label className="text-xs">Tenant *</Label>
-            <Select 
-              value={formData.tenant_name} 
+            <Select
+              value={formData.tenant_name}
               onValueChange={(v) => setFormData({...formData, tenant_name: v})}
               disabled={!formData.property_id || availableTenants.length === 0}
             >
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger className="h-7 text-xs">
                 <SelectValue placeholder={!formData.property_id ? "Select property first" : availableTenants.length === 0 ? "No tenants found" : "Select tenant..."} />
               </SelectTrigger>
               <SelectContent>
@@ -279,14 +283,14 @@ export default function InspectionCreatePage() {
           </div>
 
           {/* Inspection Header Info */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label className="text-xs">Inspection Type *</Label>
-              <Select 
-                value={formData.walkthrough_type} 
+              <Select
+                value={formData.walkthrough_type}
                 onValueChange={(v: any) => setFormData({...formData, walkthrough_type: v})}
               >
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger className="h-7 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -300,33 +304,33 @@ export default function InspectionCreatePage() {
 
             <div className="space-y-1">
               <Label className="text-xs">Inspection Date *</Label>
-              <Input 
-                type="date" 
+              <Input
+                type="date"
                 value={formData.walkthrough_date}
                 onChange={(e) => setFormData({...formData, walkthrough_date: e.target.value})}
-                className="h-8 text-xs"
+                className="h-7 text-xs"
               />
             </div>
           </div>
 
           <div className="space-y-1">
             <Label className="text-xs">Inspector Name</Label>
-            <Input 
+            <Input
               type="text"
               value={formData.inspector_name}
               onChange={(e) => setFormData({...formData, inspector_name: e.target.value})}
               placeholder="Sarah Pappas, Manager S&M Axios Heartland Holdings LLC"
-              className="h-8 text-xs"
+              className="h-7 text-xs"
             />
           </div>
 
           <div className="space-y-1">
             <Label className="text-xs">General Notes</Label>
-            <Textarea 
+            <Textarea
               value={formData.notes}
               onChange={(e) => setFormData({...formData, notes: e.target.value})}
               placeholder="Additional notes about the inspection..."
-              className="text-xs min-h-[80px]"
+              className="text-xs min-h-[60px]"
             />
           </div>
         </CardContent>
@@ -340,7 +344,7 @@ export default function InspectionCreatePage() {
               Inspection Areas ({completedCount}/{areas.length} completed)
             </CardTitle>
             <div className="flex items-center gap-2">
-              <Input 
+              <Input
                 placeholder="Add custom area..."
                 value={newAreaName}
                 onChange={(e) => setNewAreaName(e.target.value)}
@@ -353,81 +357,87 @@ export default function InspectionCreatePage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-2">
           {areas.map((area, index) => (
-            <div key={index} className="border rounded-lg p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 flex-1">
-                  <Select
-                    value={area.floor}
-                    onValueChange={(v) => updateArea(index, { floor: v })}
-                  >
-                    <SelectTrigger className="h-7 text-xs w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Basement">Basement</SelectItem>
-                      <SelectItem value="Floor 1">Floor 1</SelectItem>
-                      <SelectItem value="Floor 2">Floor 2</SelectItem>
-                      <SelectItem value="Floor 3">Floor 3</SelectItem>
-                      <SelectItem value="Attic">Attic</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={area.area_name}
-                    onChange={(e) => updateArea(index, { area_name: e.target.value })}
-                    placeholder="Area name"
-                    className="h-7 text-xs flex-1"
-                  />
+            <div key={index} className="border-2 border-gray-400 rounded-lg p-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-1 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs whitespace-nowrap">Floor:</Label>
+                    <Select
+                      value={area.floor}
+                      onValueChange={(v) => updateArea(index, { floor: v })}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Basement">Basement</SelectItem>
+                        <SelectItem value="Floor 1">Floor 1</SelectItem>
+                        <SelectItem value="Floor 2">Floor 2</SelectItem>
+                        <SelectItem value="Floor 3">Floor 3</SelectItem>
+                        <SelectItem value="Attic">Attic</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs whitespace-nowrap">Area Name:</Label>
+                    <Input
+                      value={area.area_name}
+                      onChange={(e) => updateArea(index, { area_name: e.target.value })}
+                      placeholder="Area name"
+                      className="h-7 text-xs w-40"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs whitespace-nowrap">Status:</Label>
+                    <div className="flex gap-1">
+                      {[
+                        { value: 'no_issues', label: 'No Issues Noted', borderColor: 'border-blue-600', textColor: 'text-blue-600' },
+                        { value: 'issue_noted_as_is', label: 'Issue Noted (As-Is)', borderColor: 'border-yellow-500', textColor: 'text-yellow-600' },
+                        { value: 'issue_landlord_to_fix', label: 'Landlord to Fix', borderColor: 'border-orange-500', textColor: 'text-orange-600' }
+                      ].map((option) => (
+                        <Button
+                          key={option.value}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => updateArea(index, {
+                            inspection_status: option.value as AreaInspection['inspection_status']
+                          })}
+                          className={`h-7 text-xs px-2 ${
+                            area.inspection_status === option.value
+                              ? `${option.borderColor} ${option.textColor} border-2 font-medium`
+                              : 'border-gray-300'
+                          }`}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-7 p-0 text-red-600 hover:text-red-700"
+                  className="h-7 w-7 p-0 text-red-600 hover:text-red-700 flex-shrink-0"
                   onClick={() => removeArea(index)}
                 >
                   <X className="h-3.5 w-3.5" />
                 </Button>
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs">Inspection Status *</Label>
-                <div className="flex flex-col gap-2">
-                  {[
-                    { value: 'no_issues', label: 'No Issues Noted', color: 'bg-green-500' },
-                    { value: 'issue_noted_as_is', label: 'Issue Noted (As-Is)', color: 'bg-yellow-500' },
-                    { value: 'issue_landlord_to_fix', label: 'Landlord to Fix', color: 'bg-orange-500' }
-                  ].map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={area.inspection_status === option.value ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => updateArea(index, { 
-                        inspection_status: option.value as AreaInspection['inspection_status']
-                      })}
-                      className={`h-8 text-xs justify-start ${area.inspection_status === option.value ? option.color + ' text-white' : ''}`}
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">General Notes</Label>
-                <Textarea 
-                  placeholder="Describe any damage, wear, or notable conditions..."
-                  value={area.notes}
-                  onChange={(e) => updateArea(index, { notes: e.target.value })}
-                  rows={2}
-                  className="text-xs"
-                />
-              </div>
+              <Textarea
+                placeholder="Describe any damage, wear, or notable conditions..."
+                value={area.notes}
+                onChange={(e) => updateArea(index, { notes: e.target.value })}
+                rows={2}
+                className="text-xs min-h-[60px]"
+              />
 
 
               {/* Note: Photos can only be added after saving */}
               {!area.id && (
-                <div className="text-xs text-gray-500 italic pt-2 border-t">
+                <div className="text-xs text-gray-500 italic pt-1.5 border-t">
                   Save inspection first to add photos
                 </div>
               )}

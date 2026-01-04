@@ -23,14 +23,14 @@ export default function ExportExpensesPage() {
   const [exportType, setExportType] = useState<'fy' | 'all'>('fy');
   const [units, setUnits] = useState<Unit[]>([]);
   const [loadingUnits, setLoadingUnits] = useState(true);
-  
+
   const { data: expenses } = useExpenses(selectedPropertyId || undefined);
 
   // Fetch all units for all properties
   useEffect(() => {
     const fetchAllUnits = async () => {
       if (!properties?.items) return;
-      
+
       setLoadingUnits(true);
       try {
         const allUnits: Unit[] = [];
@@ -45,7 +45,7 @@ export default function ExportExpensesPage() {
         setLoadingUnits(false);
       }
     };
-    
+
     fetchAllUnits();
   }, [properties]);
 
@@ -66,7 +66,7 @@ export default function ExportExpensesPage() {
 
     // Filter expenses
     let filteredExpenses = expenses.items;
-    
+
     if (exportType === 'fy' && year) {
       const startDate = new Date(parseInt(year), 0, 1);
       const endDate = new Date(parseInt(year), 11, 31);
@@ -90,7 +90,7 @@ export default function ExportExpensesPage() {
     const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
     const rows = filteredExpenses.map(exp => {
       const unitDesc = getUnitDescription(exp.property_id, exp.unit_id);
-      
+
       return [
         escapeCsv(String(exp.id || '')),
         escapeCsv(String(properties?.items.find(p => p.id === exp.property_id)?.display_name || '')),
@@ -105,8 +105,8 @@ export default function ExportExpensesPage() {
         escapeCsv((() => {
           // Handle has_receipt: true, false, null, undefined
           // Explicitly check for boolean false (not just falsy)
-          if (exp.has_receipt === true || exp.has_receipt === 'true') return 'Yes';
-          if (exp.has_receipt === false || exp.has_receipt === 'false') return 'No';
+          if (exp.has_receipt === true) return 'Yes';
+          if (exp.has_receipt === false) return 'No';
           // If has_receipt is null/undefined, check document_storage_id
           if (exp.has_receipt == null) {
             return exp.document_storage_id ? 'Yes' : 'No';

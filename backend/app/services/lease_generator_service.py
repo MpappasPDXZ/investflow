@@ -18,14 +18,14 @@ from app.services.adls_service import adls_service
 
 class LeaseGeneratorService:
     """Service for generating PDF lease agreements from data"""
-    
+
     def __init__(self):
         self.adls = adls_service
         self.temp_folder = "leases/temp"  # ADLS folder for temporary files
         self.final_folder = "leases/generated"  # ADLS folder for final PDFs
-    
+
     def generate_lease_pdf(
-        self, 
+        self,
         lease_data: Dict[str, Any],
         tenants: List[Dict[str, Any]],
         property_data: Dict[str, Any],
@@ -33,40 +33,40 @@ class LeaseGeneratorService:
     ) -> Tuple[bytes, str, str]:
         """
         Generate PDF lease from lease data and store in ADLS.
-        
+
         Args:
             lease_data: Dictionary with lease terms
             tenants: List of tenant dictionaries
             property_data: Property information
             user_id: User ID for ADLS folder organization
-        
+
         Returns:
             Tuple of (pdf_bytes, pdf_blob_name, latex_blob_name)
         """
         # Generate LaTeX content
         latex_content = self._build_latex_document(lease_data, tenants, property_data)
-        
+
         # Save LaTeX to ADLS
         latex_blob_name = self._save_latex_to_adls(
-            latex_content, 
-            lease_data, 
-            property_data, 
+            latex_content,
+            lease_data,
+            property_data,
             user_id
         )
-        
+
         # Compile to PDF
         pdf_bytes = self._compile_pdf(latex_content)
-        
+
         # Save PDF to ADLS
         pdf_blob_name = self._save_pdf_to_adls(
-            pdf_bytes, 
-            lease_data, 
-            property_data, 
+            pdf_bytes,
+            lease_data,
+            property_data,
             user_id
         )
-        
+
         return pdf_bytes, pdf_blob_name, latex_blob_name
-    
+
     def _build_latex_document(
         self,
         lease_data: Dict[str, Any],
@@ -74,11 +74,11 @@ class LeaseGeneratorService:
         property_data: Dict[str, Any]
     ) -> str:
         """Build complete LaTeX document from lease data"""
-        
+
         # ============================================================================
         # EXTRACT ALL VARIABLES - GROUPED BY TYPE
         # ============================================================================
-        
+
         # --- STRING VARIABLES ---
         tenant_names = ", ".join([f"{t.get('first_name', '')} {t.get('last_name', '')}" for t in tenants])
         owner_name = self._escape_latex(lease_data.get("owner_name", "S&M Axios Heartland Holdings, LLC"))
@@ -92,16 +92,16 @@ class LeaseGeneratorService:
         utilities_tenant = lease_data.get("utilities_tenant", "Gas, Sewer, Water, and Electricity")
         utilities_provided_by_owner_city = lease_data.get("utilities_provided_by_owner_city", "")
         shared_driveway_with = lease_data.get("shared_driveway_with", "neighboring property")
-        appliances_provided = lease_data.get("appliances_provided", "")
-        attic_usage = lease_data.get("attic_usage", "")
-        holding_fee_date = lease_data.get("holding_fee_date", "")
-        notes = lease_data.get("notes", "").strip()
-        
+        appliances_provided = lease_data.get("appliances_provided", "") or ""
+        attic_usage = lease_data.get("attic_usage", "") or ""
+        holding_fee_date = lease_data.get("holding_fee_date", "") or ""
+        notes = (lease_data.get("notes") or "").strip()
+
         # Rent due fields
         rent_due_day = lease_data.get("rent_due_day", 1)
         rent_due_by_day = lease_data.get("rent_due_by_day", 5)
         rent_due_by_time = lease_data.get("rent_due_by_time", "6pm")
-        
+
         # Format day numbers with ordinal suffix
         def ordinal(n):
             if 10 <= n % 100 <= 20:
@@ -109,7 +109,7 @@ class LeaseGeneratorService:
             else:
                 suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
             return f"{n}{suffix}"
-        
+
         rent_due_day_str = ordinal(int(rent_due_day))
         rent_due_by_day_str = ordinal(int(rent_due_by_day))
         year_built_raw = property_data.get("year_built", "1978")
@@ -119,18 +119,18 @@ class LeaseGeneratorService:
             year_built_s = str(year_built_int)
         except (ValueError, TypeError):
             year_built_s = "1978"
-        
+
         # --- DATE VARIABLES ---
         # Map lease_start/lease_end to commencement_date/termination_date for backward compatibility
         commencement_date = self._parse_date(lease_data.get("lease_start") or lease_data.get("commencement_date"))
         termination_date = self._parse_date(lease_data.get("lease_end") or lease_data.get("termination_date"))
         lease_date = self._parse_date(lease_data.get("lease_date"))
-        
+
         # Format dates for display
         commencement_str = commencement_date.strftime("%B %d, %Y") if commencement_date else "\\underline{\\hspace{3cm}}"
         termination_str = termination_date.strftime("%B %d, %Y") if termination_date else "\\underline{\\hspace{3cm}}"
         lease_date_str = lease_date.strftime("%B %d, %Y") if lease_date else "\\underline{\\hspace{3cm}}"
-        
+
         # --- DECIMAL VARIABLES (for calculations) ---
         # Convert late fees to Decimal, handling strings, numbers, and None
         def _to_decimal(value):
@@ -140,30 +140,30 @@ class LeaseGeneratorService:
                 return Decimal(str(value))
             except (ValueError, TypeError):
                 return Decimal("0")
-        
+
         monthly_rent_decimal = Decimal(str(lease_data.get("monthly_rent") or "0"))
-        
+
         # Prorated rent: use prorated_first_month_rent if show_prorated_rent is true
         show_prorated_rent = lease_data.get("show_prorated_rent", False)
         prorated_rent_decimal = Decimal("0")
         if show_prorated_rent and lease_data.get("prorated_first_month_rent"):
             prorated_rent_decimal = _to_decimal(lease_data.get("prorated_first_month_rent"))
-        
+
         # --- CURRENCY VARIABLES (formatted strings) ---
         monthly_rent = self._format_currency(lease_data.get("monthly_rent") or Decimal("0"))
         security_deposit = self._format_currency(lease_data.get("security_deposit") or Decimal("0"))
         holding_fee_amount = self._format_currency(lease_data.get("holding_fee_amount") or Decimal("0"))
-        
+
         late_fee_1_val = _to_decimal(lease_data.get("late_fee_day_1_10"))
         late_fee_2_val = _to_decimal(lease_data.get("late_fee_day_11"))
         late_fee_3_val = _to_decimal(lease_data.get("late_fee_day_16"))
         late_fee_4_val = _to_decimal(lease_data.get("late_fee_day_21"))
-        
+
         late_fee_1 = self._format_currency(late_fee_1_val)
         late_fee_2 = self._format_currency(late_fee_2_val)
         late_fee_3 = self._format_currency(late_fee_3_val)
         late_fee_4 = self._format_currency(late_fee_4_val)
-        
+
         # Debug logging
         import logging
         logger = logging.getLogger(__name__)
@@ -175,7 +175,7 @@ class LeaseGeneratorService:
         key_replacement_fee = self._format_currency(lease_data.get("key_replacement_fee", Decimal("100")))
         garage_door_opener_fee = self._format_currency(lease_data.get("garage_door_opener_fee") or Decimal("0"))
         early_termination_fee_amount = self._format_currency(lease_data.get("early_termination_fee_amount", Decimal("0")))
-        
+
         # --- INTEGER VARIABLES ---
         max_occupants = lease_data.get("max_occupants", 3)
         max_adults = lease_data.get("max_adults", 2)
@@ -200,7 +200,7 @@ class LeaseGeneratorService:
                 year_built = str(int(float(year_built)))  # Convert to int first, then string to avoid ".0"
         except (ValueError, TypeError):
             year_built = "1978"
-        
+
         # --- BOOLEAN VARIABLES ---
         include_holding_fee = lease_data.get("include_holding_fee_addendum", False)
         pets_allowed = lease_data.get("pets_allowed", False)
@@ -215,20 +215,20 @@ class LeaseGeneratorService:
         lead_paint_disclosure = lease_data.get("lead_paint_disclosure", False)
         has_attic = lease_data.get("has_attic", False)
         auto_convert_month_to_month = lease_data.get("auto_convert_month_to_month", False)
-        
+
         # Check if property is in Omaha
         property_city = property_data.get("city", "").lower()
         property_address_lower = property_data.get("address", "").lower()
         is_omaha = (property_city == "omaha" or "omaha" in property_address_lower) and state == "NE"
-        
+
         # --- LIST/ARRAY VARIABLES ---
         pets_array = self._parse_pets_array(lease_data.get("pets"))
         pet_descriptions = self._format_pet_descriptions(pets_array) if pets_array else ""
-        
+
         # ============================================================================
         # BUILD LATEX DOCUMENT USING EXTRACTED VARIABLES
         # ============================================================================
-        
+
         # Build document
         latex = r'''\documentclass[11pt,letterpaper]{article}
 \usepackage[margin=1in]{geometry}
@@ -293,7 +293,7 @@ Tenant agrees to pay Landlord as rent for the Premises the amount of \textbf{\$'
 
 \section{4. LATE CHARGES}
 '''
-        
+
         # Add late fee structure - show full 4-tier if day 16 or day 21 fees are set, otherwise show 2-tier
         # This applies to both single-family and multi-family properties
         if late_fee_3 != "0.00" or late_fee_4 != "0.00":
@@ -302,7 +302,7 @@ Tenant agrees to pay Landlord as rent for the Premises the amount of \textbf{\$'
         else:
             # Simplified 2-tier structure (MO or when only first two tiers are set)
             latex += r'''If rent is not paid by the due date, Tenant agrees to pay a late fee of \textbf{\$''' + late_fee_1 + r'''}. If payment remains unpaid after the 11th, an additional late fee of \textbf{\$''' + late_fee_2 + r'''} will be assessed.'''
-        
+
         latex += r'''
 
 \section{5. INSUFFICIENT FUNDS (NSF)}
@@ -357,15 +357,34 @@ Tenant will be responsible for all utilities and services required on the Premis
 
 \section{16. PETS}
 '''
-        
+
         # Add pet section using new pet_fee and pets array format
-        if pets_allowed and max_pets > 0:
+        # Check if pets are listed (regardless of fee) OR if pets are allowed with max_pets
+        has_pets_listed = bool(pets_array and len(pets_array) > 0)
+
+        if has_pets_listed or (pets_allowed and max_pets > 0):
             if pet_descriptions:
-                pet_plural_desc = 's' if max_pets != 1 else ''
-                base_desc = (r'''Pet Fee is \textbf{\$''' + pet_fee + r'''} and includes ''' + 
-                            str(max_pets) + r''' pet''' + pet_plural_desc + r''': ''' + 
-                            pet_descriptions + r'''. Pets are replaceable at no cost to the tenant. All pets must be approved if breed is changed or weight is increased. It is Tenant's responsibility to properly clean-up/dispose of all waste from pets on property.''')
-                if lease_data.get("state") == "NE":
+                # Pets are listed - show them
+                pet_count = len(pets_array)
+                pet_plural_desc = 's' if pet_count != 1 else ''
+                pet_verb = 'is' if pet_count == 1 else 'are'
+
+                # Check if pet fee is greater than 0 (use the already formatted pet_fee string)
+                # pet_fee is already formatted as currency string, check the original value
+                pet_fee_value = lease_data.get("pet_fee") or Decimal("0")
+                has_pet_fee = pet_fee_value > 0
+
+                if has_pet_fee:
+                    # Has pet fee
+                    base_desc = (r'''Pet Fee is \textbf{\$''' + pet_fee + r'''} and includes ''' +
+                                str(pet_count) + r''' pet''' + pet_plural_desc + r''': ''' +
+                                pet_descriptions + r'''. Pets are replaceable at no cost to the tenant. All pets must be approved if breed is changed or weight is increased. It is Tenant's responsibility to properly clean-up/dispose of all waste from pets on property.''')
+                else:
+                    # No pet fee but pets are listed
+                    base_desc = (r'''The following pet''' + pet_plural_desc + r''' ''' + pet_verb + r''' allowed on the Premises: ''' +
+                                pet_descriptions + r'''. All pets must be approved if breed is changed or weight is increased. It is Tenant's responsibility to properly clean-up/dispose of all waste from pets on property.''')
+
+                if lease_data.get("state") == "NE" and has_pet_fee:
                     ne_note_desc = r'''
 
 \textit{Important: This is a non-refundable pet fee, not a pet deposit. Under Nebraska Revised Statutes § 76-1410, pet deposits (refundable amounts held as security) are capped at 25\% of one month's rent. However, this provision does not apply to non-refundable pet fees, which are separate consideration for the privilege of keeping pets on the Premises and are not subject to the deposit cap limitations.}'''
@@ -373,7 +392,7 @@ Tenant will be responsible for all utilities and services required on the Premis
                     ne_note_desc = ""
                 latex += base_desc + ne_note_desc
             else:
-                # Fallback if no pet details provided
+                # Fallback if no pet details provided but pets are allowed
                 pet_plural = 's' if max_pets != 1 else ''
                 if lease_data.get("state") == "NE":
                     fee_note = r'''This is a non-refundable pet fee, not a pet deposit.'''
@@ -388,7 +407,7 @@ Tenant will be responsible for all utilities and services required on the Premis
                 latex += r'''Pet Fee is \textbf{\$''' + pet_fee + r'''} for up to ''' + str(max_pets) + r''' pet''' + pet_plural + r'''. ''' + fee_note + r''' Pets are replaceable at no cost to the tenant. All pets must be approved if breed is changed or weight is increased. It is Tenant's responsibility to properly clean-up/dispose of all waste from pets on property.''' + ne_note
         else:
             latex += r'''No pets allowed on the Premises without prior written consent of the Landlord.'''
-        
+
         # Add smoking section
         latex += r'''
 
@@ -406,32 +425,32 @@ If the Premises or part of the Premises are damaged or destroyed by fire or othe
 \section{19. MAINTENANCE AND REPAIR}
 Tenant will, at Tenant's sole expense, keep and maintain the Premises in good, clean and sanitary condition and repair during the term of this Lease and any renewal thereof. Tenant shall be responsible to make all repairs to the Premises, fixtures, appliances and equipment therein that may have been damaged by Tenant's misuse, waste, or neglect, or that of the Tenant's family, agent, or visitor. Tenant agrees that no painting will be done on or about the Premises without the prior written consent of Landlord. Tenant shall promptly notify Landlord of any damage, defect or destruction of the Premises, or in the event of the failure of any of the appliances or equipment. Landlord will use its best efforts to repair or replace any such damaged or defective area, appliance or equipment. If issue is not a water emergency, an acceptable time for maintenance to return call/text of issue is 24 hours.
 '''
-        
+
         # Add maintenance responsibilities with checkboxes
         mowing_responsible = "Tenant" if tenant_mowing else "Landlord"
         snow_responsible = "Tenant" if tenant_snow else "Landlord"
         lawn_care_responsible = "Tenant" if tenant_lawn_care else "Landlord"
-        
+
         latex += r'''
 \textbf{Exterior Maintenance Responsibilities:}
 \begin{itemize}[leftmargin=2em]
     \item \textbf{Lawn Mowing:} \cmark\ ''' + mowing_responsible + r''' is responsible. \\
     \textit{Maintain grass at a height not to exceed eight (8) inches in compliance with local municipal ordinances. During the growing season (April through October), lawn shall be mowed weekly or as often as necessary to maintain a neat, well-kept appearance. Includes weed control and removal of leaves and debris from the lawn and landscaped areas.}
-    
+
     \item \textbf{Snow Removal:} \cmark\ ''' + snow_responsible + r''' is responsible. \\
     \textit{Clear snow and ice from all sidewalks, driveway, and walkways within twenty-four (24) hours of snowfall cessation to ensure safe passage and compliance with local ordinances.}
-    
+
     \item \textbf{Lawn Care:} \cmark\ ''' + lawn_care_responsible + r''' is responsible. \\
     \textit{General lawn and landscape maintenance including: ''' + (r'''seasonal activation and winterization of sprinkler/irrigation systems (if sprinkler system is available), ''' if lawn_care_responsible == "Tenant" else "") + r'''watering as needed, overseeding bare or damaged areas, and fertilization. \textbf{Note:} Lawn care responsibilities do not include lawn mowing, which is addressed separately above.}
 \end{itemize}
 '''
-        
+
         # Add shared driveway notice if applicable
         if has_shared_driveway:
             latex += r'''
 \textbf{Shared Driveway Notice:} Tenant shall NOT block the shared driveway with ''' + self._escape_latex(shared_driveway_with) + r'''.
 '''
-        
+
         # Continue with remaining sections
         latex += self._generate_remaining_sections(
             state=state,
@@ -460,33 +479,33 @@ Tenant will, at Tenant's sole expense, keep and maintain the Premises in good, c
             manager_name=manager_name,
             manager_address=manager_address
         )
-        
+
         # Add move-out costs section
         latex += self._generate_moveout_section(lease_data)
-        
+
         # Add Section 40 - Descriptive Headings
         latex += r'''
 
 \section{40. DESCRIPTIVE HEADINGS}
 The descriptive headings used herein are for convenience of reference only, and they are not intended to have any effect whatsoever in determining the rights or obligations of the Landlord or Tenant.
 '''
-        
+
         # Add notes section if notes exist and are more than one word
         if notes and len(notes.split()) > 1:
             latex += r'''
 \section{40.5. ADDITIONAL TERMS AND CONDITIONS}
 ''' + self._escape_latex(notes) + r'''
 '''
-        
+
         # Add signatures
         latex += self._generate_signatures(tenants, manager_name=manager_name)
-        
+
         latex += r'''
 \end{document}
 '''
-        
+
         return latex
-    
+
     def _generate_remaining_sections(
         self,
         state: str,
@@ -573,7 +592,7 @@ Time is of the essence to the terms of this Lease.
 
 \section{33. PARKING}
 '''
-        
+
         # Build assigned spaces description
         parking_parts = []
         if garage_spaces > 0:
@@ -582,14 +601,14 @@ Time is of the essence to the terms of this Lease.
         if offstreet_parking_spots > 0:
             offstreet_text = f"{offstreet_parking_spots} off-street parking space" if offstreet_parking_spots == 1 else f"{offstreet_parking_spots} off-street parking spaces"
             parking_parts.append(offstreet_text)
-        
+
         if parking_parts:
             assigned_spaces = " and ".join(parking_parts)
         elif parking_spaces > 0:
             assigned_spaces = f"{parking_spaces} parking space" if parking_spaces == 1 else f"{parking_spaces} parking spaces"
         else:
             assigned_spaces = "designated parking area"
-        
+
         # Build parking assignment text based on property type
         if is_multi_family:
             latex += r'''\textbf{Assigned Parking:} Tenant is assigned \textbf{''' + assigned_spaces + r'''} for the exclusive use of Tenant's operable, properly registered, and insured motor vehicle(s).'''
@@ -609,7 +628,7 @@ Time is of the essence to the terms of this Lease.
 \textbf{Parking Regulations:}
 \begin{itemize}[nosep, leftmargin=2em]
 '''
-        
+
         # Differentiate parking restrictions based on property type
         if is_multi_family:
             # Multi-family: Tenant must respect shared spaces and assigned parking
@@ -617,19 +636,19 @@ Time is of the essence to the terms of this Lease.
         else:
             # Single-family: Tenant has exclusive use of driveway, can use street parking with municipal compliance
             latex += r'''    \item Tenant shall park in the assigned garage space(s) and/or driveway. When parking on the public street, Tenant must comply with all municipal parking regulations, including but not limited to time restrictions, permit requirements, and snow removal ordinances. Tenant shall not obstruct fire lanes, sidewalks, or public access areas, whether parking on the Premises or on public streets.'''
-        
+
         latex += r'''
     \item Vehicles must be maintained in operable condition and free of fluid leaks. Vehicles with expired registration or in inoperable condition are subject to towing at Tenant's expense.
     \item Vehicle maintenance, repairs, or washing in the parking area is prohibited except for minor cleaning.
 \end{itemize}
 '''
-        
+
         # Add multi-family specific blocking language
         if is_multi_family:
             latex += r'''
 \textbf{Shared Access -- IMPORTANT:} This property has shared parking and/or driveway access with neighboring unit(s). Tenant shall NOT park in a manner that blocks, impedes, or restricts access to any other tenant's assigned parking space(s) or the shared driveway. Violations may result in towing at Tenant's expense without prior notice and may constitute a material breach of this Lease.
 '''
-        
+
         latex += r'''
 \textbf{Liability:} Landlord is not responsible for any damage, theft, or loss of vehicles or personal property within the parking area. Tenant assumes all risk associated with parking on the Premises.
 
@@ -643,7 +662,7 @@ Time is of the essence to the terms of this Lease.
             keys_list.append(r'''\textbf{''' + str(back_keys) + r'''} key to the Back Door''')
         if garage_back_keys > 0:
             keys_list.append(r'''\textbf{''' + str(garage_back_keys) + r'''} key to the Garage Back Door''')
-        
+
         if keys_list:
             if len(keys_list) == 1:
                 keys_text = keys_list[0]
@@ -654,14 +673,14 @@ Time is of the essence to the terms of this Lease.
             latex += r'''Tenant will be given ''' + keys_text + r'''. Mailbox is unlocked and fixed to the dwelling. Tenant shall be charged \textbf{\$''' + key_replacement_fee + r'''} per key if all keys are not returned to Landlord following termination of the Lease.'''
         else:
             latex += r'''Tenant will be given keys as specified by Landlord. Mailbox is unlocked and fixed to the dwelling. Tenant shall be charged \textbf{\$''' + key_replacement_fee + r'''} per key if all keys are not returned to Landlord following termination of the Lease.'''
-        
+
         # Add garage door opener information if applicable
         if has_garage_door_opener:
             if garage_door_opener_fee != "0.00":
                 latex += r''' Tenant will be provided with a garage door opener remote. Tenant shall be charged \textbf{\$''' + garage_door_opener_fee + r'''} for replacement of the garage door opener remote if it is not returned to Landlord following termination of the Lease.'''
             else:
                 latex += r''' Tenant will be provided with a garage door opener remote. Tenant shall return the garage door opener remote to Landlord following termination of the Lease.'''
-        
+
         latex += r'''
 
 \section{35. LIQUID-FILLED FURNITURE}
@@ -676,40 +695,49 @@ In the event of any legal action by the parties arising out of this Lease, the l
 \section{38. ADDITIONAL TERMS}
 \begin{itemize}
 '''
-        
+
         # Add additional terms
         if appliances_provided:
-            latex += r'''    \item \textbf{Appliances:} ''' + appliances_provided + r'''.
+            latex += r'''    \item \textbf{Appliances:} Landlord will provide the following appliances: ''' + appliances_provided + r'''.
 '''
         if has_attic and attic_usage:
             latex += r'''    \item \textbf{Attic Usage:} ''' + attic_usage + r'''.
 '''
         if lead_paint_disclosure:
-            latex += r'''    \item \textbf{Lead-Based Paint:} Housing built before 1978 may contain lead-based paint. The Premises was built in ''' + year_built + r'''. Landlord discloses the known presence of lead-based paint and/or lead-based paint hazards. Tenant acknowledges receipt of the EPA pamphlet ``Protect Your Family from Lead in Your Home''.
+            # Only include lead paint disclosure if property was built before 1978
+            try:
+                year_built_int = int(year_built)
+                if year_built_int < 1978:
+                    latex += r'''    \item \textbf{Lead-Based Paint:} Housing built before 1978 may contain lead-based paint. The Premises was built in ''' + year_built + r'''. Landlord discloses the known presence of lead-based paint and/or lead-based paint hazards. Tenant acknowledges receipt of the EPA pamphlet ``Protect Your Family from Lead in Your Home''.
+'''
+                # If built 1978 or later, no disclosure needed (federal law only requires disclosure for pre-1978)
+            except (ValueError, TypeError):
+                # If year_built can't be parsed, include disclosure to be safe
+                latex += r'''    \item \textbf{Lead-Based Paint:} Housing built before 1978 may contain lead-based paint. The Premises was built in ''' + year_built + r'''. Landlord discloses the known presence of lead-based paint and/or lead-based paint hazards. Tenant acknowledges receipt of the EPA pamphlet ``Protect Your Family from Lead in Your Home''.
 '''
         latex += r'''    \item \textbf{Tenant Representations:} Application info via MySmartMove.com is warranted as true; falsification is default.
 '''
-        
+
         if early_termination_allowed:
             latex += r'''    \item \textbf{Early Termination:} Tenant may terminate early with ''' + str(early_termination_notice_days) + r''' days' notice AND payment of a ''' + str(early_termination_fee_months) + r'''-month rent fee (\textbf{\$''' + early_termination_fee_amount + r'''}). The Security Deposit shall NOT be applied toward this fee.
 '''
-        
+
         if garage_outlets_prohibited:
             latex += r'''    \item \textbf{Garage Outlets:} Tenant is strictly prohibited from using the electrical outlets in the garage for any purpose.
 '''
-        
+
         # Add Omaha-specific requirements if property is in Omaha
         if is_omaha:
             latex += r'''    \item \textbf{Omaha Landlord Registration:} This rental property is registered with the City of Omaha as required by Omaha Municipal Code. Landlord confirms compliance with all local registration requirements.
     \item \textbf{Omaha Fair Housing:} This Lease complies with Omaha's Fair Housing Ordinance, which extends protections beyond federal and Nebraska state law to include sexual orientation and gender identity. Landlord and Tenant acknowledge compliance with Omaha's expanded anti-discrimination protections.
     \item \textbf{Smoke Detectors:} Omaha Municipal Code requires specific smoke detector installation and maintenance. Tenant agrees to: (1) test smoke detectors monthly, (2) notify Landlord immediately if any smoke detector is not functioning, (3) not remove, disable, or tamper with smoke detectors, and (4) allow Landlord access for smoke detector inspection and maintenance as required by law.
 '''
-        
+
         latex += r'''\end{itemize}
 '''
-        
+
         return latex
-    
+
     def _generate_moveout_section(self, lease_data: Dict[str, Any]) -> str:
         """Generate Section 39 - Move-Out Costs"""
         latex = r'''
@@ -717,23 +745,23 @@ In the event of any legal action by the parties arising out of this Lease, the l
 Tenant agrees that the actual cost of cleaning and repairs is difficult to ascertain. The parties agree that the following schedule represents a reasonable estimate of such costs (Liquidated Damages) and will be deducted from the Security Deposit if applicable:
 \begin{itemize}
 '''
-        
+
         # Parse moveout_costs JSON
         try:
             moveout_costs = json.loads(lease_data.get("moveout_costs", "[]"))
             # Sort by order
             moveout_costs = sorted(moveout_costs, key=lambda x: x.get("order", 999))
-            
+
             for cost_item in moveout_costs:
                 item_name = cost_item.get("item", "")
                 description = cost_item.get("description", "")
                 amount = cost_item.get("amount", "0")
-                
+
                 # Convert string amount to Decimal if needed
                 if isinstance(amount, str):
                     amount = Decimal(amount)
                 amount_str = self._format_currency(amount)
-                
+
                 if description:
                     latex += r'''    \item \textbf{''' + item_name + r''':} ''' + description + r''' \textbf{\$''' + amount_str + r'''}.
 '''
@@ -744,16 +772,16 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
             # Fallback if JSON parsing fails
             latex += r'''    \item Contact landlord for move-out cost schedule.
 '''
-        
+
         latex += r'''\end{itemize}
 '''
-        
+
         return latex
-    
+
     def _generate_signatures(self, tenants: List[Dict[str, Any]], manager_name: str = "Sarah Pappas") -> str:
         """Generate signature section"""
         latex = r'''
-\vspace{2em}
+\vspace{3em}
 
 \noindent\textbf{SIGNATURES}
 
@@ -761,47 +789,47 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
 
 \noindent THE TENANT UNDERSTANDS THAT THE EXECUTION OF THIS LEASE ENTAILS AN IMPORTANT DECISION THAT HAS LEGAL IMPLICATIONS. TENANT IS ADVISED TO SEEK HIS OR HER OWN COUNSEL, LEGAL OR OTHERWISE, REGARDING THE EXECUTION OF THIS LEASE. TENANT HEREBY ACKNOWLEDGES THAT HE OR SHE HAS READ THIS LEASE, UNDERSTANDS IT, AGREES TO IT, AND HAS BEEN GIVEN A COPY. ELECTRONIC SIGNATURES MAY BE USED TO EXECUTE THIS LEASE. IF USED, THE PARTIES ACKNOWLEDGE THAT ONCE THE ELECTRONIC SIGNATURE PROCESS IS COMPLETED, THE ELECTRONIC SIGNATURES ON THIS LEASE WILL BE AS BINDING AS IF THE SIGNATURES WERE PHYSICALLY SIGNED BY HAND.
 
-\vspace{1em}
+\vspace{3em}
 
 \noindent\begin{tabularx}{\textwidth}{@{}X X@{}}
 \rule{7cm}{0.4pt} & \rule{7cm}{0.4pt} \\
 \textbf{Landlord:} S\&M Axios Heartland Holdings, LLC & \textbf{Date} \\
 \textit{By: ''' + self._escape_latex(manager_name) + r''', Member} & \\[3em]
 '''
-        
+
         # Add signature lines for each tenant
         for tenant in tenants:
             tenant_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}"
             latex += r'''\rule{7cm}{0.4pt} & \rule{7cm}{0.4pt} \\
 \textbf{Tenant:} ''' + tenant_name + r''' & \textbf{Date} \\[3em]
 '''
-        
+
         latex += r'''\end{tabularx}
 '''
-        
+
         return latex
-    
+
     def _compile_pdf(self, latex_content: str) -> bytes:
         """
         Compile LaTeX to PDF using pdflatex.
         Uses local temp directory for compilation, but final files stored in ADLS.
         """
         import shutil
-        
+
         # Create temporary directory for this compilation
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
             tex_file = tmpdir_path / "lease.tex"
             pdf_file = tmpdir_path / "lease.pdf"
-            
+
             # Copy logo to temp directory for LaTeX to find
             logo_src = Path(__file__).parent.parent / "assets" / "n_logo.jpeg"
             if logo_src.exists():
                 shutil.copy(logo_src, tmpdir_path / "n_logo.jpeg")
-            
+
             # Write LaTeX to file
             tex_file.write_text(latex_content, encoding="utf-8")
-            
+
             # Compile with pdflatex (run twice for proper references)
             try:
                 subprocess.run(
@@ -834,13 +862,13 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
                 raise Exception(f"LaTeX compilation failed:\n{error_output}")
             except subprocess.TimeoutExpired:
                 raise Exception("LaTeX compilation timed out")
-            
+
             # Read PDF content
             if not pdf_file.exists():
                 raise Exception("PDF file was not generated")
-            
+
             return pdf_file.read_bytes()
-    
+
     def _save_latex_to_adls(
         self,
         latex_content: str,
@@ -853,14 +881,14 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         property_address = property_data.get("address", "unknown").replace(" ", "_").replace("/", "_")
         filename = f"lease_{property_address}{suffix}_{timestamp}.tex"
-        
+
         # Upload to ADLS
         blob_name = f"{self.final_folder}/{user_id}/{lease_data['id']}/{filename}"
         blob_client = self.adls.blob_service_client.get_blob_client(
             container=self.adls.container_name,
             blob=blob_name
         )
-        
+
         blob_client.upload_blob(
             latex_content.encode('utf-8'),
             overwrite=True,
@@ -872,9 +900,9 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
                 "document_type": "lease_latex"
             }
         )
-        
+
         return blob_name
-    
+
     def _save_pdf_to_adls(
         self,
         pdf_bytes: bytes,
@@ -887,14 +915,14 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         property_address = property_data.get("address", "unknown").replace(" ", "_").replace("/", "_")
         filename = f"lease_{property_address}{suffix}_{timestamp}.pdf"
-        
+
         # Upload to ADLS
         blob_name = f"{self.final_folder}/{user_id}/{lease_data['id']}/{filename}"
         blob_client = self.adls.blob_service_client.get_blob_client(
             container=self.adls.container_name,
             blob=blob_name
         )
-        
+
         from azure.storage.blob import ContentSettings
         blob_client.upload_blob(
             pdf_bytes,
@@ -908,16 +936,16 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
                 "document_type": "lease_pdf"
             }
         )
-        
+
         return blob_name
-    
+
     @staticmethod
     def _format_currency(amount: Decimal | None) -> str:
         """Format Decimal as currency string (no $)"""
         if amount is None:
             amount = Decimal("0")
         return f"{amount:,.2f}"
-    
+
     @staticmethod
     def _escape_latex(text: str) -> str:
         """Escape special LaTeX characters in text"""
@@ -939,71 +967,71 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
         for char, replacement in replacements:
             text = text.replace(char, replacement)
         return text
-    
+
     @staticmethod
     def _parse_pets_array(pets_data: Any) -> List[Dict[str, Any]]:
         """Parse pets from various formats (JSON string or list)"""
         if pets_data is None:
             return []
-        
+
         if isinstance(pets_data, str):
             try:
                 return json.loads(pets_data)
             except (json.JSONDecodeError, TypeError):
                 return []
-        
+
         if isinstance(pets_data, list):
             return pets_data
-        
+
         return []
-    
+
     @classmethod
     def _format_pet_descriptions(cls, pets: List[Dict[str, Any]]) -> str:
         """
         Format pets array into readable description grouped by type.
-        
+
         Example output: "1-Dog (Pancho) 15lbs, 2-Cats (Sunshine and Blue)"
         """
         if not pets:
             return ""
-        
+
         # Group pets by type
         dogs = []
         cats = []
         others = []
-        
+
         for pet in pets:
             pet_type = pet.get("type", "other").lower()
             # Escape names for LaTeX
-            name = cls._escape_latex(pet.get("name", "").strip())
-            weight = pet.get("weight", "").strip()
-            breed = cls._escape_latex(pet.get("breed", "").strip())
-            
+            name = cls._escape_latex((pet.get("name") or "").strip())
+            weight = (pet.get("weight") or "").strip()
+            breed = cls._escape_latex((pet.get("breed") or "").strip())
+
             pet_info = {"name": name, "weight": weight, "breed": breed}
-            
+
             if pet_type == "dog":
                 dogs.append(pet_info)
             elif pet_type == "cat":
                 cats.append(pet_info)
             else:
                 others.append(pet_info)
-        
+
         parts = []
-        
+
         # Format dogs
         if dogs:
             count = len(dogs)
             names = [d["name"] for d in dogs if d["name"]]
             weights = [d["weight"] for d in dogs if d["weight"]]
-            
+
             desc = f"{count}-Dog" if count == 1 else f"{count}-Dogs"
-            
+
             if names:
                 if len(names) == 1:
                     desc += f" ({names[0]})"
                 else:
                     desc += f" ({', '.join(names[:-1])} and {names[-1]})"
-            
+
             # Add weight info for dogs
             if weights:
                 if len(weights) == 1:
@@ -1012,56 +1040,56 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
                     # All dogs have weights
                     weight_strs = [f"{w}lbs" for w in weights]
                     desc += f" ({', '.join(weight_strs)})"
-            
+
             parts.append(desc)
-        
+
         # Format cats
         if cats:
             count = len(cats)
             names = [c["name"] for c in cats if c["name"]]
-            
+
             desc = f"{count}-Cat" if count == 1 else f"{count}-Cats"
-            
+
             if names:
                 if len(names) == 1:
                     desc += f" ({names[0]})"
                 else:
                     desc += f" ({', '.join(names[:-1])} and {names[-1]})"
-            
+
             parts.append(desc)
-        
+
         # Format others
         if others:
             count = len(others)
             names = [o["name"] for o in others if o["name"]]
-            
+
             desc = f"{count}-Other Pet" if count == 1 else f"{count}-Other Pets"
-            
+
             if names:
                 if len(names) == 1:
                     desc += f" ({names[0]})"
                 else:
                     desc += f" ({', '.join(names[:-1])} and {names[-1]})"
-            
+
             parts.append(desc)
-        
+
         return ", ".join(parts)
-    
+
     @staticmethod
     def _parse_date(date_value: Any) -> Optional[date]:
         """Parse date from various formats"""
         if date_value is None:
             return None
-        
+
         if isinstance(date_value, date):
             return date_value
-        
+
         if isinstance(date_value, datetime):
             return date_value.date()
-        
+
         if isinstance(date_value, pd.Timestamp):
             return date_value.date()
-        
+
         if isinstance(date_value, str):
             try:
                 # Try parsing as ISO format
@@ -1072,9 +1100,9 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
                     return pd.Timestamp(date_value).date()
                 except:
                     return None
-        
+
         return None
-    
+
     def _build_holding_fee_addendum(
         self,
         lease_data: Dict[str, Any],
@@ -1086,23 +1114,23 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
         holding_fee_amount = self._format_currency(lease_data.get("holding_fee_amount") or lease_data.get("security_deposit") or Decimal("0"))
         holding_fee_date = lease_data.get("holding_fee_date", "")
         security_deposit = self._format_currency(lease_data.get("security_deposit") or Decimal("0"))
-        
+
         # Format holding fee date
         if holding_fee_date:
             parsed_date = self._parse_date(holding_fee_date)
             holding_fee_date_str = parsed_date.strftime("%B %d, %Y") if parsed_date else holding_fee_date
         else:
             holding_fee_date_str = "[Date of Collection]"
-        
+
         # Property address
         full_address = property_data.get("full_address", property_data.get("address", ""))
-        
+
         # Tenant names
         tenant_names = ", ".join([f"{t.get('first_name', '')} {t.get('last_name', '')}".strip() for t in tenants])
-        
+
         # Owner info
         owner_name = self._escape_latex(lease_data.get("owner_name", "S&M Axios Heartland Holdings, LLC"))
-        
+
         # Anticipated move-in date - use lease_start (with fallback to commencement_date for backward compatibility)
         move_in_date = lease_data.get("lease_start") or lease_data.get("commencement_date")
         if move_in_date:
@@ -1110,10 +1138,10 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
             move_in_date_str = parsed_date.strftime("%B %d, %Y") if parsed_date else str(move_in_date)
         else:
             move_in_date_str = "[Move-In Date]"
-        
+
         # State for return requirements
         state = lease_data.get("state", "NE")
-        
+
         latex = r'''\documentclass[11pt]{article}
 \usepackage[margin=0.85in]{geometry}
 \usepackage{fancyhdr}
@@ -1213,7 +1241,7 @@ Prospective Tenant Signature & & Date \\
 \end{document}
 '''
         return latex
-    
+
     def generate_holding_fee_addendum_pdf(
         self,
         lease_data: Dict[str, Any],
@@ -1223,33 +1251,33 @@ Prospective Tenant Signature & & Date \\
     ) -> Tuple[bytes, str, str]:
         """
         Generate PDF for Holding Fee Addendum.
-        
+
         Returns:
             Tuple of (pdf_bytes, pdf_blob_name, latex_blob_name)
         """
         # Generate LaTeX content
         latex_content = self._build_holding_fee_addendum(lease_data, tenants, property_data)
-        
+
         # Save LaTeX to ADLS
         latex_blob_name = self._save_latex_to_adls(
-            latex_content, 
-            lease_data, 
-            property_data, 
+            latex_content,
+            lease_data,
+            property_data,
             user_id,
             suffix="_holding_fee"
         )
-        
+
         # Compile to PDF
         pdf_bytes = self._compile_pdf(latex_content)
-        
+
         # Save PDF to ADLS
         pdf_blob_name = self._save_pdf_to_adls(
-            pdf_bytes, 
-            lease_data, 
-            property_data, 
+            pdf_bytes,
+            lease_data,
+            property_data,
             user_id,
             suffix="_holding_fee"
         )
-        
+
         return pdf_bytes, pdf_blob_name, latex_blob_name
 

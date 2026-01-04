@@ -21,12 +21,12 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const startTime = performance.now();
-    
+
     console.log(`[API] 🚀 ${options.method || 'GET'} ${endpoint}`);
-    
+
     // Get token from localStorage
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
@@ -44,6 +44,15 @@ class ApiClient {
     const fetchTime = performance.now() - fetchStart;
 
     if (!response.ok) {
+      // Handle 401 Unauthorized - clear token and redirect to login
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('auth_token');
+          console.warn('[API] 🔒 Unauthorized - redirecting to login');
+          window.location.href = '/login';
+        }
+      }
+
       let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
       try {
         const error: ApiError = await response.json();
@@ -67,9 +76,9 @@ class ApiClient {
     const data = await response.json();
     const jsonTime = performance.now() - jsonStart;
     const totalTime = performance.now() - startTime;
-    
+
     console.log(`[API] ✅ ${options.method || 'GET'} ${endpoint} - ${response.status} in ${totalTime.toFixed(0)}ms (fetch: ${fetchTime.toFixed(0)}ms, json: ${jsonTime.toFixed(0)}ms)`);
-    
+
     return data;
   }
 
@@ -108,7 +117,7 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    
+
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -121,6 +130,15 @@ class ApiClient {
     });
 
     if (!response.ok) {
+      // Handle 401 Unauthorized - clear token and redirect to login
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('auth_token');
+          console.warn('[API] 🔒 Unauthorized - redirecting to login');
+          window.location.href = '/login';
+        }
+      }
+
       const error: ApiError = await response.json().catch(() => ({
         detail: `HTTP ${response.status}: ${response.statusText}`,
       }));

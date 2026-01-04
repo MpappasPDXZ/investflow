@@ -13,7 +13,7 @@ export default function ExportRentsPage() {
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
   const [year, setYear] = useState<string>(new Date().getFullYear().toString());
   const [exportType, setExportType] = useState<'fy' | 'all'>('fy');
-  
+
   const { data: rentsData } = useRents(
     selectedPropertyId ? { property_id: selectedPropertyId } : {}
   );
@@ -33,7 +33,7 @@ export default function ExportRentsPage() {
 
     // Filter rents
     let filteredRents = rents;
-    
+
     if (exportType === 'fy' && year) {
       const startDate = new Date(parseInt(year), 0, 1);
       const endDate = new Date(parseInt(year), 11, 31);
@@ -54,25 +54,25 @@ export default function ExportRentsPage() {
     };
 
     const headers = [
-      'ID', 
-      'Property', 
-      'Unit', 
-      'Tenant', 
-      'Revenue Description', 
-      'Is Non-IRS Revenue', 
-      'Is One-Time Fee', 
-      'Rent Period Month', 
-      'Rent Period Year', 
-      'Rent Period Start', 
-      'Rent Period End', 
-      'Amount', 
-      'Payment Date', 
-      'Payment Method', 
-      'Transaction Reference', 
-      'Is Late', 
-      'Late Fee', 
-      'Notes', 
-      'Created At', 
+      'ID',
+      'Property',
+      'Unit',
+      'Tenant',
+      'Revenue Description',
+      'Is Non-IRS Revenue',
+      'Is One-Time Fee',
+      'Rent Period Month',
+      'Rent Period Year',
+      'Rent Period Start',
+      'Rent Period End',
+      'Amount',
+      'Payment Date',
+      'Payment Method',
+      'Transaction Reference',
+      'Is Late',
+      'Late Fee',
+      'Notes',
+      'Created At',
       'Updated At'
     ];
 
@@ -196,4 +196,6 @@ export default function ExportRentsPage() {
     </div>
   );
 }
+
+
 

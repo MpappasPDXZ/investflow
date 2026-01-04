@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Edit2, Trash2, Check, X, ChevronDown, ChevronRight, DollarSign, TrendingUp, Zap } from 'lucide-react';
+import { Plus, Edit2, Trash2, Check, X, ChevronDown, ChevronRight, DollarSign, TrendingUp, Zap, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 // Interface matches EXACT backend field order: ACTUAL table schema
@@ -71,7 +71,7 @@ const expenseItemExamples = {
     'Pool Maintenance', 'Septic System Pumping', 'Chimney Cleaning',
     'Pressure Washing', 'Window Cleaning', 'Tree Trimming',
     'Roof Inspection', 'Driveway Sealing', 'Fence Repair',
-    'Appliance Maintenance', 'Water Heater Maintenance', 
+    'Appliance Maintenance', 'Water Heater Maintenance',
     'Smoke Detector Batteries', 'General Repairs', 'Painting Touch-ups'
   ],
   pti: [
@@ -98,6 +98,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
   const [loadingExpenses, setLoadingExpenses] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
   const [collapsedExpenseSections, setCollapsedExpenseSections] = useState<Set<string>>(
     new Set(['capex', 'maintenance', 'vacancy', 'pti', 'pi'])
   );
@@ -117,6 +118,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
   const [loadingRevenues, setLoadingRevenues] = useState(false);
   const [showAddRevenue, setShowAddRevenue] = useState(false);
   const [editingRevenueId, setEditingRevenueId] = useState<string | null>(null);
+  const [deletingRevenueId, setDeletingRevenueId] = useState<string | null>(null);
   const [revenueForm, setRevenueForm] = useState({
     revenue_type: '',
     item_name: '',
@@ -135,6 +137,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
     scaling_factors: any;
   } | null>(null);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
+  const [templatePropertyAddress, setTemplatePropertyAddress] = useState<string>("template property");
   const [selectedExpenses, setSelectedExpenses] = useState<Set<number>>(new Set());
   const [selectedRevenue, setSelectedRevenue] = useState<Set<number>>(new Set());
 
@@ -184,7 +187,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
         alert('Please enter an item name');
         return;
       }
-      
+
       // Build payload in EXACT backend field order (matching ACTUAL table schema)
       // id, property_id, expense_type, item_name, purchase_price, depreciation_rate,
       // count, annual_cost, principal, interest_rate, notes, created_at, updated_at, is_active
@@ -213,7 +216,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
         "count", "annual_cost", "principal", "interest_rate", "notes",
         "created_at", "updated_at", "is_active"
       ];
-      
+
       const orderedPayload: any = {};
       for (const field of BACKEND_FIELD_ORDER) {
         if (field in payload) {
@@ -233,7 +236,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
       await apiClient.post('/scheduled-expenses', orderedPayload);
       resetExpenseForm();
       await fetchExpenses();
-      
+
       // If P&I expense, fetch revenues to show principal paydown
       if (isPIExpense) {
         // Wait a moment for backend to create the revenue, then fetch
@@ -245,7 +248,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
             );
             // Also update state
             await fetchRevenues();
-            
+
             // Find the principal paydown revenue that was automatically created
             const principalPaydown = revenuesResponse.items.find(
               r => r.revenue_type === 'principal_paydown' && r.is_active
@@ -292,7 +295,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
       await apiClient.put(`/scheduled-expenses/${expenseId}`, payload);
       resetExpenseForm();
       await fetchExpenses();
-      
+
       // If P&I expense was updated, fetch revenues to show principal paydown
       if (isPIExpense) {
         // Wait a moment for backend to update the revenue, then fetch
@@ -304,7 +307,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
             );
             // Also update state
             await fetchRevenues();
-            
+
             // Find the principal paydown revenue that was automatically updated
             const principalPaydown = revenuesResponse.items.find(
               r => r.revenue_type === 'principal_paydown' && r.is_active
@@ -331,12 +334,15 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
 
   const handleDeleteExpense = async (expenseId: string, itemName: string) => {
     if (!confirm(`Delete ${itemName}?`)) return;
+    setDeletingExpenseId(expenseId);
     try {
       await apiClient.delete(`/scheduled-expenses/${expenseId}`);
       fetchExpenses();
     } catch (err) {
       console.error('❌ [EXPENSE] Error deleting:', err);
       alert(`Failed to delete expense: ${(err as Error).message}`);
+    } finally {
+      setDeletingExpenseId(null);
     }
   };
 
@@ -400,7 +406,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
         "property_value", "value_added_amount", "notes",
         "created_at", "updated_at", "is_active"
       ];
-      
+
       const orderedPayload: any = {};
       for (const field of BACKEND_FIELD_ORDER) {
         if (field in payload) {
@@ -452,12 +458,15 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
 
   const handleDeleteRevenue = async (revenueId: string, itemName: string) => {
     if (!confirm(`Delete ${itemName}?`)) return;
+    setDeletingRevenueId(revenueId);
     try {
       await apiClient.delete(`/scheduled-revenue/${revenueId}`);
       fetchRevenues();
     } catch (err) {
       console.error('❌ [REVENUE] Error deleting:', err);
       alert(`Failed to delete revenue: ${(err as Error).message}`);
+    } finally {
+      setDeletingRevenueId(null);
     }
   };
 
@@ -508,16 +517,34 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
   const loadTemplatePreview = async () => {
     try {
       setLoadingTemplate(true);
-      // Get the template preview (we'll create a new endpoint for this)
+
+      // First, get template info to get the property address
+      try {
+        const templateInfo = await apiClient.get<{
+          template_available: boolean;
+          template_property_address?: string;
+        }>('/scheduled-financials/template-info');
+        if (templateInfo.template_available && templateInfo.template_property_address) {
+          setTemplatePropertyAddress(templateInfo.template_property_address);
+        }
+      } catch (err) {
+        console.warn('Could not fetch template property address:', err);
+      }
+
+      // Get the template preview
       const response = await apiClient.get<{
         expenses: any[];
         revenue: any[];
         scaling_factors: any;
       }>(`/scheduled-financials/preview-template/${propertyId}`);
-      
+
       setTemplatePreview(response);
-      // Select all items by default
-      setSelectedExpenses(new Set(response.expenses.map((_, idx) => idx)));
+
+      // Select all items by default, EXCEPT principal and interest (pi) items
+      const expenseIndices = response.expenses
+        .map((exp, idx) => exp.expense_type !== 'pi' ? idx : -1)
+        .filter(idx => idx !== -1);
+      setSelectedExpenses(new Set(expenseIndices));
       setSelectedRevenue(new Set(response.revenue.map((_, idx) => idx)));
     } catch (err) {
       console.error('❌ [TEMPLATE] Error loading preview:', err);
@@ -561,11 +588,11 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
 
     try {
       setApplyingTemplate(true);
-      
+
       // Filter selected items
       const selectedExpenseItems = templatePreview.expenses.filter((_, idx) => selectedExpenses.has(idx));
       const selectedRevenueItems = templatePreview.revenue.filter((_, idx) => selectedRevenue.has(idx));
-      
+
       // Apply template with selected items
       const response = await apiClient.post<{
         message: string;
@@ -576,14 +603,14 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
         expenses: selectedExpenseItems,
         revenue: selectedRevenueItems
       });
-      
+
       console.log('✅ [TEMPLATE] Applied:', response);
       alert(`Template applied successfully!\n${response.expenses_created} expenses and ${response.revenue_created} revenue items added.`);
-      
+
       // Refresh data
       fetchExpenses();
       fetchRevenues();
-      
+
       // Close modal and reset
       setShowTemplateModal(false);
       setTemplatePreview(null);
@@ -797,10 +824,10 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                     .filter(({ expenses }) => expenses.length > 0)
                     .sort((a, b) => b.total - a.total)
                     .map(({ type, expenses: typeExpenses, total: sectionTotal }) => {
-                    const typeLabel = type === 'capex' ? 'Capital Expenses' : 
+                    const typeLabel = type === 'capex' ? 'Capital Expenses' :
                                      type === 'maintenance' ? 'Maintenance' :
                                      type === 'vacancy' ? 'Vacancy Costs' :
-                                     type === 'pti' ? 'PTI (Tax & Insurance)' : 
+                                     type === 'pti' ? 'PTI (Tax & Insurance)' :
                                      'P&I (Financing)';
                     const isCollapsed = collapsedExpenseSections.has(type);
 
@@ -973,8 +1000,13 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                                         size="sm"
                                         onClick={() => handleDeleteExpense(expense.id, expense.item_name)}
                                         className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                        disabled={deletingExpenseId === expense.id}
                                       >
-                                        <Trash2 className="h-3 w-3" />
+                                        {deletingExpenseId === expense.id ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <Trash2 className="h-3 w-3" />
+                                        )}
                                       </Button>
                                     </div>
                                   </div>
@@ -987,7 +1019,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                       </div>
                     );
                   })}
-                  
+
                   {/* Total Expenses */}
                   <div className="flex justify-between items-center p-3 bg-red-100 rounded font-bold">
                     <div>Total Annual Expenses</div>
@@ -1270,8 +1302,13 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                                   size="sm"
                                   onClick={() => handleDeleteRevenue(revenue.id, revenue.item_name)}
                                   className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  disabled={deletingRevenueId === revenue.id}
                                 >
-                                  <Trash2 className="h-3 w-3" />
+                                  {deletingRevenueId === revenue.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-3 w-3" />
+                                  )}
                                 </Button>
                               </div>
                             </div>
@@ -1313,10 +1350,12 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
           <DialogHeader>
             <DialogTitle>Auto-Apply Template</DialogTitle>
             <p className="text-xs text-gray-600 mt-1">
-              Select which items to add from <strong>316 S 50th Ave</strong> template (scaled to your property)
+              Select which items to add from <strong>{templatePropertyAddress}</strong> template (scaled to your property)
+              <br />
+              <span className="text-[10px] text-gray-500">Note: Principal & Interest items are excluded and must be added manually</span>
             </p>
           </DialogHeader>
-          
+
           <div className="flex-1 overflow-y-auto space-y-4 py-4">
             {loadingTemplate ? (
               <div className="text-center py-8 text-gray-500">Loading template...</div>
@@ -1334,7 +1373,13 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                           variant="ghost"
                           size="sm"
                           className="h-6 text-xs"
-                          onClick={() => setSelectedExpenses(new Set(templatePreview.expenses.map((_, idx) => idx)))}
+                          onClick={() => {
+                            // Select all except pi items
+                            const allIndices = templatePreview.expenses
+                              .map((exp, idx) => exp.expense_type !== 'pi' ? idx : -1)
+                              .filter(idx => idx !== -1);
+                            setSelectedExpenses(new Set(allIndices));
+                          }}
                         >
                           Select All
                         </Button>
@@ -1349,37 +1394,43 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                       </div>
                     </div>
                     <div className="divide-y max-h-64 overflow-y-auto">
-                      {templatePreview.expenses.map((expense, idx) => (
-                        <div key={idx} className="flex items-start gap-3 p-3 hover:bg-gray-50">
-                          <Checkbox
-                            checked={selectedExpenses.has(idx)}
-                            onCheckedChange={() => toggleExpense(idx)}
-                            className="mt-0.5"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-medium text-gray-900">{expense.item_name}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded uppercase">
-                                {expense.expense_type}
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-gray-500 mt-0.5">
-                              {expense.expense_type === 'capex' && expense.purchase_price && (
-                                <>Purchase: ${expense.purchase_price.toFixed(2)} | Depreciation: {(expense.depreciation_rate || 0) * 100}%/yr</>
-                              )}
-                              {expense.expense_type === 'maintenance' && expense.annual_cost && (
-                                <>Annual Cost: ${expense.annual_cost.toFixed(2)}</>
-                              )}
-                              {expense.expense_type === 'pti' && expense.annual_cost && (
-                                <>Annual Cost: ${expense.annual_cost.toFixed(2)}</>
-                              )}
-                              {expense.expense_type === 'pi' && expense.principal && (
-                                <>Principal: ${expense.principal.toFixed(2)} | Rate: {(expense.interest_rate || 0) * 100}%</>
-                              )}
+                      {templatePreview.expenses.map((expense, idx) => {
+                        // Skip pi items (they're already filtered in preview, but double-check)
+                        if (expense.expense_type === 'pi') {
+                          return null;
+                        }
+                        return (
+                          <div key={idx} className="flex items-start gap-3 p-3 hover:bg-gray-50">
+                            <Checkbox
+                              checked={selectedExpenses.has(idx)}
+                              onCheckedChange={() => toggleExpense(idx)}
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-gray-900">{expense.item_name}</span>
+                                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded uppercase">
+                                  {expense.expense_type}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-gray-500 mt-0.5">
+                                {expense.expense_type === 'capex' && expense.purchase_price && (
+                                  <>Purchase: ${expense.purchase_price.toFixed(2)} | Depreciation: {(expense.depreciation_rate || 0) * 100}%/yr</>
+                                )}
+                                {expense.expense_type === 'maintenance' && expense.annual_cost && (
+                                  <>Annual Cost: ${expense.annual_cost.toFixed(2)}</>
+                                )}
+                                {expense.expense_type === 'pti' && expense.annual_cost && (
+                                  <>Annual Cost: ${expense.annual_cost.toFixed(2)}</>
+                                )}
+                                {expense.expense_type === 'pi' && expense.principal && (
+                                  <>Principal: ${expense.principal.toFixed(2)} | Rate: {(expense.interest_rate || 0) * 100}%</>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1458,7 +1509,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
               </>
             ) : null}
           </div>
-          
+
           <DialogFooter className="border-t pt-4">
             <Button
               variant="outline"

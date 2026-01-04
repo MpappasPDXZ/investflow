@@ -6,11 +6,11 @@ import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Plus, 
-  ChevronDown, 
-  ChevronRight, 
-  Download, 
+import {
+  Plus,
+  ChevronDown,
+  ChevronRight,
+  Download,
   FileText,
   Trash2,
   Edit2,
@@ -79,13 +79,13 @@ export default function ExpensesPage() {
   const [hasInitializedExpansion, setHasInitializedExpansion] = useState(false);
   const [units, setUnits] = useState<Unit[]>([]);
   const [loadingUnits, setLoadingUnits] = useState(true);
-  
+
   const { data: properties } = usePropertiesHook();
   // Require property_id - only fetch expenses when property is selected
   const { data: expenses, isLoading } = useExpenses(selectedPropertyId || undefined);
   const { data: summary } = useExpenseSummary(selectedPropertyId || undefined);
   const deleteExpense = useDeleteExpense();
-  
+
   // Auto-select first property if available and none selected
   useEffect(() => {
     if (!selectedPropertyId && properties?.items && properties.items.length > 0) {
@@ -98,7 +98,7 @@ export default function ExpensesPage() {
   useEffect(() => {
     const fetchAllUnits = async () => {
       if (!properties?.items) return;
-      
+
       setLoadingUnits(true);
       try {
         const allUnits: Unit[] = [];
@@ -113,7 +113,7 @@ export default function ExpensesPage() {
         setLoadingUnits(false);
       }
     };
-    
+
     fetchAllUnits();
   }, [properties]);
 
@@ -132,7 +132,7 @@ export default function ExpensesPage() {
       const currentYear = new Date().getFullYear();
       const newExpandedYears = new Set<string>();
       const newExpandedProperties = new Set<string>();
-      
+
       // Find all properties that have expenses in the current year or future years
       expenses.items.forEach(expense => {
         const expenseYear = parseInt(expense.date.split('-')[0]);
@@ -143,7 +143,7 @@ export default function ExpensesPage() {
           newExpandedYears.add(`${propId}-${expenseYear}`);
         }
       });
-      
+
       setExpandedProperties(newExpandedProperties);
       setExpandedYears(newExpandedYears);
       setHasInitializedExpansion(true);
@@ -153,9 +153,9 @@ export default function ExpensesPage() {
   // Filter expenses
   const filteredExpenses = useMemo(() => {
     if (!expenses?.items) return [];
-    
+
     let filtered = expenses.items;
-    
+
     if (selectedExpenseType) {
       filtered = filtered.filter(e => e.expense_type === selectedExpenseType);
     }
@@ -167,35 +167,35 @@ export default function ExpensesPage() {
     }
     if (vendorFilter) {
       const lowerFilter = vendorFilter.toLowerCase();
-      filtered = filtered.filter(e => 
-        e.vendor?.toLowerCase().includes(lowerFilter) || 
+      filtered = filtered.filter(e =>
+        e.vendor?.toLowerCase().includes(lowerFilter) ||
         e.description?.toLowerCase().includes(lowerFilter)
       );
     }
-    
+
     return filtered;
   }, [expenses, selectedExpenseType, startDate, endDate, vendorFilter]);
 
   // Group by property, then by year
   const groupedByPropertyAndYear = useMemo(() => {
     const result: Record<string, Record<number, Expense[]>> = {};
-    
+
     filteredExpenses.forEach(expense => {
       const propId = expense.property_id || 'unassigned';
       const year = parseInt(expense.date.split('-')[0]);
-      
+
       if (!result[propId]) result[propId] = {};
       if (!result[propId][year]) result[propId][year] = [];
       result[propId][year].push(expense);
     });
-    
+
     // Sort expenses within each year by date (newest first)
     Object.values(result).forEach(years => {
       Object.values(years).forEach(exps => {
         exps.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       });
     });
-    
+
     return result;
   }, [filteredExpenses]);
 
@@ -253,10 +253,10 @@ export default function ExpensesPage() {
 
   const exportToCSV = () => {
     if (!expenses?.items) return;
-    
+
     // Removed 'Is Planned' column and using full Unit description
     const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
-    
+
     // CSV escape function: escape quotes and wrap in quotes if contains comma, quote, or newline
     const escapeCsv = (value: string): string => {
       const str = String(value || '');
@@ -269,7 +269,7 @@ export default function ExpensesPage() {
 
     const rows = expenses.items.map(e => {
       const unitDesc = getUnitDescription(e.property_id, e.unit_id);
-      
+
       return [
         escapeCsv(String(e.id || '')),
         escapeCsv(String(getPropertyName(e.property_id || 'unassigned'))),
@@ -284,8 +284,8 @@ export default function ExpensesPage() {
         escapeCsv((() => {
           // Handle has_receipt: true, false, null, undefined
           // Explicitly check for boolean false (not just falsy)
-          if (e.has_receipt === true || e.has_receipt === 'true') return 'Yes';
-          if (e.has_receipt === false || e.has_receipt === 'false') return 'No';
+          if (e.has_receipt === true) return 'Yes';
+          if (e.has_receipt === false) return 'No';
           // If has_receipt is null/undefined, check document_storage_id
           if (e.has_receipt == null) {
             return e.document_storage_id ? 'Yes' : 'No';
@@ -297,7 +297,7 @@ export default function ExpensesPage() {
         escapeCsv(String(e.updated_at || ''))
       ];
     });
-    
+
     const csv = [
       headers.map(escapeCsv).join(','),
       ...rows.map(r => r.join(','))
@@ -311,11 +311,11 @@ export default function ExpensesPage() {
     URL.revokeObjectURL(url);
   };
 
-  const formatAmount = (amt: number) => 
+  const formatAmount = (amt: number) =>
     amt > 0 ? `$${amt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-';
 
   // Sort properties by name
-  const sortedPropertyIds = Object.keys(groupedByPropertyAndYear).sort((a, b) => 
+  const sortedPropertyIds = Object.keys(groupedByPropertyAndYear).sort((a, b) =>
     getPropertyName(a).localeCompare(getPropertyName(b))
   );
 
@@ -331,8 +331,8 @@ export default function ExpensesPage() {
           <p className="text-xs text-gray-500">Track property expenses for CPA</p>
         </div>
         <div className="flex gap-1.5">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             size="sm"
             onClick={exportToCSV}
             disabled={loadingUnits || !expenses?.items?.length}
@@ -452,7 +452,7 @@ export default function ExpensesPage() {
         return (
           <Card key={propId} className="mb-3">
             {/* Property Header with Type Breakdown */}
-            <CardHeader 
+            <CardHeader
               className="py-2 px-3 cursor-pointer hover:bg-gray-50"
               onClick={() => toggleProperty(propId)}
             >
@@ -469,11 +469,11 @@ export default function ExpensesPage() {
                   ${propertyTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
-              
+
               {/* Type Breakdown Row - Desktop */}
               <div className="hidden md:flex gap-1 mt-2 flex-wrap">
                 {EXPENSE_CATEGORIES.map(t => (
-                  <div 
+                  <div
                     key={t.key}
                     className={`text-[10px] px-1.5 py-0.5 rounded ${expenseCategoryBadgeColors[t.key]}`}
                     title={t.fullLabel}
@@ -497,7 +497,7 @@ export default function ExpensesPage() {
                   return (
                     <div key={year} className="border-t">
                       {/* Year Header */}
-                      <div 
+                      <div
                         className="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100"
                         onClick={() => toggleYear(propId, year)}
                       >
@@ -517,7 +517,7 @@ export default function ExpensesPage() {
                       {!isYearExpanded && (
                         <div className="hidden md:flex gap-1 px-3 pb-2 flex-wrap">
                           {EXPENSE_CATEGORIES.filter(t => yearBreakdown[t.key] > 0).map(t => (
-                            <div 
+                            <div
                               key={t.key}
                               className={`text-[9px] px-1 py-0.5 rounded ${expenseCategoryBadgeColors[t.key]}`}
                             >
@@ -531,7 +531,7 @@ export default function ExpensesPage() {
                       {isYearExpanded && (
                         <div className="divide-y">
                           {yearExpenses.map(expense => (
-                            <div 
+                            <div
                               key={expense.id}
                               className="px-3 py-2 flex items-center gap-2 hover:bg-gray-50"
                             >
@@ -539,29 +539,29 @@ export default function ExpensesPage() {
                               <span className="text-[10px] text-gray-500 w-16 shrink-0">
                                 {expense.date.slice(5).replace('-', '/')}
                               </span>
-                              
+
                               {/* Type Badge */}
                               <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${expense.expense_category ? expenseCategoryBadgeColors[expense.expense_category] || 'bg-gray-100' : 'bg-gray-100'}`}>
                                 {EXPENSE_CATEGORIES.find(t => t.key === expense.expense_category)?.label || EXPENSE_TYPE_LABELS[expense.expense_type] || expense.expense_type}
                               </span>
-                              
+
                               {/* Description */}
                               <span className="text-xs truncate flex-1">
                                 {expense.description}
                               </span>
-                              
+
                               {/* Vendor */}
                               {expense.vendor && (
                                 <span className="text-[10px] text-gray-400 truncate max-w-[80px] hidden sm:inline">
                                   {expense.vendor}
                                 </span>
                               )}
-                              
+
                               {/* Amount */}
                               <span className="font-semibold text-xs w-16 text-right shrink-0">
                                 ${Number(expense.amount).toLocaleString()}
                               </span>
-                              
+
                               {/* Actions */}
                               <div className="flex gap-1 shrink-0">
                                 {expense.document_storage_id && (
@@ -580,9 +580,9 @@ export default function ExpensesPage() {
                                     <Edit2 className="h-3 w-3" />
                                   </Button>
                                 </Link>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
                                   onClick={() => handleDelete(expense.id, expense.description)}
                                 >

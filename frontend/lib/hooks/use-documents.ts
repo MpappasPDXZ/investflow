@@ -39,7 +39,7 @@ export function useDocuments(filters: DocumentFilters) {
       if (filters.unit_id) params.append('unit_id', filters.unit_id);
       if (filters.tenant_id) params.append('tenant_id', filters.tenant_id);
       if (filters.document_type) params.append('document_type', filters.document_type);
-      
+
       const response = await apiClient.get(`/documents?${params.toString()}`);
       return response as DocumentListResponse;
     },
@@ -49,14 +49,17 @@ export function useDocuments(filters: DocumentFilters) {
 
 export function useDeleteDocument() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (documentId: string) => {
       await apiClient.delete(`/documents/${documentId}`);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['documents'] });
-      await queryClient.refetchQueries({ queryKey: ['documents'] });
+      // Invalidate all document queries to ensure UI updates regardless of filters
+      await queryClient.invalidateQueries({
+        queryKey: ['documents'],
+        exact: false // Match all queries that start with 'documents'
+      });
     },
   });
 }
@@ -72,13 +75,13 @@ export interface UploadDocumentParams {
 
 export function useUploadDocument() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (params: UploadDocumentParams) => {
       const formData = new FormData();
       formData.append('file', params.file);
       formData.append('document_type', params.documentType);
-      
+
       if (params.propertyId) {
         formData.append('property_id', params.propertyId);
       }
@@ -91,7 +94,7 @@ export function useUploadDocument() {
       if (params.displayName) {
         formData.append('display_name', params.displayName);
       }
-      
+
       const response = await apiClient.upload<{ document: Document }>('/documents/upload', formData);
       return response;
     },

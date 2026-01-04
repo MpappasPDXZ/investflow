@@ -93,7 +93,7 @@ const DOCUMENT_TYPES_FILTER = ["receipt", "lease", "contract", "invoice", "other
 export default function DocumentsPage() {
   const searchParams = useSearchParams();
   const typeFilter = searchParams.get("type"); // "document" | "photo" | null (all)
-  
+
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
   const { data: propertiesData } = useProperties();
   const { data: documentsData, isLoading } = useDocuments(
@@ -104,9 +104,12 @@ export default function DocumentsPage() {
 
   const properties = propertiesData?.items || [];
   const allDocuments = documentsData?.items || [];
-  
+
   // Filter out receipt documents - those are managed via Expenses page
-  const documents = allDocuments.filter((doc: Document) => doc.document_type !== "receipt");
+  // Filter out background_check documents - those are shown on the background check page only
+  const documents = allDocuments.filter((doc: Document) =>
+    doc.document_type !== "receipt" && doc.document_type !== "background_check"
+  );
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -119,22 +122,23 @@ export default function DocumentsPage() {
     document_type: "",
   });
   const [saving, setSaving] = useState(false);
-  
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+
   // Fetch tenants for the property - use editingDoc.property_id if available, otherwise use editForm.property_id
   // This ensures tenants load immediately when dialog opens
   const propertyIdForTenants = editingDoc?.property_id || editForm.property_id;
   const { data: editTenantsData } = useTenants(
-    propertyIdForTenants && propertyIdForTenants !== "unassigned" 
-      ? { property_id: propertyIdForTenants } 
+    propertyIdForTenants && propertyIdForTenants !== "unassigned"
+      ? { property_id: propertyIdForTenants }
       : undefined
   );
   const editTenants = editTenantsData?.tenants || [];
-  
+
   // If document has a tenant_id but tenant is not in the list, fetch it individually
   const documentTenantId = editingDoc?.tenant_id;
   const { data: documentTenantData } = useTenant(documentTenantId || "");
   const documentTenant = documentTenantData;
-  
+
   // Combine tenants list with the document's tenant if it's not already in the list
   const allEditTenants = useMemo(() => {
     const tenantMap = new Map(editTenants.map(t => [t.id, t]));
@@ -144,10 +148,10 @@ export default function DocumentsPage() {
     }
     return Array.from(tenantMap.values());
   }, [editTenants, documentTenant]);
-  
+
   const { data: editUnitsData } = useUnits(editForm.property_id && editForm.property_id !== "unassigned" ? editForm.property_id : "");
   const allEditUnits = editUnitsData?.items || [];
-  
+
   // Get units for the currently selected property in the edit form (for multi-family properties)
   const editFormPropertyUnits = useMemo(() => {
     if (!editForm.property_id || editForm.property_id === "unassigned") return [];
@@ -156,11 +160,19 @@ export default function DocumentsPage() {
 
   const handleDelete = async (documentId: string) => {
     if (!confirm("Delete this document?")) return;
+    setDeletingDocId(documentId);
     try {
       await deleteDocument.mutateAsync(documentId);
+      // Force refetch to update the UI immediately
+      await queryClient.refetchQueries({
+        queryKey: ['documents'],
+        exact: false
+      });
     } catch (err) {
       console.error("Error deleting document:", err);
       alert("Failed to delete document");
+    } finally {
+      setDeletingDocId(null);
     }
   };
 
@@ -169,14 +181,14 @@ export default function DocumentsPage() {
       // Use proxy endpoint for IE compatibility (forces download via Content-Disposition header)
       const token = localStorage.getItem('auth_token');
       const proxyUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/documents/${doc.id}/proxy`;
-      
+
       // Check if browser supports download attribute
       const supportsDownload = 'download' in document.createElement('a');
-      
+
       // Get direct download URL as fallback
       const response = (await apiClient.get(`/documents/${doc.id}/download`)) as any;
       const downloadUrl = response.download_url || response.data?.download_url;
-      
+
       if (supportsDownload && downloadUrl) {
         // Modern browsers - use direct download
         const a = document.createElement('a');
@@ -192,11 +204,11 @@ export default function DocumentsPage() {
             'Authorization': token ? `Bearer ${token}` : ''
           }
         });
-        
+
         if (!proxyResponse.ok) {
           throw new Error('Download failed');
         }
-        
+
         const blob = await proxyResponse.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -265,13 +277,13 @@ export default function DocumentsPage() {
           throw new Error("Property ID is required");
         }
       }
-      
+
       // Handle unit assignment - only send if changed
       const currentUnitId = editingDoc.unit_id || "";
       if (editForm.unit_id !== currentUnitId) {
         updateData.unit_id = editForm.unit_id || null;
       }
-      
+
       // Handle tenant assignment - only send if changed
       const currentTenantId = editingDoc.tenant_id || "";
       if (editForm.tenant_id !== currentTenantId) {
@@ -300,7 +312,7 @@ export default function DocumentsPage() {
         `/documents/${editingDoc.id}`,
         updateData
       )) as Document;
-      
+
       console.log("[DOCUMENT] ✅ Update response:", response);
 
       // Optimistically update the local state instead of refetching all documents
@@ -308,7 +320,7 @@ export default function DocumentsPage() {
         if (!oldData) return oldData;
         return {
           ...oldData,
-          items: oldData.items.map((doc: Document) => 
+          items: oldData.items.map((doc: Document) =>
             doc.id === editingDoc.id ? { ...doc, ...response } : doc
           )
         };
@@ -376,20 +388,20 @@ export default function DocumentsPage() {
   const filteredDocs = typeFilter === "photo"
     ? documents.filter((d) => PHOTO_TYPES.includes(d.document_type))
     : typeFilter === "document"
-    ? documents.filter((d) => 
-        DOCUMENT_TYPES_FILTER.includes(d.document_type) && 
+    ? documents.filter((d) =>
+        DOCUMENT_TYPES_FILTER.includes(d.document_type) &&
         d.document_type !== "background_check" // Explicitly exclude background checks
       )
     : documents; // Show all if no filter
 
   // Group photos by property (similar to expenses page)
-  const photosByProperty = typeFilter === "photo" ? 
+  const photosByProperty = typeFilter === "photo" ?
     filteredDocs.reduce((acc, doc) => {
       const key = doc.property_id || "unassigned";
       if (!acc[key]) acc[key] = [];
       acc[key].push(doc);
       return acc;
-    }, {} as Record<string, Document[]>) 
+    }, {} as Record<string, Document[]>)
     : {};
 
   if (isLoading) {
@@ -510,7 +522,7 @@ export default function DocumentsPage() {
                 </Badge>
               </CardTitle>
             </CardHeader>
-              
+
               {/* Desktop Table View */}
               <div className="hidden md:block">
                 <Table>
@@ -598,8 +610,13 @@ export default function DocumentsPage() {
                               className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                               onClick={() => handleDelete(doc.id)}
                               title="Delete"
+                              disabled={deletingDocId === doc.id}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              {deletingDocId === doc.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
                             </Button>
                           </div>
                         </TableCell>
@@ -608,7 +625,7 @@ export default function DocumentsPage() {
                   </TableBody>
                 </Table>
               </div>
-              
+
               {/* Mobile Card View */}
               <div className="md:hidden divide-y">
                 {docs.map((doc) => (
@@ -639,7 +656,7 @@ export default function DocumentsPage() {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="flex justify-end gap-2">
                       <ReceiptViewer
                         documentId={doc.id}
@@ -678,8 +695,13 @@ export default function DocumentsPage() {
                         size="sm"
                         className="h-10 px-3 text-destructive hover:text-destructive border-destructive/30"
                         onClick={() => handleDelete(doc.id)}
+                        disabled={deletingDocId === doc.id}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        {deletingDocId === doc.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -709,7 +731,7 @@ export default function DocumentsPage() {
               </Badge>
             </CardTitle>
           </CardHeader>
-          
+
           {/* Desktop Table View */}
           <div className="hidden md:block">
             <Table>
@@ -801,8 +823,13 @@ export default function DocumentsPage() {
                             className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                             onClick={() => handleDelete(doc.id)}
                             title="Delete"
+                            disabled={deletingDocId === doc.id}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            {deletingDocId === doc.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
                           </Button>
                         </div>
                       </TableCell>
@@ -811,7 +838,7 @@ export default function DocumentsPage() {
                 </TableBody>
               </Table>
             </div>
-            
+
             {/* Mobile Card View */}
             <div className="md:hidden divide-y">
               {filteredDocs.map((doc: Document) => (
@@ -846,7 +873,7 @@ export default function DocumentsPage() {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Action Buttons - Mobile Friendly */}
                   <div className="flex justify-end gap-2">
                     <ReceiptViewer
@@ -886,8 +913,13 @@ export default function DocumentsPage() {
                       size="sm"
                       className="h-10 px-3 text-destructive hover:text-destructive border-destructive/30"
                       onClick={() => handleDelete(doc.id)}
+                      disabled={deletingDocId === doc.id}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {deletingDocId === doc.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -932,7 +964,7 @@ export default function DocumentsPage() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             {/* Unit Selection - Only show if property has units (multi-family) */}
             {editForm.property_id && editForm.property_id !== "unassigned" && editFormPropertyUnits.length > 0 && (
               <div className="space-y-2">
@@ -957,7 +989,7 @@ export default function DocumentsPage() {
                 </Select>
               </div>
             )}
-            
+
             <div className="space-y-2">
               <Label htmlFor="tenant_id">Tenant (optional)</Label>
               <Select
@@ -1001,7 +1033,7 @@ export default function DocumentsPage() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="display_name">Display Name</Label>
               <Input

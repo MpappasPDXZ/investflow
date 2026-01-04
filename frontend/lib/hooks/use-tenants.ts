@@ -6,7 +6,7 @@ import type { Tenant, TenantListResponse } from '../types';
 export const tenantKeys = {
   all: ['tenants'] as const,
   lists: () => [...tenantKeys.all, 'list'] as const,
-  list: (filters?: { property_id?: string; unit_id?: string; status?: string }) => 
+  list: (filters?: { property_id?: string; unit_id?: string; status?: string }) =>
     [...tenantKeys.lists(), filters] as const,
   details: () => [...tenantKeys.all, 'detail'] as const,
   detail: (id: string) => [...tenantKeys.details(), id] as const,
@@ -17,19 +17,16 @@ export function useTenants(filters?: { property_id?: string; unit_id?: string; s
   const { enabled, ...filterParams } = filters || {}
   return useQuery<TenantListResponse>({
     queryKey: tenantKeys.list(filterParams),
-    enabled: enabled !== false && !!filters?.property_id, // Require property_id
+    enabled: enabled !== false, // Allow fetching all tenants when no property_id
     queryFn: async () => {
-      if (!filters?.property_id) {
-        throw new Error('property_id is required');
-      }
       const startTime = performance.now();
       console.log(`📤 [TENANT] GET /api/v1/tenants - Request`, filters);
       const params = new URLSearchParams();
-      params.append('property_id', filters.property_id);  // Required
+      if (filters?.property_id) params.append('property_id', filters.property_id);
       if (filters?.unit_id) params.append('unit_id', filters.unit_id);
       if (filters?.status) params.append('status', filters.status);
-      
-      const url = `/tenants?${params.toString()}`;
+
+      const url = params.toString() ? `/tenants?${params.toString()}` : `/tenants`;
       try {
         const result = await apiClient.get<TenantListResponse>(url);
         const elapsed = performance.now() - startTime;
@@ -59,7 +56,7 @@ export function useTenant(tenantId: string) {
 // Create tenant
 export function useCreateTenant() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (data: Partial<Tenant>) => {
       console.log('📝 [TENANT] Creating tenant with payload:', data);
@@ -78,7 +75,7 @@ export function useCreateTenant() {
 // Update tenant
 export function useUpdateTenant() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Tenant> }) => {
       console.log(`📝 [TENANT] Updating tenant ${id} with payload:`, data);
@@ -98,7 +95,7 @@ export function useUpdateTenant() {
 // Delete tenant
 export function useDeleteTenant() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (id: string) => {
       console.log(`🗑️ [TENANT] Deleting tenant ${id}`);

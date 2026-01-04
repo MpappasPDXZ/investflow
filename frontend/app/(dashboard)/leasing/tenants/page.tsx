@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Pencil, Trash2, UserCheck, UserX, Users as UsersIcon, CheckCircle, XCircle, Clock, AlertCircle, Building2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, UserCheck, UserX, Users as UsersIcon, CheckCircle, XCircle, Clock, AlertCircle, Building2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -36,7 +36,8 @@ export default function TenantsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
   const [expandedProperties, setExpandedProperties] = useState<Set<string>>(new Set());
-  
+  const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
+
   const { data: propertiesData } = useProperties();
   const { data: tenantsData, isLoading } = useTenants(
     selectedPropertyId ? { property_id: selectedPropertyId } : {}
@@ -44,7 +45,7 @@ export default function TenantsPage() {
   const createTenant = useCreateTenant();
   const updateTenant = useUpdateTenant();
   const deleteTenant = useDeleteTenant();
-  
+
   const [formData, setFormData] = useState<Partial<Tenant>>({
     property_id: selectedPropertyId || '',
     first_name: '',
@@ -53,7 +54,7 @@ export default function TenantsPage() {
     phone: '',
     status: 'applicant',
   });
-  
+
   // Landlord references stored in JSON column
   const [landlordRefs, setLandlordRefs] = useState<Array<{
     landlord_name: string;
@@ -64,7 +65,7 @@ export default function TenantsPage() {
     status?: 'pass' | 'fail' | 'no_info';
     notes?: string;
   }>>([]);
-  
+
   const [currentRef, setCurrentRef] = useState({
     landlord_name: '',
     landlord_phone: '',
@@ -74,16 +75,16 @@ export default function TenantsPage() {
     status: 'no_info' as 'pass' | 'fail' | 'no_info',
     notes: '',
   });
-  
+
   const [editingRefIndex, setEditingRefIndex] = useState<number | null>(null);
-  
+
   // Update formData property_id when selectedPropertyId changes
   useEffect(() => {
     if (selectedPropertyId && !isEditDialogOpen) {
       setFormData(prev => ({ ...prev, property_id: selectedPropertyId }));
     }
   }, [selectedPropertyId, isEditDialogOpen]);
-  
+
   const handleCreateTenant = async () => {
     try {
       // Validate required fields
@@ -91,7 +92,7 @@ export default function TenantsPage() {
         alert('Please fill in all required fields (Property, First Name, Last Name)');
         return;
       }
-      
+
       // Build tenant data in the EXACT order of the Iceberg table schema
       // Order must match: id, property_id, unit_id, first_name, last_name, email, phone,
       // current_address, current_city, current_state, current_zip, employer_name, status,
@@ -118,7 +119,7 @@ export default function TenantsPage() {
         landlord_references: landlordRefs.length > 0 ? landlordRefs : undefined,
         credit_score: formData.credit_score ? Number(formData.credit_score) : undefined,
       };
-      
+
       // Remove undefined and null values, but keep empty strings for optional string fields
       // Required fields (property_id, first_name, last_name) should always be included
       Object.keys(tenantData).forEach(key => {
@@ -126,9 +127,9 @@ export default function TenantsPage() {
           delete tenantData[key];
         }
       });
-      
+
       await createTenant.mutateAsync(tenantData);
-      
+
       // Reset form
       setIsCreateDialogOpen(false);
       setFormData({
@@ -155,10 +156,10 @@ export default function TenantsPage() {
       alert('Failed to create tenant');
     }
   };
-  
+
   const handleEditTenant = async (tenant: Tenant) => {
     setSelectedTenant(tenant);
-    
+
     // Explicitly set all form fields to ensure nothing is missing
     setFormData({
       property_id: tenant.property_id || '',
@@ -179,32 +180,32 @@ export default function TenantsPage() {
       date_of_birth: tenant.date_of_birth || '',
       credit_score: tenant.credit_score || undefined,
     });
-    
+
     // Load landlord references from JSON column
     if (tenant.landlord_references && Array.isArray(tenant.landlord_references)) {
       setLandlordRefs(tenant.landlord_references);
     } else {
       setLandlordRefs([]);
     }
-    
+
     console.log('📝 [TENANT] Editing tenant with data:', {
       ...tenant,
       formDataStatus: tenant.status || 'applicant',
     });
-    
+
     setIsEditDialogOpen(true);
   };
-  
+
   const handleUpdateTenant = async () => {
     if (!selectedTenant) return;
-    
+
     try {
       // Validate required fields
       if (!formData.property_id || !formData.first_name || !formData.last_name) {
         alert('Please fill in all required fields (Property, First Name, Last Name)');
         return;
       }
-      
+
       // Build update data in the EXACT order of the Iceberg table schema
       // Order must match: id, property_id, unit_id, first_name, last_name, email, phone,
       // current_address, current_city, current_state, current_zip, employer_name, status,
@@ -231,7 +232,7 @@ export default function TenantsPage() {
         landlord_references: landlordRefs.length > 0 ? landlordRefs : undefined,
         credit_score: formData.credit_score ? Number(formData.credit_score) : undefined,
       };
-      
+
       // Remove undefined and null values, but keep empty strings for optional string fields
       // Required fields (property_id, first_name, last_name) should always be included
       // Status should always be included if it exists
@@ -243,16 +244,16 @@ export default function TenantsPage() {
           }
         }
       });
-      
+
       // Ensure status is always included
       if (!updateData.status && formData.status) {
         updateData.status = formData.status;
       }
-      
+
       console.log('📝 [TENANT] Updating tenant with payload:', updateData);
-      
+
       await updateTenant.mutateAsync({ id: selectedTenant.id, data: updateData });
-      
+
       // Reset form
       setIsEditDialogOpen(false);
       setSelectedTenant(null);
@@ -280,13 +281,20 @@ export default function TenantsPage() {
       alert('Failed to update tenant');
     }
   };
-  
+
   const handleDeleteTenant = async (id: string) => {
     if (confirm('Are you sure you want to delete this tenant profile?')) {
-      await deleteTenant.mutateAsync(id);
+      setDeletingTenantId(id);
+      try {
+        await deleteTenant.mutateAsync(id);
+      } catch (err) {
+        console.error('Error deleting tenant:', err);
+      } finally {
+        setDeletingTenantId(null);
+      }
     }
   };
-  
+
   const getStatusBadge = (status?: string) => {
     switch (status) {
       case 'applicant':
@@ -328,7 +336,7 @@ export default function TenantsPage() {
         return null;
     }
   };
-  
+
   const getBackgroundCheckBadge = (status?: string) => {
     switch (status) {
       case 'pass':
@@ -343,7 +351,7 @@ export default function TenantsPage() {
         return <span className="text-xs text-gray-400">—</span>;
     }
   };
-  
+
   // Strip non-numeric characters from phone number for storage
   const stripPhoneNumber = (phone: string): string => {
     if (!phone) return '';
@@ -372,21 +380,21 @@ export default function TenantsPage() {
     if (cleaned.length <= 6) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
     return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6, 10)}`;
   };
-  
+
   const properties = propertiesData?.items || [];
   // Memoize tenants to avoid creating new array reference on every render
   const tenants = useMemo(() => tenantsData?.tenants || [], [tenantsData?.tenants]);
-  
+
   // Get units for selected property
   const { data: unitsData } = useUnits(selectedPropertyId || undefined);
   const units = unitsData?.items || [];
-  
+
   // Get units for the currently selected property in the form
   const formPropertyUnits = useMemo(() => {
     if (!formData.property_id) return [];
     return units.filter(u => u.property_id === formData.property_id);
   }, [units, formData.property_id]);
-  
+
   // Create a stable key from tenant property IDs for dependency tracking
   const tenantPropertyIdsKey = useMemo(() => {
     if (!tenants.length) return '';
@@ -396,7 +404,7 @@ export default function TenantsPage() {
       .sort()
       .join(',');
   }, [tenants]);
-  
+
   // Auto-expand all properties when property is selected
   useEffect(() => {
     if (selectedPropertyId && tenants.length > 0) {
@@ -412,7 +420,7 @@ export default function TenantsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPropertyId, tenantPropertyIdsKey]);
-  
+
   // Filter tenants by status
   const filteredTenants = useMemo(() => {
     return tenants.filter(tenant => {
@@ -420,7 +428,7 @@ export default function TenantsPage() {
       return tenant.status === statusFilter;
     });
   }, [tenants, statusFilter]);
-  
+
   // Group tenants by property
   const groupedByProperty = useMemo(() => {
     const result: Record<string, Tenant[]> = {};
@@ -429,7 +437,7 @@ export default function TenantsPage() {
       if (!result[propId]) result[propId] = [];
       result[propId].push(tenant);
     });
-    
+
     // Sort tenants within each property by name
     Object.values(result).forEach(propertyTenants => {
       propertyTenants.sort((a, b) => {
@@ -438,15 +446,15 @@ export default function TenantsPage() {
         return nameA.localeCompare(nameB);
       });
     });
-    
+
     return result;
   }, [filteredTenants]);
-  
+
   const getPropertyName = (propertyId: string) => {
     const prop = properties.find(p => p.id === propertyId);
     return prop?.display_name || prop?.address_line1 || propertyId;
   };
-  
+
   const toggleProperty = (propertyId: string) => {
     setExpandedProperties(prev => {
       const newSet = new Set(prev);
@@ -458,11 +466,11 @@ export default function TenantsPage() {
       return newSet;
     });
   };
-  
-  const sortedPropertyIds = Object.keys(groupedByProperty).sort((a, b) => 
+
+  const sortedPropertyIds = Object.keys(groupedByProperty).sort((a, b) =>
     getPropertyName(a).localeCompare(getPropertyName(b))
   );
-  
+
   return (
     <div className="p-3 max-w-6xl mx-auto">
       <div className="mb-3 flex justify-between items-center">
@@ -478,7 +486,7 @@ export default function TenantsPage() {
           Add Tenant
         </Button>
       </div>
-      
+
       {/* Property Filter - Required */}
       <div className="mb-2">
         <select
@@ -495,7 +503,7 @@ export default function TenantsPage() {
           ))}
         </select>
       </div>
-      
+
       {/* Status Filter */}
       {selectedPropertyId && (
         <div className="mb-3">
@@ -520,7 +528,7 @@ export default function TenantsPage() {
           </div>
         </div>
       )}
-      
+
       {/* Loading State */}
       {isLoading && (
         <div className="text-center py-8 text-gray-500 text-sm">Loading tenants...</div>
@@ -535,13 +543,13 @@ export default function TenantsPage() {
           </CardContent>
         </Card>
       )}
-      
+
       {!isLoading && selectedPropertyId && filteredTenants.length === 0 && (
         <Card>
           <CardContent className="py-8 text-center text-gray-500">
             <UsersIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">
-              {statusFilter === 'all' 
+              {statusFilter === 'all'
                 ? 'No tenants found for this property'
                 : `No tenants with status "${statusFilter}"`}
             </p>
@@ -560,7 +568,7 @@ export default function TenantsPage() {
 
         return (
           <Card key={propId} className="mb-3">
-            <CardHeader 
+            <CardHeader
               className="py-2 px-3 cursor-pointer hover:bg-gray-50"
               onClick={() => toggleProperty(propId)}
             >
@@ -594,7 +602,7 @@ export default function TenantsPage() {
                 </div>
                 <div className="divide-y">
                   {propertyTenants.map(tenant => (
-                    <div 
+                    <div
                       key={tenant.id}
                       className="px-3 py-2 flex items-center gap-2 hover:bg-gray-50 cursor-pointer"
                       onClick={() => handleEditTenant(tenant)}
@@ -608,39 +616,39 @@ export default function TenantsPage() {
                           {tenant.email || formatPhoneNumber(tenant.phone) || '—'}
                         </div>
                       </div>
-                      
+
                       {/* Unit */}
                       {tenant.unit_id && (
                         <span className="text-xs text-gray-600 w-20 shrink-0">
                           {units.find(u => u.id === tenant.unit_id)?.unit_number || '—'}
                         </span>
                       )}
-                      
+
                       {/* Income */}
                       <span className="text-xs font-semibold text-gray-900 w-16 text-right shrink-0">
                         {tenant.monthly_income ? `$${(tenant.monthly_income / 1000).toFixed(1)}k` : '—'}
                       </span>
-                      
+
                       {/* Credit */}
                       <span className="text-xs font-semibold text-gray-900 w-12 text-right shrink-0">
                         {tenant.credit_score || '—'}
                       </span>
-                      
+
                       {/* Landlord Refs */}
                       <span className="text-xs text-gray-600 w-16 text-center shrink-0">
                         {tenant.landlord_references?.filter((ref: any) => ref.status === 'pass').length || 0} passed
                       </span>
-                      
+
                       {/* Background Check */}
                       <div className="w-20 shrink-0">
                         {getBackgroundCheckBadge(tenant.background_check_status)}
                       </div>
-                      
+
                       {/* Status */}
                       <div className="w-24 shrink-0">
                         {getStatusBadge(tenant.status)}
                       </div>
-                      
+
                       {/* Actions */}
                       <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <Button
@@ -656,8 +664,13 @@ export default function TenantsPage() {
                           size="sm"
                           onClick={() => handleDeleteTenant(tenant.id)}
                           className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                          disabled={deletingTenantId === tenant.id}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          {deletingTenantId === tenant.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3 w-3" />
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -668,7 +681,7 @@ export default function TenantsPage() {
           </Card>
         );
       })}
-      
+
       {/* Create/Edit Dialog */}
       <Dialog open={isCreateDialogOpen || isEditDialogOpen} onOpenChange={(open) => {
         setIsCreateDialogOpen(false);
@@ -705,7 +718,7 @@ export default function TenantsPage() {
               Enter tenant information below. You can update this later as the leasing process progresses.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="grid grid-cols-2 gap-4">
             {/* Property Selection - Top of Form */}
             <div>
@@ -726,7 +739,7 @@ export default function TenantsPage() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             {/* Unit Selection - Only show if property has units (multi-family) */}
             {formData.property_id && formPropertyUnits.length > 0 && (
               <div>
@@ -749,9 +762,9 @@ export default function TenantsPage() {
                 </Select>
               </div>
             )}
-            
+
             {!formData.property_id && <div></div>}
-            
+
             <div>
               <Label htmlFor="first_name">First Name *</Label>
               <Input
@@ -858,12 +871,12 @@ export default function TenantsPage() {
               {formData.monthly_income && formData.property_id && (() => {
                 const property = properties.find(p => p.id === formData.property_id);
                 if (!property) return null;
-                
+
                 const ratio = property.monthly_rent_to_income_ratio || 2.75;
                 const rent = property.current_monthly_rent || 0;
                 const affordability = formData.monthly_income / ratio;
                 const isAffordable = affordability >= rent;
-                
+
                 return (
                   <div className={`text-xs mt-1 ${isAffordable ? 'text-blue-600 font-medium' : 'text-red-600 font-medium'}`}>
                     Income / {ratio} = ${affordability.toFixed(2)} | Rent = ${rent.toFixed(2)}
@@ -872,7 +885,7 @@ export default function TenantsPage() {
                 );
               })()}
             </div>
-            
+
             <div>
               <Label htmlFor="status">Status</Label>
               <Select
@@ -891,14 +904,14 @@ export default function TenantsPage() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div></div>
-            
+
             {/* Background Check & Screening Section */}
             <div className="col-span-2 pt-4 border-t border-gray-200">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Background Check & Screening</h3>
             </div>
-            
+
             <div>
               <Label htmlFor="date_of_birth">Date of Birth</Label>
               <Input
@@ -908,7 +921,7 @@ export default function TenantsPage() {
                 onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value || undefined })}
               />
             </div>
-            
+
             <div>
               <Label htmlFor="credit_score">Credit Score</Label>
               <Input
@@ -921,7 +934,7 @@ export default function TenantsPage() {
                 max="850"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="background_check_status">Background Check Status</Label>
               <Select
@@ -939,7 +952,7 @@ export default function TenantsPage() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="col-span-2">
               <Label htmlFor="notes">Notes</Label>
               <Textarea
@@ -950,7 +963,7 @@ export default function TenantsPage() {
                 rows={3}
               />
             </div>
-            
+
             {/* Landlord Reference Checks Section */}
             <div className="col-span-2 pt-4 border-t border-gray-200">
               <h3 className="text-sm font-semibold text-gray-900 mb-1">Landlord Reference Checks</h3>
@@ -959,7 +972,7 @@ export default function TenantsPage() {
                 ⚠️ Click "Add Reference" to add to list, then click "Update Tenant" at bottom to save all changes.
               </p>
             </div>
-            
+
             {/* Reference Table */}
             {landlordRefs.length > 0 && (
               <div className="col-span-2 mb-4">
@@ -1027,7 +1040,7 @@ export default function TenantsPage() {
                 </div>
               </div>
             )}
-            
+
             {/* Add Reference Form */}
             <div className="col-span-2 bg-gray-50 rounded-lg p-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -1163,7 +1176,7 @@ export default function TenantsPage() {
               </div>
             </div>
           </div>
-          
+
           <DialogFooter>
             <Button
               variant="outline"

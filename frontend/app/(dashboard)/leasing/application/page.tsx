@@ -23,17 +23,21 @@ export default function RentalApplicationPage() {
   const [displayName, setDisplayName] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
-  
+
   const { data: tenantsData } = useTenants();
-  
+
+  // Get selected tenant to find property_id
+  const tenantForPropertyId = tenantsData?.tenants.find(t => t.id === selectedTenantId);
+
   // Fetch documents for selected tenant
   const { data: documentsData, isLoading: docsLoading } = useDocuments({
+    property_id: tenantForPropertyId?.property_id || '',
     tenant_id: selectedTenantId || undefined,
     document_type: 'rental_application',
   });
-  
+
   const documents = documentsData?.items || [];
-  
+
   const uploadMutation = useUploadDocument();
   const deleteMutation = useDeleteDocument();
 
@@ -107,7 +111,7 @@ export default function RentalApplicationPage() {
                 <FileText className="h-4 w-4 text-gray-600 shrink-0" />
                 <span className="text-xs font-medium text-gray-900 truncate">Nebraska Residential Rental Application</span>
               </div>
-              <Button 
+              <Button
                 onClick={handleDownloadNebraska}
                 size="sm"
                 variant="outline"
@@ -123,7 +127,7 @@ export default function RentalApplicationPage() {
                 <FileText className="h-4 w-4 text-gray-600 shrink-0" />
                 <span className="text-xs font-medium text-gray-900 truncate">Missouri Residential Rental Application</span>
               </div>
-              <Button 
+              <Button
                 onClick={handleDownloadMissouri}
                 size="sm"
                 variant="outline"
@@ -139,7 +143,7 @@ export default function RentalApplicationPage() {
                 <FileText className="h-4 w-4 text-gray-600 shrink-0" />
                 <span className="text-xs font-medium text-gray-900 truncate">Self-Guided Showing Agreement</span>
               </div>
-              <Button 
+              <Button
                 onClick={handleDownloadShowingForm}
                 size="sm"
                 variant="outline"
@@ -196,7 +200,7 @@ export default function RentalApplicationPage() {
                     placeholder="e.g., Rental Application - 12/20/2025"
                   />
                 </div>
-                
+
                 <div className="md:col-span-2">
                   <Label htmlFor="file-upload" className="text-xs">Choose File</Label>
                   <Input
@@ -210,7 +214,7 @@ export default function RentalApplicationPage() {
                     Accepted formats: PDF, JPG, PNG, GIF, WEBP (Max 10MB)
                   </p>
                 </div>
-                
+
                 <div className="md:col-span-2">
                   <Button
                     onClick={handleUpload}
@@ -224,7 +228,7 @@ export default function RentalApplicationPage() {
               </div>
             </CardContent>
           </Card>
-          
+
           {/* Applications List */}
           <Card className="mt-6">
             <CardHeader>

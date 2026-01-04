@@ -23,12 +23,12 @@ LEASE_DATA_FIELDS = {
     "appliances_provided",
     "attic_usage",
     "holding_fee_date",
-    
+
     # Date fields
     "commencement_date",
     "termination_date",
     "lease_date",
-    
+
     # Decimal/Currency fields
     "monthly_rent",
     "security_deposit",
@@ -42,7 +42,7 @@ LEASE_DATA_FIELDS = {
     "key_replacement_fee",
     "garage_door_opener_fee",
     "early_termination_fee_amount",
-    
+
     # Integer fields
     "max_occupants",
     "max_adults",
@@ -55,7 +55,7 @@ LEASE_DATA_FIELDS = {
     "parking_spaces",
     "early_termination_notice_days",
     "lead_paint_year_built",
-    
+
     # Boolean fields
     "include_holding_fee_addendum",
     "pets_allowed",
@@ -69,10 +69,10 @@ LEASE_DATA_FIELDS = {
     "garage_outlets_prohibited",
     "lead_paint_disclosure",
     "has_attic",
-    
+
     # List/Array fields
     "pets",
-    
+
     # Computed/derived fields (not in DB)
     "deposit_return_days",  # Computed from state
     "unit_id",  # Used to determine is_multi_family
@@ -96,28 +96,28 @@ def get_db_schema_fields():
 def get_frontend_fields():
     """Extract field names from frontend form"""
     frontend_file = Path(__file__).parent.parent.parent / "frontend" / "app" / "(dashboard)" / "leases" / "page.tsx"
-    
+
     if not frontend_file.exists():
         return set()
-    
+
     content = frontend_file.read_text()
-    
-    # Extract formData fields - look for pattern: field_name: 
+
+    # Extract formData fields - look for pattern: field_name:
     import re
     # Pattern to match formData field names
     pattern = r'(\w+):\s*(?:formData\.|["\']|true|false|\d+|\[|\{)'
     matches = re.findall(r'(\w+):\s*[^,}\n]+', content)
-    
+
     # Also look for formData.field_name patterns
     formdata_pattern = r'formData\.(\w+)'
     formdata_matches = re.findall(formdata_pattern, content)
-    
+
     # Combine and filter
     all_matches = set(matches + formdata_matches)
-    
+
     # Filter out common non-field names
     excluded = {
-        'formData', 'setFormData', 'handleSaveParameters', 'handleNewLease', 
+        'formData', 'setFormData', 'handleSaveParameters', 'handleNewLease',
         'handleEditLease', 'useProperties', 'useTenants', 'useLeasesList',
         'useUnits', 'useState', 'useEffect', 'useCallback', 'useMemo',
         'property', 'tenant', 'lease', 'unit', 'id', 'type', 'value',
@@ -126,27 +126,27 @@ def get_frontend_fields():
         'true', 'false', 'null', 'undefined', 'string', 'number', 'boolean',
         'Date', 'Object', 'Array', 'Function', 'React', 'useRouter',
     }
-    
+
     return {m for m in all_matches if m and m not in excluded and not m.startswith('_')}
 
 def main():
     print("=" * 80)
     print("LEASE GENERATOR FIELD VERIFICATION")
     print("=" * 80)
-    
+
     # Get database schema
     db_fields = get_db_schema_fields()
     print(f"\n📊 Database Schema: {len(db_fields)} fields")
-    
+
     # Get frontend fields (simplified check)
     frontend_fields = get_frontend_fields()
     print(f"🎨 Frontend Form: {len(frontend_fields)} fields detected")
-    
+
     # Check lease_data fields
     print("\n" + "=" * 80)
     print("LEASE_DATA FIELDS CHECK")
     print("=" * 80)
-    
+
     missing_in_db = []
     for field in LEASE_DATA_FIELDS:
         if field not in db_fields:
@@ -154,23 +154,23 @@ def main():
             print(f"  ❌ MISSING IN DB: {field}")
         else:
             print(f"  ✅ {field}")
-    
+
     # Check property_data fields
     print("\n" + "=" * 80)
     print("PROPERTY_DATA FIELDS CHECK")
     print("=" * 80)
-    
+
     # Property fields are in properties table, not leases table
     from app.scripts.create_data import create_properties_schema
     properties_schema = create_properties_schema()
     property_db_fields = {field.name for field in properties_schema.fields}
-    
+
     for field in PROPERTY_DATA_FIELDS:
         if field not in property_db_fields:
             print(f"  ❌ MISSING IN PROPERTIES TABLE: {field}")
         else:
             print(f"  ✅ {field}")
-    
+
     # Summary
     print("\n" + "=" * 80)
     print("SUMMARY")
@@ -181,11 +181,13 @@ def main():
         print(f"\n⚠️  Missing fields: {', '.join(missing_in_db)}")
     else:
         print("\n✅ All lease_data fields exist in database schema!")
-    
+
     print(f"\nTotal property_data fields checked: {len(PROPERTY_DATA_FIELDS)}")
     print("✅ All property_data fields exist in properties table!")
 
 if __name__ == "__main__":
     main()
+
+
 
 

@@ -54,17 +54,13 @@ export default function LogRentPage() {
   const searchParams = useSearchParams();
   const rentId = searchParams.get('id');
   const isEditing = !!rentId;
-  
+
   const createRent = useCreateRent();
   const createRentWithReceipt = useCreateRentWithReceipt();
   const updateRent = useUpdateRent();
   const { data: existingRent, isLoading: loadingRent } = useRent(rentId || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Fetch tenants
-  const { data: tenantsData } = useTenants();
-  const tenants = tenantsData?.tenants || [];
-  
+
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
@@ -72,14 +68,14 @@ export default function LogRentPage() {
   const [file, setFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [removeDocument, setRemoveDocument] = useState(false);
-  
+
   // Default to current month
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth() + 1;
   const monthStart = new Date(currentYear, currentMonth - 1, 1);
   const monthEnd = new Date(currentYear, currentMonth, 0);
-  
+
   const [formData, setFormData] = useState({
     property_id: '',
     unit_id: '',
@@ -102,6 +98,12 @@ export default function LogRentPage() {
     notes: '',
   });
 
+  // Fetch tenants - filter by selected property if available
+  const { data: tenantsData } = useTenants(
+    formData.property_id ? { property_id: formData.property_id } : { enabled: true }
+  );
+  const tenants = tenantsData?.tenants || [];
+
   // Generate year options (current year - 2 to current year + 1)
   const yearOptions = useMemo(() => {
     const years = [];
@@ -123,7 +125,7 @@ export default function LogRentPage() {
       const rent = existingRent;
       const periodStart = rent.rent_period_start ? new Date(rent.rent_period_start).toISOString().split('T')[0] : monthStart.toISOString().split('T')[0];
       const periodEnd = rent.rent_period_end ? new Date(rent.rent_period_end).toISOString().split('T')[0] : monthEnd.toISOString().split('T')[0];
-      
+
       setFormData({
         property_id: rent.property_id || '',
         unit_id: rent.unit_id || '',
@@ -163,7 +165,7 @@ export default function LogRentPage() {
     if (formData.property_id) {
       const property = properties.find(p => p.id === formData.property_id);
       setSelectedProperty(property || null);
-      
+
       if (property?.property_type === 'multi_family' || property?.property_type === 'duplex') {
         fetchUnits(formData.property_id);
       } else {
@@ -222,7 +224,7 @@ export default function LogRentPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    
+
     if (!formData.property_id || !formData.amount || !formData.payment_date) {
       setError('Please fill in all required fields');
       return;
@@ -233,7 +235,7 @@ export default function LogRentPage() {
       let rentPeriodEnd = formData.rent_period_end;
       let rentPeriodMonth: number | undefined = formData.rent_period_month;
       let rentPeriodYear: number | undefined = formData.rent_period_year;
-      
+
       if (formData.is_one_time_fee) {
         // For one-time fees, use a single date
         rentPeriodStart = formData.rent_period_start || formData.payment_date;
@@ -252,31 +254,31 @@ export default function LogRentPage() {
           rentPeriodEnd = endDate.toISOString().split('T')[0];
         }
       }
-      
+
       // Use custom description if "Other" is selected, otherwise use the selected option
-      const revenueDescription = formData.revenue_description === 'Other' 
-        ? formData.revenue_description_other 
+      const revenueDescription = formData.revenue_description === 'Other'
+        ? formData.revenue_description_other
         : formData.revenue_description || undefined;
-      
+
       // Auto-check is_non_irs_revenue if Deposit, Deposit Payout, or Exit Deposit Deduction is selected
-      const isNonIrsRevenue = (formData.revenue_description === 'Deposit' || 
+      const isNonIrsRevenue = (formData.revenue_description === 'Deposit' ||
                                 formData.revenue_description === 'Deposit Payout' ||
                                 formData.revenue_description === 'Exit Deposit Deduction')
-        ? true 
+        ? true
         : formData.is_non_irs_revenue;
-      
+
       // For Deposit Payout and Exit Deposit Deduction, allow negative amounts
       const amountValue = parseFloat(formData.amount);
-      const finalAmount = ((formData.revenue_description === 'Deposit Payout' || 
-                           formData.revenue_description === 'Exit Deposit Deduction') && 
+      const finalAmount = ((formData.revenue_description === 'Deposit Payout' ||
+                           formData.revenue_description === 'Exit Deposit Deduction') &&
                            amountValue > 0)
         ? -amountValue  // Make negative if positive amount entered for payout/deduction
         : amountValue;
-      
+
       // Build payload in same order as backend build_rent_dict function
-      // Order: property_id, unit_id, tenant_id, revenue_description, is_non_irs_revenue, 
+      // Order: property_id, unit_id, tenant_id, revenue_description, is_non_irs_revenue,
       //        is_one_time_fee, amount, rent_period_month, rent_period_year, rent_period_start,
-      //        rent_period_end, payment_date, payment_method, transaction_reference, 
+      //        rent_period_end, payment_date, payment_method, transaction_reference,
       //        is_late, late_fee, notes, document_storage_id
       const payload = {
         property_id: formData.property_id,
@@ -315,12 +317,12 @@ export default function LogRentPage() {
           if (formData.tenant_id) {
             formDataToSend.append('tenant_id', formData.tenant_id);
           }
-          
+
           const docResponse = await apiClient.upload<{ document: { id: string } }>('/documents/upload', formDataToSend);
-          
+
           // Update rent with new document_storage_id
-          await updateRent.mutateAsync({ 
-            id: rentId, 
+          await updateRent.mutateAsync({
+            id: rentId,
             data: { ...payload, document_storage_id: docResponse.document.id }
           });
         } else {
@@ -328,7 +330,7 @@ export default function LogRentPage() {
           // Add document_storage_id in same position as backend (after notes)
           const updatePayload = {
             ...payload,
-            document_storage_id: removeDocument 
+            document_storage_id: removeDocument
               ? ""  // Empty string = delete
               : (existingRent?.document_storage_id || undefined),  // Preserve existing or undefined
           };
@@ -363,11 +365,11 @@ export default function LogRentPage() {
           await createRent.mutateAsync(payload);
         }
       }
-      
+
       // Manually invalidate and refetch all rent queries to ensure fresh data
       await queryClient.invalidateQueries({ queryKey: ['rents'] });
       await queryClient.refetchQueries({ queryKey: ['rents'] });
-      
+
       // Navigate to rent list page
       router.push('/rent');
     } catch (err) {
@@ -376,7 +378,7 @@ export default function LogRentPage() {
     }
   };
 
-  const isMultiUnit = selectedProperty?.property_type === 'multi_family' || 
+  const isMultiUnit = selectedProperty?.property_type === 'multi_family' ||
                       selectedProperty?.property_type === 'duplex';
 
   const selectedUnit = units.find(u => u.id === formData.unit_id);
@@ -496,7 +498,7 @@ export default function LogRentPage() {
               <Label className="text-xs font-medium text-gray-700 block mb-2">
                 {formData.is_one_time_fee ? 'One-Time Fee Date' : 'Rent For Period'} <span className="text-red-500">*</span>
               </Label>
-              
+
               {formData.is_one_time_fee ? (
                 /* One-Time Fee: Single Date Input */
                 <div>
@@ -505,8 +507,8 @@ export default function LogRentPage() {
                     id="rent_period_start"
                     type="date"
                     value={formData.rent_period_start}
-                    onChange={(e) => setFormData({ 
-                      ...formData, 
+                    onChange={(e) => setFormData({
+                      ...formData,
                       rent_period_start: e.target.value,
                       rent_period_end: e.target.value, // Same date for one-time fees
                     })}
@@ -529,8 +531,8 @@ export default function LogRentPage() {
                           const year = formData.rent_period_year;
                           const startDate = new Date(year, month - 1, 1);
                           const endDate = new Date(year, month, 0);
-                          setFormData({ 
-                            ...formData, 
+                          setFormData({
+                            ...formData,
                             rent_period_month: month,
                             rent_period_start: startDate.toISOString().split('T')[0],
                             rent_period_end: endDate.toISOString().split('T')[0],
@@ -558,8 +560,8 @@ export default function LogRentPage() {
                           const month = formData.rent_period_month;
                           const startDate = new Date(year, month - 1, 1);
                           const endDate = new Date(year, month, 0);
-                          setFormData({ 
-                            ...formData, 
+                          setFormData({
+                            ...formData,
                             rent_period_year: year,
                             rent_period_start: startDate.toISOString().split('T')[0],
                             rent_period_end: endDate.toISOString().split('T')[0],
@@ -579,7 +581,7 @@ export default function LogRentPage() {
                       </Select>
                     </div>
                   </div>
-                  
+
                   {/* Custom Date Range Checkbox */}
                   <div className="mt-3 pt-3 border-t border-gray-300">
                     <div className="flex items-center gap-2">
@@ -594,7 +596,7 @@ export default function LogRentPage() {
                         Use custom date range (not full month)
                       </Label>
                     </div>
-                    
+
                     {/* Custom Date Range Inputs */}
                     {formData.use_custom_date_range && (
                       <div className="grid grid-cols-2 gap-3 mt-3">
@@ -621,7 +623,7 @@ export default function LogRentPage() {
                       </div>
                     )}
                   </div>
-                  
+
                   <p className="text-[10px] text-gray-500 mt-2">
                     Recording rent for: <span className="font-medium">{getMonthLabel(formData.rent_period_month)} {formData.rent_period_year}</span>
                     {formData.use_custom_date_range && (
@@ -690,12 +692,12 @@ export default function LogRentPage() {
                 onValueChange={(value) => {
                   const isDeposit = value === 'Deposit' || value === 'Deposit Payout' || value === 'Exit Deposit Deduction';
                   // Auto-set as one-time fee for Deposit, Deposit Payout, Exit Deposit Deduction, and other one-time fees
-                  const isOneTimeFee = value === 'Deposit' || 
-                                      value === 'Deposit Payout' || 
-                                      value === 'Exit Deposit Deduction' || 
-                                      value === 'One Time Pet Fee' || 
+                  const isOneTimeFee = value === 'Deposit' ||
+                                      value === 'Deposit Payout' ||
+                                      value === 'Exit Deposit Deduction' ||
+                                      value === 'One Time Pet Fee' ||
                                       value === 'One Time Application Fee';
-                  
+
                   setFormData({
                     ...formData,
                     revenue_description: value,
@@ -718,7 +720,7 @@ export default function LogRentPage() {
                   <SelectItem value="Other">Other</SelectItem>
                 </SelectContent>
               </Select>
-              
+
               {/* Custom description input when "Other" is selected */}
               {formData.revenue_description === 'Other' && (
                 <Input
@@ -742,8 +744,8 @@ export default function LogRentPage() {
                   const isOneTime = e.target.checked;
                   if (isOneTime) {
                     // When switching to one-time fee, set date to payment date
-                    setFormData({ 
-                      ...formData, 
+                    setFormData({
+                      ...formData,
                       is_one_time_fee: true,
                       rent_period_start: formData.payment_date,
                       rent_period_end: formData.payment_date,
@@ -754,8 +756,8 @@ export default function LogRentPage() {
                     const month = currentMonth;
                     const startDate = new Date(year, month - 1, 1);
                     const endDate = new Date(year, month, 0);
-                    setFormData({ 
-                      ...formData, 
+                    setFormData({
+                      ...formData,
                       is_one_time_fee: false,
                       rent_period_month: month,
                       rent_period_year: year,
@@ -786,14 +788,14 @@ export default function LogRentPage() {
                 Non-IRS Revenue {(formData.revenue_description === 'Deposit' || formData.revenue_description === 'Deposit Payout' || formData.revenue_description === 'Exit Deposit Deduction') && <span className="text-gray-500">(auto-checked for deposits)</span>}
               </Label>
             </div>
-            
+
             {/* Deposit Payout Helper Text */}
             {formData.revenue_description === 'Deposit Payout' && (
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-xs text-purple-700">
                 💡 <strong>Note:</strong> Enter the payout amount as a positive number. It will be recorded as a negative amount to reduce the deposit balance.
               </div>
             )}
-            
+
             {/* Exit Deposit Deduction Helper Text */}
             {formData.revenue_description === 'Exit Deposit Deduction' && (
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-2 text-xs text-orange-700">
@@ -884,9 +886,9 @@ export default function LogRentPage() {
                   <div className="border-2 border-green-300 bg-green-50 rounded-lg p-3">
                     <div className="flex items-center gap-3">
                       {filePreview ? (
-                        <img 
-                          src={filePreview} 
-                          alt="Preview" 
+                        <img
+                          src={filePreview}
+                          alt="Preview"
                           className="h-12 w-12 object-cover rounded-lg shadow-sm"
                         />
                       ) : file.type === 'application/pdf' ? (
@@ -923,7 +925,7 @@ export default function LogRentPage() {
                         <span>Receipt attached</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <ReceiptViewer 
+                        <ReceiptViewer
                           documentId={existingRent.document_storage_id}
                           fileName={existingRent.revenue_description || 'Rent Receipt'}
                         />

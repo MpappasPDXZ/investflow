@@ -30,10 +30,10 @@ async def create_tenant(
         # Validate property_id is provided
         if not tenant_data.property_id:
             raise HTTPException(status_code=400, detail="property_id is required")
-        
+
         tenant_id = str(uuid4())
         now = pd.Timestamp.now()
-        
+
         # Convert Pydantic model to dict
         tenant_dict = tenant_data.model_dump()
         tenant_dict.update({
@@ -41,31 +41,31 @@ async def create_tenant(
             "created_at": now,
             "updated_at": now,
         })
-        
+
         # Convert UUID fields to strings
         if tenant_dict.get("property_id"):
             tenant_dict["property_id"] = str(tenant_dict["property_id"])
         if tenant_dict.get("unit_id"):
             tenant_dict["unit_id"] = str(tenant_dict["unit_id"])
-        
+
         # Convert Decimal fields
         if tenant_dict.get("monthly_income"):
             tenant_dict["monthly_income"] = Decimal(str(tenant_dict["monthly_income"]))
-        
+
         # Convert landlord_references list to JSON string
         if tenant_dict.get("landlord_references"):
             tenant_dict["landlord_references"] = json.dumps(tenant_dict["landlord_references"])
         else:
             tenant_dict["landlord_references"] = "[]"  # Empty JSON array
-        
+
         # Create DataFrame
         df = pd.DataFrame([tenant_dict])
-        
+
         # Append to Iceberg table
         append_data(NAMESPACE, TABLE_NAME, df)
-        
+
         logger.info(f"Created tenant {tenant_id} for property {tenant_dict['property_id']}")
-        
+
         # Parse landlord_references for response
         if tenant_dict.get("landlord_references"):
             try:
@@ -74,10 +74,10 @@ async def create_tenant(
                 tenant_dict["landlord_references"] = []
         else:
             tenant_dict["landlord_references"] = []
-        
+
         # Return created tenant
         return TenantResponse.from_dict(tenant_dict)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -87,77 +87,85 @@ async def create_tenant(
 
 @router.get("", response_model=TenantListResponse)
 async def list_tenants(
-    property_id: UUID = Query(..., description="Filter by property ID (required)"),
+    property_id: Optional[UUID] = Query(None, description="Filter by property ID (optional)"),
     unit_id: Optional[UUID] = Query(None, description="Filter by unit ID"),
     status: Optional[str] = Query(None, description="Filter by status"),
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)  # User still needed for auth
 ):
-    """List tenants for a property (property_id required)"""
+    """List tenants, optionally filtered by property, unit, or status"""
     import time
     endpoint_start = time.time()
     logger.info(f"⏱️ [PERF] list_tenants started")
-    
+
     try:
         # Read tenants table
         read_start = time.time()
         df = read_table(NAMESPACE, TABLE_NAME)
         logger.info(f"⏱️ [PERF] read_table(tenants) took {time.time() - read_start:.2f}s")
-        
-        # Filter by property_id (required)
-        mask = (df["property_id"] == str(property_id))
-        
+
+        # Filter by property_id (optional)
+        if property_id:
+            mask = (df["property_id"] == str(property_id))
+        else:
+            # When fetching all tenants, only include those with a valid property_id
+            mask = df["property_id"].notna() & (df["property_id"] != "None") & (df["property_id"] != "")
+
         if unit_id:
             mask = mask & (df["unit_id"] == str(unit_id))
-        
+
         if status:
             mask = mask & (df["status"] == status)
-        
+
         filtered_df = df[mask].head(limit)
-        
+
         # Convert to list of dicts
         convert_start = time.time()
         tenants = []
         for _, row in filtered_df.iterrows():
             tenant_dict = row.to_dict()
-            
+
             # Convert timestamps
             for field in ["created_at", "updated_at"]:
                 if pd.notna(tenant_dict.get(field)):
                     tenant_dict[field] = pd.Timestamp(tenant_dict[field])
-            
+
             # Convert date fields
             for field in ["date_of_birth"]:
                 if pd.notna(tenant_dict.get(field)):
                     tenant_dict[field] = pd.Timestamp(tenant_dict[field]).date()
                 else:
                     tenant_dict[field] = None
-            
+
             # Convert UUID strings back to UUID objects
             for field in ["id", "property_id", "unit_id"]:
-                if tenant_dict.get(field) and tenant_dict[field] != "None":
+                if tenant_dict.get(field) and tenant_dict[field] != "None" and pd.notna(tenant_dict.get(field)):
                     try:
                         tenant_dict[field] = UUID(tenant_dict[field])
                     except:
                         tenant_dict[field] = None
                 else:
                     tenant_dict[field] = None
-            
+
+            # Skip tenants without a valid property_id (required field)
+            if not tenant_dict.get("property_id"):
+                continue
+
             # Handle NaN values for optional integer/numeric fields
             for field in ["credit_score"]:
                 if pd.isna(tenant_dict.get(field)):
                     tenant_dict[field] = None
-            
+
             # Handle NaN values for optional Decimal fields
             for field in ["monthly_income"]:
                 if pd.isna(tenant_dict.get(field)):
                     tenant_dict[field] = None
-            
+
             # Handle NaN values for boolean fields
             for field in ["previous_landlord_contacted"]:
                 if pd.isna(tenant_dict.get(field)):
                     tenant_dict[field] = None
-            
+
             # Parse landlord_references JSON string
             if tenant_dict.get("landlord_references"):
                 try:
@@ -166,15 +174,15 @@ async def list_tenants(
                     tenant_dict["landlord_references"] = []
             else:
                 tenant_dict["landlord_references"] = []
-            
+
             tenants.append(TenantResponse.from_dict(tenant_dict))
         logger.info(f"⏱️ [PERF] Converting to TenantResponse objects took {time.time() - convert_start:.2f}s")
-        
+
         total_time = time.time() - endpoint_start
         logger.info(f"⏱️ [PERF] list_tenants completed in {total_time:.2f}s")
-        
+
         return TenantListResponse(tenants=tenants, total=len(filtered_df))
-        
+
     except Exception as e:
         total_time = time.time() - endpoint_start
         logger.error(f"⏱️ [PERF] list_tenants failed after {total_time:.2f}s: {e}", exc_info=True)
@@ -190,28 +198,28 @@ async def get_tenant(
     try:
         # Read tenants table
         df = read_table(NAMESPACE, TABLE_NAME)
-        
+
         # Filter by ID (security via property_id)
         mask = (df["id"] == str(tenant_id))
         tenant_row = df[mask]
-        
+
         if len(tenant_row) == 0:
             raise HTTPException(status_code=404, detail="Tenant not found")
-        
+
         tenant_dict = tenant_row.iloc[0].to_dict()
-        
+
         # Convert timestamps
         for field in ["created_at", "updated_at"]:
             if pd.notna(tenant_dict.get(field)):
                 tenant_dict[field] = pd.Timestamp(tenant_dict[field])
-        
+
         # Convert date fields
         for field in ["date_of_birth"]:
             if pd.notna(tenant_dict.get(field)):
                 tenant_dict[field] = pd.Timestamp(tenant_dict[field]).date()
             else:
                 tenant_dict[field] = None
-        
+
         # Convert UUID strings back to UUID objects
         for field in ["id", "property_id", "unit_id"]:
             if tenant_dict.get(field) and tenant_dict[field] != "None":
@@ -221,17 +229,17 @@ async def get_tenant(
                     tenant_dict[field] = None
             else:
                 tenant_dict[field] = None
-        
+
         # Handle NaN values for optional integer/numeric fields
         for field in ["credit_score"]:
             if pd.isna(tenant_dict.get(field)):
                 tenant_dict[field] = None
-        
+
         # Handle NaN values for optional Decimal fields
         for field in ["monthly_income"]:
             if pd.isna(tenant_dict.get(field)):
                 tenant_dict[field] = None
-        
+
         # Parse landlord_references JSON string
         if tenant_dict.get("landlord_references"):
             try:
@@ -240,9 +248,9 @@ async def get_tenant(
                 tenant_dict["landlord_references"] = []
         else:
             tenant_dict["landlord_references"] = []
-        
+
         return TenantResponse.from_dict(tenant_dict)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -260,32 +268,32 @@ async def update_tenant(
     try:
         # Read tenants table
         df = read_table(NAMESPACE, TABLE_NAME)
-        
+
         # Filter by ID (security via property_id)
         mask = (df["id"] == str(tenant_id))
-        
+
         if not mask.any():
             raise HTTPException(status_code=404, detail="Tenant not found")
-        
+
         # Get current tenant data
         current_tenant = df[mask].iloc[0].to_dict()
-        
+
         # Update with new data (only non-None fields)
         update_dict = tenant_data.model_dump(exclude_unset=True)
-        
+
         # Validate property_id if being updated (cannot be removed)
         if "property_id" in update_dict and update_dict["property_id"] is None:
             raise HTTPException(status_code=400, detail="property_id cannot be removed")
-        
+
         # Convert UUID fields to strings
         for field in ["property_id", "unit_id"]:
             if field in update_dict and update_dict[field] is not None:
                 update_dict[field] = str(update_dict[field])
-        
+
         # Convert Decimal fields
         if "monthly_income" in update_dict and update_dict["monthly_income"] is not None:
             update_dict["monthly_income"] = Decimal(str(update_dict["monthly_income"]))
-        
+
         # Convert landlord_references list to JSON string if provided
         if "landlord_references" in update_dict and update_dict["landlord_references"] is not None:
             if isinstance(update_dict["landlord_references"], list):
@@ -293,14 +301,14 @@ async def update_tenant(
             # If it's already a string, keep it as is
         elif "landlord_references" in update_dict and update_dict["landlord_references"] is None:
             update_dict["landlord_references"] = "[]"  # Empty JSON array
-        
+
         current_tenant.update(update_dict)
         current_tenant["updated_at"] = pd.Timestamp.now()
-        
+
         # Ensure required fields are present and non-null
         # id is always required
         current_tenant["id"] = str(tenant_id)
-        
+
         # property_id is required
         if "property_id" in update_dict and update_dict["property_id"]:
             current_tenant["property_id"] = str(update_dict["property_id"])
@@ -308,7 +316,7 @@ async def update_tenant(
             raise HTTPException(status_code=400, detail="property_id is required and cannot be empty")
         else:
             current_tenant["property_id"] = str(current_tenant["property_id"])
-        
+
         # first_name is required
         if "first_name" in update_dict and update_dict["first_name"]:
             current_tenant["first_name"] = str(update_dict["first_name"])
@@ -316,7 +324,7 @@ async def update_tenant(
             raise HTTPException(status_code=400, detail="first_name is required and cannot be empty")
         else:
             current_tenant["first_name"] = str(current_tenant["first_name"])
-        
+
         # last_name is required
         if "last_name" in update_dict and update_dict["last_name"]:
             current_tenant["last_name"] = str(update_dict["last_name"])
@@ -324,24 +332,24 @@ async def update_tenant(
             raise HTTPException(status_code=400, detail="last_name is required and cannot be empty")
         else:
             current_tenant["last_name"] = str(current_tenant["last_name"])
-        
+
         # Convert UUID fields to strings (unit_id is optional)
         if current_tenant.get("unit_id") and pd.notna(current_tenant.get("unit_id")):
             current_tenant["unit_id"] = str(current_tenant["unit_id"])
         else:
             current_tenant["unit_id"] = None  # unit_id is optional
-        
+
         # Ensure timestamps are proper pandas Timestamps
         if "created_at" not in current_tenant or pd.isna(current_tenant.get("created_at")):
             current_tenant["created_at"] = pd.Timestamp.now()
         else:
             current_tenant["created_at"] = pd.Timestamp(current_tenant["created_at"])
-        
+
         # Get table schema to ensure proper field ordering and types
         from app.core.iceberg import load_table
         table = load_table(NAMESPACE, TABLE_NAME)
         schema_fields = [field.name for field in table.schema().fields]
-        
+
         # Ensure all schema fields are present in current_tenant
         for field_name in schema_fields:
             if field_name not in current_tenant:
@@ -358,13 +366,13 @@ async def update_tenant(
                         current_tenant[field_name] = str(current_tenant.get("last_name", ""))
                 else:
                     current_tenant[field_name] = None
-        
+
         # Reorder current_tenant dict to match schema order
         ordered_tenant = {field: current_tenant.get(field) for field in schema_fields}
-        
+
         # Create update DataFrame with fields in schema order
         updated_row_df = pd.DataFrame([ordered_tenant])
-        
+
         # Ensure required string fields are explicitly non-null strings
         required_string_fields = ["id", "property_id", "first_name", "last_name"]
         for field in required_string_fields:
@@ -374,23 +382,23 @@ async def update_tenant(
                 # Ensure no empty strings for required fields
                 if updated_row_df[field].iloc[0] == "":
                     raise HTTPException(status_code=400, detail=f"{field} is required and cannot be empty")
-        
+
         # Use the new upsert function with schema casting to ensure required fields are properly marked
         upsert_data_with_schema_cast(NAMESPACE, TABLE_NAME, updated_row_df, join_cols=["id"])
-        
+
         logger.info(f"Updated tenant {tenant_id}")
-        
+
         # Convert back for response
         for field in ["created_at", "updated_at"]:
             if pd.notna(current_tenant.get(field)):
                 current_tenant[field] = pd.Timestamp(current_tenant[field])
-        
+
         for field in ["date_of_birth"]:
             if pd.notna(current_tenant.get(field)):
                 current_tenant[field] = pd.Timestamp(current_tenant[field]).date()
             else:
                 current_tenant[field] = None
-        
+
         for field in ["id", "property_id", "unit_id"]:
             if current_tenant.get(field) and current_tenant[field] != "None":
                 try:
@@ -399,16 +407,16 @@ async def update_tenant(
                     current_tenant[field] = None
             else:
                 current_tenant[field] = None
-        
+
         # Handle NaN values
         for field in ["credit_score"]:
             if pd.isna(current_tenant.get(field)):
                 current_tenant[field] = None
-        
+
         for field in ["monthly_income"]:
             if pd.isna(current_tenant.get(field)):
                 current_tenant[field] = None
-        
+
         # Parse landlord_references JSON string
         if current_tenant.get("landlord_references"):
             try:
@@ -417,9 +425,9 @@ async def update_tenant(
                 current_tenant["landlord_references"] = []
         else:
             current_tenant["landlord_references"] = []
-        
+
         return TenantResponse.from_dict(current_tenant)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -436,21 +444,21 @@ async def delete_tenant(
     try:
         # Read tenants table
         df = read_table(NAMESPACE, TABLE_NAME)
-        
+
         # Filter by ID (security via property_id)
         mask = (df["id"] == str(tenant_id))
-        
+
         if not mask.any():
             raise HTTPException(status_code=404, detail="Tenant not found")
-        
+
         # Hard delete - remove the row
         table = load_table(NAMESPACE, TABLE_NAME)
         table.delete(EqualTo("id", str(tenant_id)))
-        
+
         logger.info(f"Deleted tenant {tenant_id}")
-        
+
         return None
-        
+
     except HTTPException:
         raise
     except Exception as e:

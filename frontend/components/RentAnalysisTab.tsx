@@ -73,6 +73,7 @@ interface RentRow {
   cashFlow: number;
   bankRatio: number;
   cashOnCash: number;
+  financedAmount: number;
 }
 
 export default function RentAnalysisTab({ propertyId, property }: Props) {
@@ -98,13 +99,13 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   const calculateMonthlyPI = (loanAmount: number, interestRate: number): number => {
     const monthlyRate = interestRate / 12;
     const numPayments = LOAN_TERM_YEARS * 12;
-    
+
     if (loanAmount === 0) return 0;
-    
-    const payment = loanAmount * 
-      (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / 
+
+    const payment = loanAmount *
+      (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) /
       (Math.pow(1 + monthlyRate, numPayments) - 1);
-    
+
     return payment;
   };
 
@@ -115,7 +116,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   const fetchData = async () => {
     try {
       setLoading(true);
-      
+
       // Fetch expenses, revenues, user profile, and units in parallel
       const fetchPromises: Promise<any>[] = [
         apiClient.get<{ items: ScheduledExpense[] }>(`/scheduled-expenses?property_id=${propertyId}`),
@@ -131,15 +132,15 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
       }
 
       const results = await Promise.all(fetchPromises);
-      
+
       setExpenses(results[0].items || []);
       setRevenues(results[1].items || []);
       setUserProfile(results[2]);
-      
+
       if (isMultiUnit && results[3]) {
         const fetchedUnits = results[3].items || [];
         setUnits(fetchedUnits);
-        
+
         // Calculate average rent from units with rent
         if (fetchedUnits.length > 0) {
           const unitsWithRent = fetchedUnits.filter((u: Unit) => u.current_monthly_rent);
@@ -152,7 +153,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
         // Single unit - use property rent
         setMonthlyRent(property.current_monthly_rent || 0);
       }
-      
+
       // Set initial financed amount from property if available
       // Financed Amount = Purchase Price - Down Payment
       if (property.down_payment && property.purchase_price) {
@@ -173,7 +174,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
       capex: 0,
       maintenance: 0,
     };
-    
+
     expenses.forEach(exp => {
       if (exp.expense_type === 'pti') {
         totals.taxAndInsurance += exp.calculated_annual_cost || 0;
@@ -183,7 +184,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
         totals.maintenance += exp.calculated_annual_cost || 0;
       }
     });
-    
+
     return totals;
   }, [expenses]);
 
@@ -197,34 +198,34 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   const vacancyRate = property.vacancy_rate || 0.07;
   const vacancyCost = annualRent * vacancyRate;
   const effectiveAnnualRent = annualRent - vacancyCost;
-  
+
   // Mortgage rate from user profile
   const mortgageRate = userProfile?.mortgage_interest_rate || 0.07;
-  
+
   // Tax and Insurance from scheduled expenses
   const taxAndInsurance = expenseTotals.taxAndInsurance;
-  
+
   // Capital Expenses - default to scheduled, fallback to 8000
   const capex = expenseTotals.capex > 0 ? expenseTotals.capex : 8000;
-  
+
   // Maintenance - default to scheduled, fallback to 3000
   const maintenance = expenseTotals.maintenance > 0 ? expenseTotals.maintenance : 3000;
-  
+
   // Cash invested from property (for CoC calculation)
   const cashInvested = property.cash_invested || 0;
-  
+
   // Calculate P&I - Use financed amount and interest rate
   // Calculate monthly P&I payment using standard mortgage amortization formula
   const monthlyPI = calculateMonthlyPI(financedAmount, mortgageRate);
   const annualPI = monthlyPI * 12;
-  
+
   // Total expenses (excluding P&I for some calculations)
   const totalExpensesExcludingPI = taxAndInsurance + capex + maintenance;
   const totalExpenses = totalExpensesExcludingPI + annualPI;
-  
+
   // Cash Flow = Effective Annual Rent - Total Expenses
   const cashFlow = effectiveAnnualRent - totalExpenses;
-  
+
   // BANK RATIO (DSCR - Debt Service Coverage Ratio):
   // Adjusted Rents = Rent/Unit × Units × (1 - Vacancy Rate)
   const adjustedRents = effectiveAnnualRent;
@@ -236,40 +237,40 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   const debtService = annualPI;
   // DSCR = NOI / Debt Service (must be ≥ 1.2)
   const dscr = debtService > 0 ? netOperatingIncome / debtService : 0;
-  
+
   // Cash on Cash = Cash Flow / Cash Invested × 100
   const cashOnCash = cashInvested > 0 ? (cashFlow / cashInvested) * 100 : 0;
 
   // Generate table rows for different financed amounts
   const rentRows: RentRow[] = useMemo(() => {
     const rows: RentRow[] = [];
-    
+
     // Generate scenarios around the input financed amount in $5k increments
     const minFinanced = Math.max(0, financedAmount - RANGE_AROUND_INPUT);
     const maxFinanced = financedAmount + RANGE_AROUND_INPUT;
-    
+
     // Round to nearest $5k increment
     const startFinanced = Math.floor(minFinanced / FINANCED_AMOUNT_INCREMENT) * FINANCED_AMOUNT_INCREMENT;
-    
+
     for (let financed = startFinanced; financed <= maxFinanced; financed += FINANCED_AMOUNT_INCREMENT) {
       // Calculate P&I using mortgage amortization formula
       const monthlyPIForScenario = calculateMonthlyPI(financed, mortgageRate);
       const annPI = monthlyPIForScenario * 12;
-      
+
       const effAnnualRent = annualRent - vacancyCost;
       const tExpExcludingPI = taxAndInsurance + capex + maintenance;
       const tExp = tExpExcludingPI + annPI;
       const cf = effAnnualRent - tExp;
-      
+
       // DSCR calculation
       const adjRents = effAnnualRent;
       const opEx = adjRents * 0.35;
       const noi = adjRents - opEx;
       const rowDSCR = annPI > 0 ? noi / annPI : 0;
-      
+
       // Cash on Cash uses cash_invested from property
       const coc = cashInvested > 0 ? (cf / cashInvested) * 100 : 0;
-      
+
       rows.push({
         downPayment: 0, // Not used anymore
         percentOfPurchase: 0, // Not used anymore
@@ -290,7 +291,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
         financedAmount: financed, // Store the financed amount for this row
       });
     }
-    
+
     return rows;
   }, [financedAmount, monthlyRent, unitCount, annualRent, vacancyCost, taxAndInsurance, capex, maintenance, mortgageRate, cashInvested]);
 
@@ -332,7 +333,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
             )}
             Input Parameters
           </button>
-          
+
           {showInputs && (
             <div className="bg-gray-50 border rounded-lg p-3">
               <div className="grid grid-cols-2 gap-3 mb-3">
@@ -358,7 +359,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                     className="text-sm h-8"
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="monthlyRent" className="text-xs">Monthly Rent</Label>
                   <Input
@@ -393,7 +394,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
             )}
             Financial Summary
           </button>
-          
+
           {showSummary && (
             <div className={`border-2 rounded-lg p-4 ${meetsDSCR ? 'bg-blue-50 border-blue-600' : 'bg-yellow-50 border-yellow-600'}`}>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4">
@@ -412,7 +413,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                   <div className="text-xs text-gray-500">After vacancy</div>
                 </div>
               </div>
-              
+
               <div className="border-t pt-4 mb-4">
                 <div className="text-xs font-semibold text-gray-700 mb-2">Bank DSCR Calculation</div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm bg-purple-50 p-3 rounded">
@@ -434,7 +435,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                   </div>
                 </div>
               </div>
-              
+
               <div className="border-t pt-4 mb-4">
                 <div className="text-xs font-semibold text-gray-700 mb-2">Your Actual Expenses</div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -459,7 +460,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                   </div>
                 </div>
               </div>
-              
+
               <div className="border-t pt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
                   <div className="text-xs text-gray-600 mb-1">Your Cash Flow</div>
@@ -512,14 +513,14 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                 const rowMeetsDSCR = row.bankRatio >= 1.2;
                 const hasPositiveCashFlow = row.cashFlow > 0;
                 const meetsAllCriteria = rowMeetsDSCR && hasPositiveCashFlow;
-                
+
                 // Find the highest financed amount that qualifies (meets DSCR >= 1.2)
                 const qualifyingRows = rentRows.filter(r => r.bankRatio >= 1.2 && r.cashFlow > 0);
-                const maxQualifyingIdx = qualifyingRows.length > 0 
+                const maxQualifyingIdx = qualifyingRows.length > 0
                   ? rentRows.findIndex(r => r === qualifyingRows[qualifyingRows.length - 1])
                   : -1;
                 const isOptimal = meetsAllCriteria && idx === maxQualifyingIdx;
-                
+
                 let rowClass = 'border-b border-gray-200 hover:bg-gray-50';
                 if (isCurrentFinanced) {
                   rowClass = 'bg-blue-50 border-2 border-blue-600 font-semibold';
@@ -528,10 +529,10 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                 } else if (rowMeetsDSCR) {
                   rowClass = 'border-b border-gray-200 hover:bg-green-50 bg-green-50/30';
                 }
-                
+
                 return (
-                  <tr 
-                    key={idx} 
+                  <tr
+                    key={idx}
                     className={rowClass}
                   >
                     <td className="p-2 sticky left-0 bg-white">
@@ -569,7 +570,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
             </tbody>
           </table>
         </div>
-        
+
         <div className="mt-4 text-xs text-gray-600 space-y-1 bg-gray-50 p-3 rounded">
           <div><strong>Formulas:</strong></div>
           <div>• Annual Rent (Gross) = Monthly Rent × Unit Count × 12</div>
