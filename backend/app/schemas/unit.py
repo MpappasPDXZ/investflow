@@ -1,8 +1,10 @@
 """Pydantic schemas for unit-related API requests and responses"""
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from pydantic import BaseModel, Field, model_validator
+from typing import Optional, List, Any
 from datetime import datetime
 from decimal import Decimal
+
+from app.core.coerce import to_int_or_none
 
 
 class UnitBase(BaseModel):
@@ -52,7 +54,7 @@ class UnitUpdate(BaseModel):
 class UnitResponse(UnitBase):
     """
     Schema for unit response - includes system fields in Iceberg order.
-    Fields ordered: UnitBase fields + id, property_id (string), is_active (bool), created_at, updated_at (timestamp)
+    Coerces int64 fields only (bedrooms, square_feet) from Decimal/numpy.
     """
     # System fields (in Iceberg order - these come after UnitBase fields)
     id: str  # string in Iceberg
@@ -60,6 +62,18 @@ class UnitResponse(UnitBase):
     is_active: bool  # bool in Iceberg
     created_at: datetime  # timestamp in Iceberg
     updated_at: datetime  # timestamp in Iceberg
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_int64_fields(cls, data: Any) -> Any:
+        """Only coerce int fields. Everything else unchanged."""
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        for key in ("bedrooms", "square_feet"):
+            if key in d:
+                d[key] = to_int_or_none(d[key])
+        return d
 
     class Config:
         from_attributes = True

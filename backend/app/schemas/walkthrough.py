@@ -1,5 +1,5 @@
 """Pydantic schemas for property walkthrough inspections"""
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
 from uuid import UUID
 from datetime import date, datetime

@@ -119,16 +119,23 @@ async def list_tenants(
 
         filtered_df = df[mask].head(limit)
 
+        def _str_or_none(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return None
+            return str(v) if not isinstance(v, str) else v
+
         # Convert to list of dicts
         convert_start = time.time()
         tenants = []
         for _, row in filtered_df.iterrows():
             tenant_dict = row.to_dict()
 
-            # Convert timestamps
+            # Convert timestamps to native datetime (Pydantic expects datetime, not pd.Timestamp)
             for field in ["created_at", "updated_at"]:
                 if pd.notna(tenant_dict.get(field)):
-                    tenant_dict[field] = pd.Timestamp(tenant_dict[field])
+                    tenant_dict[field] = pd.Timestamp(tenant_dict[field]).to_pydatetime()
+                else:
+                    tenant_dict[field] = pd.Timestamp.now().to_pydatetime()
 
             # Convert date fields
             for field in ["date_of_birth"]:
@@ -139,10 +146,10 @@ async def list_tenants(
 
             # Convert UUID strings back to UUID objects
             for field in ["id", "property_id", "unit_id"]:
-                if tenant_dict.get(field) and tenant_dict[field] != "None" and pd.notna(tenant_dict.get(field)):
+                if tenant_dict.get(field) and str(tenant_dict[field]) != "None" and not (isinstance(tenant_dict.get(field), float) and pd.isna(tenant_dict[field])):
                     try:
-                        tenant_dict[field] = UUID(tenant_dict[field])
-                    except:
+                        tenant_dict[field] = UUID(str(tenant_dict[field]))
+                    except Exception:
                         tenant_dict[field] = None
                 else:
                     tenant_dict[field] = None
@@ -151,28 +158,39 @@ async def list_tenants(
             if not tenant_dict.get("property_id"):
                 continue
 
-            # Handle NaN values for optional integer/numeric fields
-            for field in ["credit_score"]:
-                if pd.isna(tenant_dict.get(field)):
-                    tenant_dict[field] = None
+            # Coerce string fields so Pydantic never sees float/pandas (e.g. EmailStr)
+            for field in ["first_name", "last_name", "email", "phone", "current_address", "current_city", "current_state", "current_zip", "employer_name", "status", "notes", "background_check_status"]:
+                if field in tenant_dict:
+                    tenant_dict[field] = _str_or_none(tenant_dict[field])
+            if tenant_dict.get("first_name") is None:
+                tenant_dict["first_name"] = ""
+            if tenant_dict.get("last_name") is None:
+                tenant_dict["last_name"] = ""
 
-            # Handle NaN values for optional Decimal fields
-            for field in ["monthly_income"]:
-                if pd.isna(tenant_dict.get(field)):
-                    tenant_dict[field] = None
+            # Optional int
+            if "credit_score" in tenant_dict and pd.notna(tenant_dict.get("credit_score")):
+                try:
+                    tenant_dict["credit_score"] = int(tenant_dict["credit_score"])
+                except (TypeError, ValueError):
+                    tenant_dict["credit_score"] = None
+            else:
+                tenant_dict["credit_score"] = None
 
-            # Handle NaN values for boolean fields
-            for field in ["previous_landlord_contacted"]:
-                if pd.isna(tenant_dict.get(field)):
-                    tenant_dict[field] = None
+            # Optional Decimal
+            if pd.isna(tenant_dict.get("monthly_income")):
+                tenant_dict["monthly_income"] = None
+
+            # Handle NaN for boolean
+            if "previous_landlord_contacted" in tenant_dict and pd.isna(tenant_dict.get("previous_landlord_contacted")):
+                tenant_dict["previous_landlord_contacted"] = None
 
             # Parse landlord_references JSON string
-            if tenant_dict.get("landlord_references"):
+            if tenant_dict.get("landlord_references") and isinstance(tenant_dict["landlord_references"], str):
                 try:
-                    tenant_dict["landlord_references"] = json.loads(tenant_dict["landlord_references"]) if isinstance(tenant_dict["landlord_references"], str) else tenant_dict["landlord_references"]
+                    tenant_dict["landlord_references"] = json.loads(tenant_dict["landlord_references"]) if tenant_dict["landlord_references"] else []
                 except (json.JSONDecodeError, TypeError):
                     tenant_dict["landlord_references"] = []
-            else:
+            elif not tenant_dict.get("landlord_references"):
                 tenant_dict["landlord_references"] = []
 
             tenants.append(TenantResponse.from_dict(tenant_dict))
@@ -208,10 +226,17 @@ async def get_tenant(
 
         tenant_dict = tenant_row.iloc[0].to_dict()
 
-        # Convert timestamps
+        def _str_or_none(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return None
+            return str(v) if not isinstance(v, str) else v
+
+        # Convert timestamps to native datetime
         for field in ["created_at", "updated_at"]:
             if pd.notna(tenant_dict.get(field)):
-                tenant_dict[field] = pd.Timestamp(tenant_dict[field])
+                tenant_dict[field] = pd.Timestamp(tenant_dict[field]).to_pydatetime()
+            else:
+                tenant_dict[field] = pd.Timestamp.now().to_pydatetime()
 
         # Convert date fields
         for field in ["date_of_birth"]:
@@ -222,32 +247,43 @@ async def get_tenant(
 
         # Convert UUID strings back to UUID objects
         for field in ["id", "property_id", "unit_id"]:
-            if tenant_dict.get(field) and tenant_dict[field] != "None":
+            if tenant_dict.get(field) and str(tenant_dict[field]) != "None" and not (isinstance(tenant_dict.get(field), float) and pd.isna(tenant_dict[field])):
                 try:
-                    tenant_dict[field] = UUID(tenant_dict[field])
-                except:
+                    tenant_dict[field] = UUID(str(tenant_dict[field]))
+                except Exception:
                     tenant_dict[field] = None
             else:
                 tenant_dict[field] = None
 
-        # Handle NaN values for optional integer/numeric fields
-        for field in ["credit_score"]:
-            if pd.isna(tenant_dict.get(field)):
-                tenant_dict[field] = None
+        # Coerce string fields
+        for field in ["first_name", "last_name", "email", "phone", "current_address", "current_city", "current_state", "current_zip", "employer_name", "status", "notes", "background_check_status"]:
+            if field in tenant_dict:
+                tenant_dict[field] = _str_or_none(tenant_dict[field])
+        if tenant_dict.get("first_name") is None:
+            tenant_dict["first_name"] = ""
+        if tenant_dict.get("last_name") is None:
+            tenant_dict["last_name"] = ""
 
-        # Handle NaN values for optional Decimal fields
-        for field in ["monthly_income"]:
-            if pd.isna(tenant_dict.get(field)):
-                tenant_dict[field] = None
+        # Optional int
+        if "credit_score" in tenant_dict and pd.notna(tenant_dict.get("credit_score")):
+            try:
+                tenant_dict["credit_score"] = int(tenant_dict["credit_score"])
+            except (TypeError, ValueError):
+                tenant_dict["credit_score"] = None
+        else:
+            tenant_dict["credit_score"] = None
+
+        if pd.isna(tenant_dict.get("monthly_income")):
+            tenant_dict["monthly_income"] = None
 
         # Parse landlord_references JSON string
-        if tenant_dict.get("landlord_references"):
+        if tenant_dict.get("landlord_references") and isinstance(tenant_dict["landlord_references"], str):
             try:
-                tenant_dict["landlord_references"] = json.loads(tenant_dict["landlord_references"]) if isinstance(tenant_dict["landlord_references"], str) else tenant_dict["landlord_references"]
+                tenant_dict["landlord_references"] = json.loads(tenant_dict["landlord_references"]) if tenant_dict["landlord_references"] else []
             except (json.JSONDecodeError, TypeError):
                 tenant_dict["landlord_references"] = []
         else:
-            tenant_dict["landlord_references"] = []
+            tenant_dict["landlord_references"] = tenant_dict.get("landlord_references") or []
 
         return TenantResponse.from_dict(tenant_dict)
 
@@ -388,10 +424,17 @@ async def update_tenant(
 
         logger.info(f"Updated tenant {tenant_id}")
 
-        # Convert back for response
+        # Convert back for response (same coercion as get/list so Pydantic accepts)
+        def _str_or_none_resp(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return None
+            return str(v) if not isinstance(v, str) else v
+
         for field in ["created_at", "updated_at"]:
             if pd.notna(current_tenant.get(field)):
-                current_tenant[field] = pd.Timestamp(current_tenant[field])
+                current_tenant[field] = pd.Timestamp(current_tenant[field]).to_pydatetime()
+            else:
+                current_tenant[field] = pd.Timestamp.now().to_pydatetime()
 
         for field in ["date_of_birth"]:
             if pd.notna(current_tenant.get(field)):
@@ -400,31 +443,40 @@ async def update_tenant(
                 current_tenant[field] = None
 
         for field in ["id", "property_id", "unit_id"]:
-            if current_tenant.get(field) and current_tenant[field] != "None":
+            if current_tenant.get(field) and str(current_tenant[field]) != "None" and not (isinstance(current_tenant.get(field), float) and pd.isna(current_tenant[field])):
                 try:
-                    current_tenant[field] = UUID(current_tenant[field])
-                except:
+                    current_tenant[field] = UUID(str(current_tenant[field]))
+                except Exception:
                     current_tenant[field] = None
             else:
                 current_tenant[field] = None
 
-        # Handle NaN values
-        for field in ["credit_score"]:
-            if pd.isna(current_tenant.get(field)):
-                current_tenant[field] = None
+        for field in ["first_name", "last_name", "email", "phone", "current_address", "current_city", "current_state", "current_zip", "employer_name", "status", "notes", "background_check_status"]:
+            if field in current_tenant:
+                current_tenant[field] = _str_or_none_resp(current_tenant[field])
+        if current_tenant.get("first_name") is None:
+            current_tenant["first_name"] = ""
+        if current_tenant.get("last_name") is None:
+            current_tenant["last_name"] = ""
 
-        for field in ["monthly_income"]:
-            if pd.isna(current_tenant.get(field)):
-                current_tenant[field] = None
-
-        # Parse landlord_references JSON string
-        if current_tenant.get("landlord_references"):
+        if "credit_score" in current_tenant and pd.notna(current_tenant.get("credit_score")):
             try:
-                current_tenant["landlord_references"] = json.loads(current_tenant["landlord_references"]) if isinstance(current_tenant["landlord_references"], str) else current_tenant["landlord_references"]
+                current_tenant["credit_score"] = int(current_tenant["credit_score"])
+            except (TypeError, ValueError):
+                current_tenant["credit_score"] = None
+        else:
+            current_tenant["credit_score"] = None
+
+        if pd.isna(current_tenant.get("monthly_income")):
+            current_tenant["monthly_income"] = None
+
+        if current_tenant.get("landlord_references") and isinstance(current_tenant["landlord_references"], str):
+            try:
+                current_tenant["landlord_references"] = json.loads(current_tenant["landlord_references"]) if current_tenant["landlord_references"] else []
             except (json.JSONDecodeError, TypeError):
                 current_tenant["landlord_references"] = []
         else:
-            current_tenant["landlord_references"] = []
+            current_tenant["landlord_references"] = current_tenant.get("landlord_references") or []
 
         return TenantResponse.from_dict(current_tenant)
 

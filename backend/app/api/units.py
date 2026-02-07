@@ -49,19 +49,22 @@ async def create_unit_endpoint(
             "property_id": unit_data.property_id,
             "unit_number": unit_data.unit_number,
             "bedrooms": unit_data.bedrooms,
-            "bathrooms": Decimal(str(unit_data.bathrooms)) if unit_data.bathrooms else None,
+            "bathrooms": float(unit_data.bathrooms) if unit_data.bathrooms is not None else None,
             "square_feet": unit_data.square_feet,
-            "current_monthly_rent": Decimal(str(unit_data.current_monthly_rent)) if unit_data.current_monthly_rent else None,
+            "current_monthly_rent": float(unit_data.current_monthly_rent) if unit_data.current_monthly_rent is not None else None,
             "notes": unit_data.notes,
             "created_at": now,
             "updated_at": now,
             "is_active": True,
         }
-        
-        # Append to Iceberg table
-        df = pd.DataFrame([unit_dict])
+
+        # Append to Iceberg table (table may use Decimal for numeric columns)
+        append_dict = {**unit_dict}
+        append_dict["bathrooms"] = Decimal(str(unit_data.bathrooms)) if unit_data.bathrooms is not None else None
+        append_dict["current_monthly_rent"] = Decimal(str(unit_data.current_monthly_rent)) if unit_data.current_monthly_rent is not None else None
+        df = pd.DataFrame([append_dict])
         append_data(NAMESPACE, TABLE_NAME, df)
-        
+
         return UnitResponse(**unit_dict)
     except HTTPException:
         raise
@@ -103,19 +106,24 @@ async def list_units_endpoint(
         ]
         
         total = len(property_units)
-        
-        # Convert to response objects
+
+        def _str_or_none(val):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            return str(val) if not isinstance(val, str) else val
+
+        # Convert to response objects (schema expects int/float/str, not pandas/Decimal)
         items = []
         for _, row in property_units.iterrows():
             unit_dict = {
                 "id": str(row["id"]),
                 "property_id": str(row["property_id"]),
-                "unit_number": row.get("unit_number"),
+                "unit_number": _str_or_none(row.get("unit_number")) or "",
                 "bedrooms": int(row["bedrooms"]) if pd.notna(row.get("bedrooms")) else None,
-                "bathrooms": Decimal(str(row["bathrooms"])) if pd.notna(row.get("bathrooms")) else None,
+                "bathrooms": float(Decimal(str(row["bathrooms"]))) if pd.notna(row.get("bathrooms")) else None,
                 "square_feet": int(row["square_feet"]) if pd.notna(row.get("square_feet")) else None,
-                "current_monthly_rent": Decimal(str(row["current_monthly_rent"])) if pd.notna(row.get("current_monthly_rent")) else None,
-                "notes": row.get("notes"),
+                "current_monthly_rent": float(Decimal(str(row["current_monthly_rent"]))) if pd.notna(row.get("current_monthly_rent")) else None,
+                "notes": _str_or_none(row.get("notes")),
                 "is_active": bool(row["is_active"]) if pd.notna(row.get("is_active")) else True,
                 "created_at": row["created_at"] if pd.notna(row.get("created_at")) else pd.Timestamp.now(),
                 "updated_at": row["updated_at"] if pd.notna(row.get("updated_at")) else pd.Timestamp.now(),
@@ -160,20 +168,26 @@ async def get_unit_endpoint(
             raise HTTPException(status_code=404, detail="Unit not found")
         
         row = unit_row.iloc[0]
+
+        def _str_or_none(val):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            return str(val) if not isinstance(val, str) else val
+
         unit_dict = {
             "id": str(row["id"]),
             "property_id": str(row["property_id"]),
-            "unit_number": row.get("unit_number"),
+            "unit_number": _str_or_none(row.get("unit_number")) or "",
             "bedrooms": int(row["bedrooms"]) if pd.notna(row.get("bedrooms")) else None,
-            "bathrooms": Decimal(str(row["bathrooms"])) if pd.notna(row.get("bathrooms")) else None,
+            "bathrooms": float(Decimal(str(row["bathrooms"]))) if pd.notna(row.get("bathrooms")) else None,
             "square_feet": int(row["square_feet"]) if pd.notna(row.get("square_feet")) else None,
-            "current_monthly_rent": Decimal(str(row["current_monthly_rent"])) if pd.notna(row.get("current_monthly_rent")) else None,
-            "notes": row.get("notes"),
+            "current_monthly_rent": float(Decimal(str(row["current_monthly_rent"]))) if pd.notna(row.get("current_monthly_rent")) else None,
+            "notes": _str_or_none(row.get("notes")),
             "is_active": bool(row["is_active"]) if pd.notna(row.get("is_active")) else True,
             "created_at": row["created_at"] if pd.notna(row.get("created_at")) else pd.Timestamp.now(),
             "updated_at": row["updated_at"] if pd.notna(row.get("updated_at")) else pd.Timestamp.now(),
         }
-        
+
         return UnitResponse(**unit_dict)
     except HTTPException:
         raise

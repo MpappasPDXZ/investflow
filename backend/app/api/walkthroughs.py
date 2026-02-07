@@ -16,6 +16,7 @@ from app.schemas.walkthrough import (
 from app.core.iceberg import read_table, table_exists, load_table, read_table_filtered, update_walkthrough_data, create_walkthrough_data
 import pyarrow as pa
 from app.core.logging import get_logger
+from app.core.coerce import clean_pandas_dict, str_or_none, uuid_or_none, date_or_none, datetime_or_now
 from app.services.adls_service import adls_service
 from app.services.walkthrough_generator_service import WalkthroughGeneratorService
 from app.services.document_service import document_service
@@ -1324,7 +1325,7 @@ async def get_walkthrough(
         
         # Get areas - prefer areas_json (new format) over separate table (legacy)
         area_responses = []
-        areas_json_str = walkthrough.get("areas_json")
+        areas_json_str = str_or_none(walkthrough.get("areas_json"))
         
         if areas_json_str:
             # New format: areas stored as JSON in walkthrough table
@@ -1462,29 +1463,41 @@ async def get_walkthrough(
                     updated_at=pd.Timestamp(area["updated_at"]).to_pydatetime()
                 ))
         
+        # --- NaN-safe response construction ---
+        # clean_pandas_dict replaces every NaN with None so truthiness checks work
+        w = clean_pandas_dict(dict(walkthrough))
+
         pdf_url = None
-        if walkthrough.get("generated_pdf_blob_name"):
-            pdf_url = adls_service.get_blob_download_url(walkthrough["generated_pdf_blob_name"])
-        
+        blob_name = str_or_none(w.get("generated_pdf_blob_name"))
+        if blob_name:
+            pdf_url = adls_service.get_blob_download_url(blob_name)
+
+        wt_type = str_or_none(w.get("walkthrough_type")) or "move_in"
+        if wt_type not in ("move_in", "move_out", "periodic", "maintenance"):
+            wt_type = "move_in"
+        status_val = str_or_none(w.get("status")) or "draft"
+        if status_val not in ("draft", "pending_signature", "completed"):
+            status_val = "draft"
+
         return WalkthroughResponse(
-            id=UUID(walkthrough["id"]),
-            property_id=UUID(walkthrough["property_id"]),
-            unit_id=UUID(walkthrough["unit_id"]) if walkthrough.get("unit_id") else None,
-            property_display_name=walkthrough.get("property_display_name"),
-            unit_number=walkthrough.get("unit_number"),
-            walkthrough_type=walkthrough["walkthrough_type"],
-            walkthrough_date=pd.Timestamp(walkthrough["walkthrough_date"]).date(),
-            inspector_name=walkthrough.get("inspector_name"),
-            tenant_name=walkthrough.get("tenant_name"),
-            tenant_signature_date=pd.Timestamp(walkthrough["tenant_signature_date"]).date() if walkthrough.get("tenant_signature_date") else None,
-            landlord_signature_date=pd.Timestamp(walkthrough["landlord_signature_date"]).date() if walkthrough.get("landlord_signature_date") else None,
-            notes=walkthrough.get("notes"),
-            status=walkthrough["status"],
-            generated_pdf_blob_name=walkthrough.get("generated_pdf_blob_name"),
+            id=uuid_or_none(w["id"]) or UUID(str(walkthrough_id)),
+            property_id=uuid_or_none(w["property_id"]) or UUID("00000000-0000-0000-0000-000000000000"),
+            unit_id=uuid_or_none(w.get("unit_id")),
+            property_display_name=str_or_none(w.get("property_display_name")),
+            unit_number=str_or_none(w.get("unit_number")),
+            walkthrough_type=wt_type,
+            walkthrough_date=date_or_none(w.get("walkthrough_date")) or date.today(),
+            inspector_name=str_or_none(w.get("inspector_name")),
+            tenant_name=str_or_none(w.get("tenant_name")),
+            tenant_signature_date=date_or_none(w.get("tenant_signature_date")),
+            landlord_signature_date=date_or_none(w.get("landlord_signature_date")),
+            notes=str_or_none(w.get("notes")),
+            status=status_val,
+            generated_pdf_blob_name=blob_name,
             pdf_url=pdf_url,
             areas=area_responses,
-            created_at=pd.Timestamp(walkthrough["created_at"]).to_pydatetime(),
-            updated_at=pd.Timestamp(walkthrough["updated_at"]).to_pydatetime()
+            created_at=datetime_or_now(w.get("created_at")),
+            updated_at=datetime_or_now(w.get("updated_at"))
         )
         
     except HTTPException:

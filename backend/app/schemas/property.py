@@ -1,9 +1,11 @@
 """Pydantic schemas for property-related API requests and responses"""
-from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from pydantic import BaseModel, Field, model_validator
+from typing import Optional, Literal, Any
 from datetime import datetime, date
 from uuid import UUID
 from decimal import Decimal
+
+from app.core.coerce import to_int_required, to_int_or_none
 
 
 class PropertyBase(BaseModel):
@@ -103,7 +105,7 @@ class PropertyUpdate(BaseModel):
 class PropertyResponse(PropertyBase):
     """
     Schema for property response - includes system fields in Iceberg order.
-    Fields ordered: PropertyBase fields + id, user_id (string), is_active (bool), created_at, updated_at (timestamp)
+    Coerces int64 fields only (Decimal/numpy -> int) so endpoints can pass row dicts.
     """
     # System fields (in Iceberg order - these come after PropertyBase fields)
     id: UUID  # string in Iceberg
@@ -111,6 +113,20 @@ class PropertyResponse(PropertyBase):
     is_active: bool  # bool in Iceberg
     created_at: datetime  # timestamp in Iceberg
     updated_at: datetime  # timestamp in Iceberg
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_int64_fields(cls, data: Any) -> Any:
+        """Only coerce int fields from Decimal/float/numpy. Everything else unchanged."""
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        if "purchase_price" in d:
+            d["purchase_price"] = to_int_required(d["purchase_price"])
+        for key in ("down_payment", "cash_invested", "current_market_value", "unit_count", "bedrooms", "square_feet", "year_built"):
+            if key in d:
+                d[key] = to_int_or_none(d[key])
+        return d
 
     class Config:
         from_attributes = True
