@@ -162,8 +162,13 @@ class WalkthroughGeneratorService:
             if property_zip:
                 property_address_full += f" {property_zip}"
         
+        # Include unit number in report when inspection is for a specific unit
+        unit_number = (walkthrough_data.get("unit_number") or "").strip()
+        if unit_number and unit_number not in (property_address_full or ""):
+            property_address_full = f"{(property_address_full or '').strip()}, Unit {unit_number}"
+
         property_address_full_escaped = self._escape_latex(property_address_full)
-        
+
         # Sort areas by floor order then area_order
         def get_floor_sort_key(area):
             floor = area.get("floor", "Floor 1")
