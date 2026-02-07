@@ -1,0 +1,25 @@
+---
+description: Never modify existing working API endpoints - create new ones instead
+globs: backend/app/api/**/*.py
+alwaysApply: false
+---
+
+# Never Modify Working Endpoints
+
+When fixing a bug for a specific page, **never modify an existing endpoint that other pages depend on**. Modifying shared endpoints causes regressions in unrelated areas.
+
+## Rule
+
+- If an endpoint is broken for a page, **create a new endpoint** rather than editing the existing one.
+- This applies even if the fix seems safe -- the risk of breaking other consumers is not worth it.
+- More endpoints is acceptable. Fewer bugs is the priority.
+
+## Example
+
+```
+# BAD: Editing GET /tenants to fix the walkthrough edit page
+#      breaks the tenants list page that was already working
+
+# GOOD: Create GET /tenants/for-walkthrough or similar
+#        dedicated to the walkthrough edit page's needs
+```

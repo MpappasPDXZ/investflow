@@ -667,14 +667,14 @@ export default function LeaseCreatePage() {
                   <div>
                     <Label htmlFor="unit_id" className="text-xs">Unit</Label>
                     <Select
-                      value={formData.unit_id || ''}
-                      onValueChange={(value) => setFormData({ ...formData, unit_id: value })}
+                      value={formData.unit_id || 'none'}
+                      onValueChange={(value) => setFormData({ ...formData, unit_id: value === 'none' ? '' : value })}
                     >
                       <SelectTrigger className="text-sm h-8 mt-1">
                         <SelectValue placeholder="Select unit" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {units.filter(u => u.property_id === formData.property_id).map((unit) => (
                           <SelectItem key={unit.id} value={unit.id}>
                             {unit.unit_number || unit.id}

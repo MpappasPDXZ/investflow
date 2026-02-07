@@ -65,6 +65,7 @@ export default function RentalApplicationPage() {
         documentType: 'rental_application',
         displayName: displayName || fileToUpload.name,
         tenantId: selectedTenantId,
+        propertyId: tenantForPropertyId?.property_id,
       });
       setFileToUpload(null);
       setDisplayName('');

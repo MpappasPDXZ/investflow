@@ -36,6 +36,15 @@ export default function AddPropertyPage() {
     notes: '',
   });
 
+  // Strip decimals for backend int64 dollar fields (backend expects integers only)
+  const toInt = (s: string): number | undefined => {
+    const trimmed = s.trim();
+    if (trimmed === '') return undefined;
+    const n = parseFloat(trimmed);
+    if (Number.isNaN(n)) return undefined;
+    return Math.trunc(n);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -45,14 +54,14 @@ export default function AddPropertyPage() {
       // Determine if property is multi-unit
       const isMultiUnit = formData.property_type === 'multi_family' || formData.property_type === 'duplex';
 
-      // Build the request payload
+      // Build the request payload (int64 dollar fields sent as integers)
       const payload: any = {
         display_name: formData.display_name || undefined,
-        purchase_price: parseFloat(formData.purchase_price) || 0,
+        purchase_price: toInt(formData.purchase_price) ?? 0,
         purchase_date: formData.purchase_date || '2024-10-23',
-        down_payment: formData.down_payment ? parseFloat(formData.down_payment) : undefined,
-        cash_invested: formData.cash_invested ? parseFloat(formData.cash_invested) : undefined,
-        current_market_value: formData.current_market_value ? parseFloat(formData.current_market_value) : undefined,
+        down_payment: toInt(formData.down_payment),
+        cash_invested: toInt(formData.cash_invested),
+        current_market_value: toInt(formData.current_market_value),
         property_status: formData.property_status,
         vacancy_rate: formData.vacancy_rate ? parseFloat(formData.vacancy_rate) : 0.07,
         monthly_rent_to_income_ratio: 2.75,
