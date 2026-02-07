@@ -316,36 +316,66 @@ async def list_walkthroughs(
         if status:
             walkthroughs_df = walkthroughs_df[walkthroughs_df["status"] == status]
         
+        # Coerce pandas NA/float to str or None so Pydantic never sees non-string for str fields
+        def _str_or_none(val):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            return str(val) if not isinstance(val, str) else val
+
         # Build simplified responses - NO AREAS, just count from areas_json
         items = []
         for _, walkthrough in walkthroughs_df.iterrows():
             # Count areas from areas_json (fast - just parse JSON length)
             areas_count = 0
             areas_json_str = walkthrough.get("areas_json")
-            if areas_json_str:
+            if areas_json_str and isinstance(areas_json_str, str):
                 try:
                     areas_data = json.loads(areas_json_str)
                     areas_count = len(areas_data) if isinstance(areas_data, list) else 0
-                except:
+                except Exception:
                     pass
-            
-            # Generate PDF URL if available
+
+            # Generate PDF URL if available (blob name must be str)
             pdf_url = None
-            if walkthrough.get("generated_pdf_blob_name"):
-                pdf_url = adls_service.get_blob_download_url(walkthrough["generated_pdf_blob_name"])
-            
+            blob_name = walkthrough.get("generated_pdf_blob_name")
+            if blob_name is not None and not (isinstance(blob_name, float) and pd.isna(blob_name)):
+                blob_name = str(blob_name)
+                pdf_url = adls_service.get_blob_download_url(blob_name)
+
+            # Coerce IDs and dates from pandas (can be numpy types)
+            wid = str(walkthrough["id"])
+            pid = str(walkthrough["property_id"])
+            unit_id_val = walkthrough.get("unit_id")
+            if unit_id_val is None or (isinstance(unit_id_val, float) and pd.isna(unit_id_val)):
+                uid = None
+            else:
+                uid = UUID(str(unit_id_val))
+
+            walkthrough_date_val = walkthrough.get("walkthrough_date")
+            if walkthrough_date_val is None or (isinstance(walkthrough_date_val, float) and pd.isna(walkthrough_date_val)):
+                wdate = pd.Timestamp.now().date()
+            else:
+                wdate = pd.Timestamp(walkthrough_date_val).date()
+
+            wt_type = _str_or_none(walkthrough.get("walkthrough_type")) or "move_in"
+            if wt_type not in ("move_in", "move_out", "periodic", "maintenance"):
+                wt_type = "move_in"
+            status_val = _str_or_none(walkthrough.get("status")) or "draft"
+            if status_val not in ("draft", "pending_signature", "completed"):
+                status_val = "draft"
+
             items.append(WalkthroughListItem(
-                id=UUID(walkthrough["id"]),
-                property_id=UUID(walkthrough["property_id"]),
-                unit_id=UUID(walkthrough["unit_id"]) if walkthrough.get("unit_id") else None,
-                property_display_name=walkthrough.get("property_display_name"),
-                unit_number=walkthrough.get("unit_number"),
-                walkthrough_type=walkthrough["walkthrough_type"],
-                walkthrough_date=pd.Timestamp(walkthrough["walkthrough_date"]).date(),
-                inspector_name=walkthrough.get("inspector_name"),
-                tenant_name=walkthrough.get("tenant_name"),
-                status=walkthrough.get("status", "draft"),
-                generated_pdf_blob_name=walkthrough.get("generated_pdf_blob_name"),
+                id=UUID(wid),
+                property_id=UUID(pid),
+                unit_id=uid,
+                property_display_name=_str_or_none(walkthrough.get("property_display_name")),
+                unit_number=_str_or_none(walkthrough.get("unit_number")),
+                walkthrough_type=wt_type,
+                walkthrough_date=wdate,
+                inspector_name=_str_or_none(walkthrough.get("inspector_name")),
+                tenant_name=_str_or_none(walkthrough.get("tenant_name")),
+                status=status_val,
+                generated_pdf_blob_name=_str_or_none(walkthrough.get("generated_pdf_blob_name")),
                 pdf_url=pdf_url,
                 areas_count=areas_count,
                 created_at=pd.Timestamp(walkthrough["created_at"]).to_pydatetime(),

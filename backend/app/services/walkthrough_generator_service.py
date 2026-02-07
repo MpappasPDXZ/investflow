@@ -162,10 +162,19 @@ class WalkthroughGeneratorService:
             if property_zip:
                 property_address_full += f" {property_zip}"
         
-        # Include unit number in report when inspection is for a specific unit
-        unit_number = (walkthrough_data.get("unit_number") or "").strip()
+        # Include unit number in street line (e.g. "316 1/2 S 50th Ave, Omaha, NE 68132") to match left pane
+        raw_unit = walkthrough_data.get("unit_number")
+        if raw_unit is None or (isinstance(raw_unit, float) and pd.isna(raw_unit)):
+            unit_number = ""
+        else:
+            unit_number = str(raw_unit).strip()
         if unit_number and unit_number not in (property_address_full or ""):
-            property_address_full = f"{(property_address_full or '').strip()}, Unit {unit_number}"
+            addr = (property_address_full or "").strip()
+            parts = addr.split(None, 1)  # split on first whitespace: ["316", "S 50th Ave, Omaha..."]
+            if len(parts) >= 2:
+                property_address_full = f"{unit_number} {parts[1]}"
+            else:
+                property_address_full = f"{unit_number} {addr}"
 
         property_address_full_escaped = self._escape_latex(property_address_full)
 

@@ -591,34 +591,41 @@ async def list_properties_endpoint(
         # Apply pagination
         paginated = user_properties.iloc[skip:skip + limit]
         
-        # Convert to PropertyResponse objects
+        # Convert to PropertyResponse objects (schema expects int/float/Decimal/str, not pandas types)
+        def _str_or_none(val):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            return str(val) if not isinstance(val, str) else val
+
         convert_start = time.time()
         items = []
         for _, row in paginated.iterrows():
             prop_dict = {
                 "id": UUID(str(row["id"])),
                 "user_id": UUID(str(row["user_id"])),
-                "display_name": row.get("display_name"),
-                "purchase_price": Decimal(str(row["purchase_price"])),
+                "display_name": _str_or_none(row.get("display_name")),
+                "purchase_price": int(Decimal(str(row["purchase_price"]))),
                 "purchase_date": row.get("purchase_date") if pd.notna(row.get("purchase_date")) else None,
-                "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
-                "cash_invested": Decimal(str(row["cash_invested"])) if pd.notna(row.get("cash_invested")) else None,
-                "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
-                "property_status": row.get("property_status", "evaluating"),
-                "vacancy_rate": Decimal(str(row["vacancy_rate"])) if pd.notna(row.get("vacancy_rate")) else Decimal("0.07"),
+                "down_payment": int(Decimal(str(row["down_payment"]))) if pd.notna(row.get("down_payment")) else None,
+                "cash_invested": int(Decimal(str(row["cash_invested"]))) if pd.notna(row.get("cash_invested")) else None,
+                "current_market_value": int(Decimal(str(row["current_market_value"]))) if pd.notna(row.get("current_market_value")) else None,
+                "property_status": _str_or_none(row.get("property_status")) or "evaluating",
+                "vacancy_rate": float(Decimal(str(row["vacancy_rate"]))) if pd.notna(row.get("vacancy_rate")) else 0.07,
                 "monthly_rent_to_income_ratio": Decimal(str(row["monthly_rent_to_income_ratio"])) if pd.notna(row.get("monthly_rent_to_income_ratio")) else Decimal("2.75"),
-                "address_line1": row.get("address_line1"),
-                "address_line2": row.get("address_line2"),
-                "city": row.get("city"),
-                "state": row.get("state"),
-                "zip_code": row.get("zip_code"),
-                "property_type": row.get("property_type"),
+                "address_line1": _str_or_none(row.get("address_line1")),
+                "address_line2": _str_or_none(row.get("address_line2")),
+                "city": _str_or_none(row.get("city")),
+                "state": _str_or_none(row.get("state")),
+                "zip_code": _str_or_none(row.get("zip_code")),
+                "property_type": _str_or_none(row.get("property_type")),
+                "has_units": bool(row["has_units"]) if pd.notna(row.get("has_units")) else False,
+                "unit_count": int(row["unit_count"]) if pd.notna(row.get("unit_count")) else None,
                 "bedrooms": int(row["bedrooms"]) if pd.notna(row.get("bedrooms")) else None,
-                "bathrooms": Decimal(str(row["bathrooms"])) if pd.notna(row.get("bathrooms")) else None,
+                "bathrooms": float(Decimal(str(row["bathrooms"]))) if pd.notna(row.get("bathrooms")) else None,
                 "square_feet": int(row["square_feet"]) if pd.notna(row.get("square_feet")) else None,
                 "year_built": int(row["year_built"]) if pd.notna(row.get("year_built")) else None,
-                "current_monthly_rent": Decimal(str(row["current_monthly_rent"])) if pd.notna(row.get("current_monthly_rent")) else None,
-                "notes": row.get("notes"),
+                "current_monthly_rent": float(Decimal(str(row["current_monthly_rent"]))) if pd.notna(row.get("current_monthly_rent")) else None,
+                "notes": _str_or_none(row.get("notes")),
                 "is_active": bool(row["is_active"]) if pd.notna(row.get("is_active")) else True,
                 "created_at": row["created_at"] if pd.notna(row.get("created_at")) else pd.Timestamp.now(),
                 "updated_at": row["updated_at"] if pd.notna(row.get("updated_at")) else pd.Timestamp.now(),
@@ -670,37 +677,44 @@ async def get_property_endpoint(
             raise HTTPException(status_code=404, detail="Property not found")
         
         row = property_rows.iloc[0]
-        
-        # Convert to response
+
+        def _str_or_none(val):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            return str(val) if not isinstance(val, str) else val
+
+        # Convert to response (schema expects int/float/Decimal/str)
         prop_dict = {
             "id": UUID(str(row["id"])),
             "user_id": UUID(str(row["user_id"])),
-            "display_name": row.get("display_name"),
-            "purchase_price": Decimal(str(row["purchase_price"])),
+            "display_name": _str_or_none(row.get("display_name")),
+            "purchase_price": int(Decimal(str(row["purchase_price"]))),
             "purchase_date": row.get("purchase_date") if pd.notna(row.get("purchase_date")) else None,
-            "down_payment": Decimal(str(row["down_payment"])) if pd.notna(row.get("down_payment")) else None,
-            "cash_invested": Decimal(str(row["cash_invested"])) if pd.notna(row.get("cash_invested")) else None,
-            "current_market_value": Decimal(str(row["current_market_value"])) if pd.notna(row.get("current_market_value")) else None,
-            "property_status": row.get("property_status", "evaluating"),
-            "vacancy_rate": Decimal(str(row["vacancy_rate"])) if pd.notna(row.get("vacancy_rate")) else Decimal("0.07"),
+            "down_payment": int(Decimal(str(row["down_payment"]))) if pd.notna(row.get("down_payment")) else None,
+            "cash_invested": int(Decimal(str(row["cash_invested"]))) if pd.notna(row.get("cash_invested")) else None,
+            "current_market_value": int(Decimal(str(row["current_market_value"]))) if pd.notna(row.get("current_market_value")) else None,
+            "property_status": _str_or_none(row.get("property_status")) or "evaluating",
+            "vacancy_rate": float(Decimal(str(row["vacancy_rate"]))) if pd.notna(row.get("vacancy_rate")) else 0.07,
             "monthly_rent_to_income_ratio": Decimal(str(row["monthly_rent_to_income_ratio"])) if pd.notna(row.get("monthly_rent_to_income_ratio")) else None,
-            "address_line1": row.get("address_line1"),
-            "address_line2": row.get("address_line2"),
-            "city": row.get("city"),
-            "state": row.get("state"),
-            "zip_code": row.get("zip_code"),
-            "property_type": row.get("property_type"),
+            "address_line1": _str_or_none(row.get("address_line1")),
+            "address_line2": _str_or_none(row.get("address_line2")),
+            "city": _str_or_none(row.get("city")),
+            "state": _str_or_none(row.get("state")),
+            "zip_code": _str_or_none(row.get("zip_code")),
+            "property_type": _str_or_none(row.get("property_type")),
+            "has_units": bool(row["has_units"]) if pd.notna(row.get("has_units")) else False,
+            "unit_count": int(row["unit_count"]) if pd.notna(row.get("unit_count")) else None,
             "bedrooms": int(row["bedrooms"]) if pd.notna(row.get("bedrooms")) else None,
-            "bathrooms": Decimal(str(row["bathrooms"])) if pd.notna(row.get("bathrooms")) else None,
+            "bathrooms": float(Decimal(str(row["bathrooms"]))) if pd.notna(row.get("bathrooms")) else None,
             "square_feet": int(row["square_feet"]) if pd.notna(row.get("square_feet")) else None,
             "year_built": int(row["year_built"]) if pd.notna(row.get("year_built")) else None,
-            "current_monthly_rent": Decimal(str(row["current_monthly_rent"])) if pd.notna(row.get("current_monthly_rent")) else None,
-            "notes": row.get("notes"),
+            "current_monthly_rent": float(Decimal(str(row["current_monthly_rent"]))) if pd.notna(row.get("current_monthly_rent")) else None,
+            "notes": _str_or_none(row.get("notes")),
             "is_active": bool(row["is_active"]) if pd.notna(row.get("is_active")) else True,
             "created_at": row["created_at"] if pd.notna(row.get("created_at")) else pd.Timestamp.now(),
             "updated_at": row["updated_at"] if pd.notna(row.get("updated_at")) else pd.Timestamp.now(),
         }
-        
+
         return PropertyResponse(**prop_dict)
     except HTTPException:
         raise
