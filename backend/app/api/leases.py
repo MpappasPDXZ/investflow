@@ -940,10 +940,13 @@ async def update_lease(
         if "lease_date" in lease_dict and lease_dict["lease_date"] is not None:
             response_dict["lease_date"] = pd.Timestamp(lease_dict["lease_date"]).date() if isinstance(lease_dict["lease_date"], pd.Timestamp) else lease_dict["lease_date"]
         
-        # Get PDF URL if exists
-        if lease_dict.get("generated_pdf_document_id"):
-            response_dict["pdf_url"] = adls_service.get_blob_download_url(lease_dict["generated_pdf_document_id"])
-            latex_blob = lease_dict["generated_pdf_document_id"].replace('.pdf', '.tex')
+        # Get PDF URL if exists (guard against NaN)
+        pdf_doc_id = lease_dict.get("generated_pdf_document_id")
+        if isinstance(pdf_doc_id, float) and pd.isna(pdf_doc_id):
+            pdf_doc_id = None
+        if pdf_doc_id:
+            response_dict["pdf_url"] = adls_service.get_blob_download_url(str(pdf_doc_id))
+            latex_blob = str(pdf_doc_id).replace('.pdf', '.tex')
             if adls_service.blob_exists(latex_blob):
                 response_dict["latex_url"] = adls_service.get_blob_download_url(latex_blob)
         else:
@@ -1023,8 +1026,10 @@ async def list_leases(
                 # Get property summary (pass the already-loaded properties_df to avoid re-reading)
                 property_summary = _get_property_summary(lease["property_id"], lease.get("unit_id"), properties_df)
                 
-                # Get tenants from JSON column
+                # Get tenants from JSON column (guard against NaN)
                 tenants_json = lease.get("tenants")
+                if isinstance(tenants_json, float) and pd.isna(tenants_json):
+                    tenants_json = None
                 lease_tenants = _deserialize_tenants(tenants_json) if tenants_json else []
                 # Set lease_id on all tenant responses
                 for tenant_resp in lease_tenants:
@@ -1034,10 +1039,11 @@ async def list_leases(
                     for t in lease_tenants
                 ]
                 
-                # Get PDF URL if exists
+                # Get PDF URL if exists (guard against NaN - NaN is truthy!)
                 pdf_url = None
-                if lease.get("generated_pdf_document_id"):
-                    pdf_url = adls_service.get_blob_download_url(lease["generated_pdf_document_id"])
+                pdf_doc_id = lease.get("generated_pdf_document_id")
+                if pdf_doc_id is not None and not (isinstance(pdf_doc_id, float) and pd.isna(pdf_doc_id)):
+                    pdf_url = adls_service.get_blob_download_url(str(pdf_doc_id))
                 
                 # Handle dates - similar to get_lease
                 lease_start = lease.get("lease_start")
@@ -1060,17 +1066,27 @@ async def list_leases(
                     logger.warning(f"Lease {lease['id']} has invalid dates: lease_end ({lease_end_date}) < lease_start ({lease_start_date}). Setting lease_end = lease_start.")
                     lease_end_date = lease_start_date
                 
+                # Guard unit_id against NaN
+                unit_id_val = lease.get("unit_id")
+                if isinstance(unit_id_val, float) and pd.isna(unit_id_val):
+                    unit_id_val = None
+
+                # Guard status against NaN
+                status_val = lease.get("status", "draft")
+                if isinstance(status_val, float) and pd.isna(status_val):
+                    status_val = "draft"
+
                 lease_items.append(LeaseListItem(
                     id=UUID(lease["id"]),
                     property_id=UUID(lease["property_id"]),
-                    unit_id=UUID(lease["unit_id"]) if lease.get("unit_id") else None,
-                    lease_number=int(lease.get("lease_number", 0)),
+                    unit_id=UUID(str(unit_id_val)) if unit_id_val else None,
+                    lease_number=int(lease.get("lease_number", 0) if pd.notna(lease.get("lease_number", 0)) else 0),
                     property=PropertySummary(**property_summary),
                     tenants=tenant_list,
                     lease_start=lease_start_date,
                     lease_end=lease_end_date,
                     monthly_rent=Decimal(str(lease["monthly_rent"])),
-                    status=lease.get("status", "draft"),  # Default to "draft" if missing
+                    status=status_val,
                     pdf_url=pdf_url,
                     created_at=pd.Timestamp(lease["created_at"]).to_pydatetime()
                 ))
@@ -1141,11 +1157,14 @@ async def get_lease(
         for tenant_resp in tenant_responses:
             tenant_resp.lease_id = lease_id
         
-        # Get PDF and LaTeX URLs if they exist
+        # Get PDF and LaTeX URLs if they exist (guard against NaN)
         pdf_url = None
         latex_url = None
-        if lease.get("generated_pdf_document_id"):
-            pdf_blob = lease["generated_pdf_document_id"]
+        pdf_doc_id = lease.get("generated_pdf_document_id")
+        if isinstance(pdf_doc_id, float) and pd.isna(pdf_doc_id):
+            pdf_doc_id = None
+        if pdf_doc_id:
+            pdf_blob = str(pdf_doc_id)
             latex_blob = pdf_blob.replace('.pdf', '.tex')
             
             if adls_service.blob_exists(pdf_blob):

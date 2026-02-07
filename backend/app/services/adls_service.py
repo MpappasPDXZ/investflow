@@ -68,8 +68,20 @@ class ADLSService:
             Dictionary with blob metadata including blob_name, blob_location, etc.
         """
         try:
+            # Sanitize filename: keep only the extension period, replace all others
+            # e.g. "my.file.name (copy).pdf" -> "my_file_name__copy__pdf" with ext "pdf"
+            import re
+            if '.' in filename:
+                name_part = '.'.join(filename.rsplit('.')[:-1])  # everything before last dot
+                file_ext = filename.rsplit('.')[-1]
+            else:
+                name_part = filename
+                file_ext = ''
+            # Replace any character that isn't alphanumeric, hyphen, or underscore
+            sanitized_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name_part)
+            filename = f"{sanitized_name}.{file_ext}" if file_ext else sanitized_name
+
             # Generate unique blob name
-            file_ext = filename.split('.')[-1] if '.' in filename else ''
             blob_id = str(uuid.uuid4())
             
             # Organize into folders: expenses for receipts, user_documents for others

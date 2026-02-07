@@ -794,14 +794,14 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
 \noindent\begin{tabularx}{\textwidth}{@{}X X@{}}
 \rule{7cm}{0.4pt} & \rule{7cm}{0.4pt} \\
 \textbf{Landlord:} S\&M Axios Heartland Holdings, LLC & \textbf{Date} \\
-\textit{By: ''' + self._escape_latex(manager_name) + r''', Member} & \\[3em]
+\textit{By: ''' + self._escape_latex(manager_name) + r''', Member} & \\[4em]
 '''
 
         # Add signature lines for each tenant
         for tenant in tenants:
             tenant_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}"
             latex += r'''\rule{7cm}{0.4pt} & \rule{7cm}{0.4pt} \\
-\textbf{Tenant:} ''' + tenant_name + r''' & \textbf{Date} \\[3em]
+\textbf{Tenant:} ''' + tenant_name + r''' & \textbf{Date} \\[4em]
 '''
 
         latex += r'''\end{tabularx}
@@ -1229,10 +1229,17 @@ This Agreement shall be governed by the laws of the State of ''' + ("Nebraska" i
 
 \begin{tabular}{p{3in}p{0.5in}p{2in}}
 \rule{3in}{0.4pt} & & \rule{2in}{0.4pt} \\
-Landlord Signature & & Date \\[0.8em]
-\rule{3in}{0.4pt} & & \rule{2in}{0.4pt} \\
-Prospective Tenant Signature & & Date \\
-\end{tabular}
+Landlord Signature & & Date \\[2em]
+'''
+
+        # Add signature lines for each tenant
+        for tenant in tenants:
+            tenant_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
+            latex += r'''\rule{3in}{0.4pt} & & \rule{2in}{0.4pt} \\
+Prospective Tenant: ''' + self._escape_latex(tenant_name) + r''' & & Date \\[2em]
+'''
+
+        latex += r'''\end{tabular}
 
 \vspace{1em}
 
