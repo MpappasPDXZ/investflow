@@ -170,7 +170,7 @@ class LeaseBase(BaseModel):
     
     # Lead Paint
     lead_paint_disclosure: Optional[bool] = True
-    lead_paint_year_built: Optional[int] = Field(None, ge=1800, le=2100)
+    disclosure_lead_paint: Optional[int] = Field(None, ge=1800, le=2100, description="Year built for lead paint disclosure")
     
     # Early Termination
     early_termination_allowed: Optional[bool] = True
@@ -238,8 +238,14 @@ class LeaseCreate(LeaseBase):
 
 class LeaseUpdate(BaseModel):
     """Lease update (all fields optional except cannot change property/state)"""
+    # Unit (can be changed)
+    unit_id: Optional[UUID] = None
+    
     # Metadata
     status: Optional[str] = Field(None, pattern="^(draft|pending_signature|active|expired|terminated|final|other)$", description="Lease status")
+    
+    # Tenants (JSON column - send empty list to clear, omit to keep existing)
+    tenants: Optional[List[TenantCreate]] = None
     
     # Dates
     lease_start: Optional[date] = None
@@ -320,7 +326,7 @@ class LeaseUpdate(BaseModel):
     has_basement: Optional[bool] = None
     appliances_provided: Optional[str] = Field(None, max_length=1000)
     lead_paint_disclosure: Optional[bool] = None
-    lead_paint_year_built: Optional[int] = Field(None, ge=1800, le=2100)
+    disclosure_lead_paint: Optional[int] = Field(None, ge=1800, le=2100, description="Year built for lead paint disclosure")
     early_termination_allowed: Optional[bool] = None
     early_termination_notice_days: Optional[int] = Field(None, ge=0)
     early_termination_fee_months: Optional[int] = Field(None, ge=0)

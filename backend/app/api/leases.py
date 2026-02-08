@@ -764,36 +764,48 @@ async def update_lease(
         _verify_property_ownership(existing_lease["property_id"], user_id)
         
         # Convert to dict and merge with existing data
-        update_dict = lease_data.model_dump(exclude_unset=True, exclude={"tenants"})
+        update_dict = lease_data.model_dump(exclude_unset=True, exclude={"tenants", "pets", "moveout_costs"})
         lease_dict = existing_lease.to_dict()
         
-        # Update fields
+        # Update fields - any field that was explicitly sent (exclude_unset=True above)
+        # should be updated, including None values (to allow clearing optional fields)
+        # and falsy values like 0, False, empty string
+        NULLABLE_FIELDS = {"unit_id", "garage_back_door_keys", "has_garage_door_opener", "garage_door_opener_fee", 
+                           "owner_name", "notes", "manager_name", "manager_address"}
         for key, value in update_dict.items():
-            # Explicitly handle 0, False, and empty string as valid values (not None)
-            if value is not None or key in ["garage_back_door_keys", "has_garage_door_opener", "garage_door_opener_fee"]:
-                # For these specific fields, allow 0/False to be set explicitly
-                if key in ["garage_back_door_keys", "has_garage_door_opener", "garage_door_opener_fee"]:
-                    lease_dict[key] = value
-                elif value is not None:
-                    lease_dict[key] = value
+            if key in NULLABLE_FIELDS:
+                # These fields can be explicitly set to None/0/False
+                lease_dict[key] = value
+            elif value is not None:
+                lease_dict[key] = value
         
         lease_dict["id"] = str(lease_id)
         lease_dict["updated_at"] = now
         lease_dict["lease_version"] = existing_lease["lease_version"] + 1
         
         # Serialize moveout_costs as JSON (like tenants)
-        if hasattr(lease_data, 'moveout_costs') and lease_data.moveout_costs is not None:
-            lease_dict["moveout_costs"] = _serialize_moveout_costs(lease_data.moveout_costs)
+        # Check if moveout_costs was explicitly sent (even as empty list = clear)
+        if "moveout_costs" in lease_data.model_fields_set:
+            if lease_data.moveout_costs is not None and len(lease_data.moveout_costs) > 0:
+                lease_dict["moveout_costs"] = _serialize_moveout_costs(lease_data.moveout_costs)
+            else:
+                # Explicitly sent as empty list or None = clear
+                lease_dict["moveout_costs"] = None
         else:
-            # Keep existing value if not provided
+            # Not sent at all = keep existing value
             existing_moveout_costs = existing_lease.get("moveout_costs")
             lease_dict["moveout_costs"] = existing_moveout_costs if existing_moveout_costs else None
         
         # Serialize pets as JSON (like tenants)
-        if hasattr(lease_data, 'pets') and lease_data.pets is not None:
-            lease_dict["pets"] = _serialize_pets(lease_data.pets)
+        # Check if pets was explicitly sent (even as empty list = clear)
+        if "pets" in lease_data.model_fields_set:
+            if lease_data.pets is not None and len(lease_data.pets) > 0:
+                lease_dict["pets"] = _serialize_pets(lease_data.pets)
+            else:
+                # Explicitly sent as empty list or None = clear
+                lease_dict["pets"] = None
         else:
-            # Keep existing value if not provided, or migrate from pet_description
+            # Not sent at all = keep existing value, or migrate from pet_description
             existing_pets = existing_lease.get("pets")
             if existing_pets:
                 lease_dict["pets"] = existing_pets
@@ -815,6 +827,44 @@ async def update_lease(
             lease_dict["lease_end"] = parse_date_midday(lease_data.lease_end)
         if hasattr(lease_data, 'lease_date') and lease_data.lease_date:
             lease_dict["lease_date"] = parse_date_midday(lease_data.lease_date)
+        
+        # Serialize tenants BEFORE writing to DB (must be in lease_dict before append)
+        # Check if tenants was explicitly sent (even as empty list = clear)
+        tenant_responses = []
+        if "tenants" in lease_data.model_fields_set:
+            if lease_data.tenants is not None and len(lease_data.tenants) > 0:
+                # Serialize tenants as JSON and update in lease_dict
+                lease_dict["tenants"] = _serialize_tenants(lease_data.tenants)
+                
+                # Create tenant responses
+                for idx, tenant in enumerate(lease_data.tenants):
+                    tenant_id = str(uuid.uuid4())
+                    tenant_responses.append(TenantResponse(
+                        id=UUID(tenant_id),
+                        lease_id=lease_id,
+                        tenant_order=idx + 1,
+                        first_name=tenant.first_name,
+                        last_name=tenant.last_name,
+                        email=tenant.email,
+                        phone=tenant.phone,
+                        signed_date=None,
+                        created_at=now.to_pydatetime(),
+                        updated_at=now.to_pydatetime()
+                    ))
+            else:
+                # Explicitly sent as empty list or None = clear tenants
+                lease_dict["tenants"] = None
+                tenant_responses = []
+        else:
+            # Not sent at all = keep existing tenants
+            tenants_json = existing_lease.get("tenants")
+            if tenants_json:
+                tenant_responses = _deserialize_tenants(tenants_json)
+                # Set lease_id on all tenant responses
+                for tenant_resp in tenant_responses:
+                    tenant_resp.lease_id = lease_id
+            else:
+                tenant_responses = []
         
         # OPTIMIZATION: Use delete + append instead of upsert (upsert is slow - 60+ seconds!)
         # Delete is fast with predicate pushdown, append is fast
@@ -857,38 +907,6 @@ async def update_lease(
         logger.info(f"⏱️ [PERF] append_data(leases) for update took {time.time() - append_start:.2f}s")
         logger.info(f"Updated lease {lease_id} (version {lease_dict['lease_version']}) via delete+append")
         
-        # Update tenants if provided - serialize as JSON
-        tenant_responses = []
-        if hasattr(lease_data, 'tenants') and lease_data.tenants is not None:
-            # Serialize tenants as JSON and update in lease_dict
-            lease_dict["tenants"] = _serialize_tenants(lease_data.tenants)
-            
-            # Create tenant responses
-            for idx, tenant in enumerate(lease_data.tenants):
-                tenant_id = str(uuid.uuid4())
-                tenant_responses.append(TenantResponse(
-                    id=UUID(tenant_id),
-                    lease_id=lease_id,
-                    tenant_order=idx + 1,
-                    first_name=tenant.first_name,
-                    last_name=tenant.last_name,
-                    email=tenant.email,
-                    phone=tenant.phone,
-                    signed_date=None,  # Not collected/stored for leases
-                    created_at=now.to_pydatetime(),
-                    updated_at=now.to_pydatetime()
-                ))
-        else:
-            # Get existing tenants from JSON column
-            tenants_json = existing_lease.get("tenants")
-            if tenants_json:
-                tenant_responses = _deserialize_tenants(tenants_json)
-                # Set lease_id on all tenant responses
-                for tenant_resp in tenant_responses:
-                    tenant_resp.lease_id = lease_id
-            else:
-                tenant_responses = []
-        
         # Get property summary
         property_summary_start = time.time()
         property_summary = _get_property_summary(lease_dict["property_id"], lease_dict.get("unit_id"))
@@ -900,8 +918,11 @@ async def update_lease(
         
         # Replace NaN values with None for numeric fields before Pydantic validation
         for key, value in response_dict.items():
-            if pd.isna(value):
-                response_dict[key] = None
+            try:
+                if isinstance(value, float) and pd.isna(value):
+                    response_dict[key] = None
+            except (TypeError, ValueError):
+                pass  # Non-scalar (list, dict) - leave as-is
         
         response_dict["id"] = lease_id
         response_dict["user_id"] = UUID(user_id)
@@ -911,19 +932,22 @@ async def update_lease(
         response_dict["lease_number"] = int(lease_dict.get("lease_number", 0)) if lease_dict.get("lease_number") is not None and not pd.isna(lease_dict.get("lease_number")) else 0
         response_dict["property"] = PropertySummary(**property_summary)
         response_dict["tenants"] = tenant_responses
-        # Deserialize moveout_costs from JSON (like tenants)
-        moveout_costs_json = lease_dict.get("moveout_costs")
-        response_dict["moveout_costs"] = lease_data.moveout_costs if (hasattr(lease_data, 'moveout_costs') and lease_data.moveout_costs is not None) else _deserialize_moveout_costs(moveout_costs_json)
         
-        # Deserialize pets from JSON (like tenants)
-        pets_json = lease_dict.get("pets")
-        if hasattr(lease_data, 'pets') and lease_data.pets is not None:
+        # Deserialize moveout_costs for response
+        if "moveout_costs" in lease_data.model_fields_set and lease_data.moveout_costs is not None:
+            response_dict["moveout_costs"] = lease_data.moveout_costs
+        else:
+            moveout_costs_json = lease_dict.get("moveout_costs")
+            response_dict["moveout_costs"] = _deserialize_moveout_costs(moveout_costs_json) if moveout_costs_json and isinstance(moveout_costs_json, str) else []
+        
+        # Deserialize pets for response
+        if "pets" in lease_data.model_fields_set and lease_data.pets is not None:
             response_dict["pets"] = lease_data.pets
         else:
-            # Try pets column first, then fallback to pet_description for backward compatibility
-            if pets_json:
+            pets_json = lease_dict.get("pets")
+            if pets_json and isinstance(pets_json, str):
                 response_dict["pets"] = _deserialize_pets(pets_json)
-            elif lease_dict.get("pet_description"):
+            elif lease_dict.get("pet_description") and isinstance(lease_dict.get("pet_description"), str):
                 try:
                     pet_descriptions = json.loads(lease_dict["pet_description"])
                     response_dict["pets"] = [{"type": p.get("pet_type"), "breed": p.get("breed"), "name": p.get("pet_name"), "weight": p.get("weight"), "isEmotionalSupport": False} for p in pet_descriptions]
