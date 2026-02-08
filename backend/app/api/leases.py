@@ -1175,28 +1175,32 @@ async def get_lease(
         # Build response
         response_dict = lease.to_dict()
         
-        # Replace NaN values with None for numeric fields
+        # Replace NaN values with None (guard against non-scalar types like lists/dicts)
         for key, value in response_dict.items():
-            if pd.isna(value):
-                response_dict[key] = None
+            try:
+                if isinstance(value, float) and pd.isna(value):
+                    response_dict[key] = None
+            except (TypeError, ValueError):
+                pass  # Non-scalar (list, dict) - leave as-is
         
         response_dict["id"] = UUID(lease["id"])
         response_dict["user_id"] = UUID(user_id)  # Get from current_user, not from lease (since user_id is removed from schema)
         response_dict["property_id"] = UUID(lease["property_id"])
-        response_dict["unit_id"] = UUID(lease["unit_id"]) if lease.get("unit_id") else None
+        unit_id_val = response_dict.get("unit_id")
+        response_dict["unit_id"] = UUID(str(unit_id_val)) if unit_id_val else None
         # Handle lease_number - default to 0 if missing (for existing leases created before this field was added)
         response_dict["lease_number"] = int(lease.get("lease_number", 0)) if lease.get("lease_number") is not None and not pd.isna(lease.get("lease_number")) else 0
         response_dict["property"] = PropertySummary(**property_summary)
         response_dict["tenants"] = tenant_responses
-        # Deserialize moveout_costs from JSON (like tenants)
-        moveout_costs_json = lease.get("moveout_costs")
-        response_dict["moveout_costs"] = _deserialize_moveout_costs(moveout_costs_json)
+        # Deserialize moveout_costs from JSON (like tenants) - use response_dict (NaN already cleaned)
+        moveout_costs_json = response_dict.get("moveout_costs")
+        response_dict["moveout_costs"] = _deserialize_moveout_costs(moveout_costs_json) if moveout_costs_json and isinstance(moveout_costs_json, str) else []
         
-        # Deserialize pets from JSON (like tenants)
-        pets_json = lease.get("pets")
-        if pets_json:
+        # Deserialize pets from JSON (like tenants) - use response_dict (NaN already cleaned)
+        pets_json = response_dict.get("pets")
+        if pets_json and isinstance(pets_json, str):
             response_dict["pets"] = _deserialize_pets(pets_json)
-        elif lease.get("pet_description"):
+        elif response_dict.get("pet_description") and isinstance(response_dict.get("pet_description"), str):
             # Fallback to old pet_description format for backward compatibility
             try:
                 pet_descriptions = json.loads(lease["pet_description"])
