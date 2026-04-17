@@ -527,7 +527,7 @@ async def list_rents_endpoint(
     unit_id: Optional[UUID] = Query(None, description="Filter by unit ID"),
     year: Optional[int] = Query(None, description="Filter by rent period year"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(1000, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)
 ):
     """List rent payments for a property (property_id required)"""

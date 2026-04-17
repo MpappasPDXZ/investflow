@@ -89,7 +89,7 @@ async def list_documents_endpoint(
     tenant_id: Optional[UUID] = Query(None, description="Filter by tenant ID"),
     document_type: Optional[str] = Query(None, description="Filter by document type"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(1000, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)
 ):
     """List documents for a property (property_id required, secured by property_id)"""

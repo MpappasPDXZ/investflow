@@ -9,12 +9,31 @@ export function useExpenses(propertyId?: string) {
   return useQuery<ExpenseListResponse>({
     queryKey: ['expenses', propertyId],
     queryFn: () => {
-      const params = propertyId ? `?property_id=${propertyId}` : '';
-      return apiClient.get<ExpenseListResponse>(`/expenses${params}`);
+      const params = new URLSearchParams();
+      if (propertyId) params.append('property_id', propertyId);
+      params.append('limit', '1000');
+      return apiClient.get<ExpenseListResponse>(`/expenses?${params.toString()}`);
     },
-    enabled: !!propertyId, // Only fetch when propertyId is provided
-    refetchOnMount: 'always', // Always refetch when component mounts (e.g., after adding expense)
-    staleTime: 0, // Consider data stale immediately
+    enabled: !!propertyId,
+    refetchOnMount: 'always',
+    staleTime: 0,
+  });
+}
+
+export function useExpensesByYear(propertyId?: string, year?: number) {
+  return useQuery<ExpenseListResponse>({
+    queryKey: ['expenses', propertyId, 'year', year],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (propertyId) params.append('property_id', propertyId);
+      params.append('start_date', `${year}-01-01`);
+      params.append('end_date', `${year}-12-31`);
+      params.append('limit', '1000');
+      return apiClient.get<ExpenseListResponse>(`/expenses?${params.toString()}`);
+    },
+    enabled: !!propertyId && !!year,
+    staleTime: 30000,
+    gcTime: 300000,
   });
 }
 

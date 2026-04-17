@@ -366,6 +366,23 @@ class ExpenseService:
             arrow_table = scan.to_arrow()
             all_expenses = arrow_table.to_pylist()
             
+            # Deduplicate by expense ID - keep the most recent version (by updated_at)
+            expense_dict = {}
+            for expense in all_expenses:
+                expense_id = expense.get('id')
+                if expense_id:
+                    if expense_id not in expense_dict:
+                        expense_dict[expense_id] = expense
+                    else:
+                        existing_updated = expense_dict[expense_id].get('updated_at')
+                        current_updated = expense.get('updated_at')
+                        if current_updated and existing_updated:
+                            if current_updated > existing_updated:
+                                expense_dict[expense_id] = expense
+                        elif current_updated:
+                            expense_dict[expense_id] = expense
+            all_expenses = list(expense_dict.values())
+            
             # Calculate summaries
             yearly_totals = {}
             type_totals = {}

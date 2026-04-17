@@ -90,7 +90,7 @@ async def list_tenants(
     property_id: Optional[UUID] = Query(None, description="Filter by property ID (optional)"),
     unit_id: Optional[UUID] = Query(None, description="Filter by unit ID"),
     status: Optional[str] = Query(None, description="Filter by status"),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(1000, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)  # User still needed for auth
 ):
     """List tenants, optionally filtered by property, unit, or status"""

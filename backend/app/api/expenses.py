@@ -102,7 +102,7 @@ async def list_expenses_endpoint(
     end_date: Optional[date] = Query(None, description="Filter by end date"),
     expense_type: Optional[str] = Query(None, description="Filter by expense type"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(1000, ge=1, le=1000),
     current_user: dict = Depends(get_current_user)
 ):
     """List expenses for a property (user must be logged in)"""
