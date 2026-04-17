@@ -125,8 +125,10 @@ export interface ExpenseSummary {
     total: number;
     count: number;
     by_type: Record<string, number>;
+    by_tax_category: Record<string, number>;
   }>;
   type_totals: Record<string, number>;
+  tax_category_totals: Record<string, number>;
   grand_total: number;
   total_count: number;
 }
