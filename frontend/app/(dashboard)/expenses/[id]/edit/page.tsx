@@ -48,6 +48,7 @@ export default function EditExpensePage() {
     vendor: '',
     expense_type: 'maintenance',
     expense_category: 'bulk_comm',
+    tax_category: 'repairs',
     notes: '',
   });
 
@@ -64,6 +65,7 @@ export default function EditExpensePage() {
         vendor: expense.vendor || '',
         expense_type: expense.expense_type || 'maintenance',
         expense_category: expense.expense_category || 'bulk_comm',
+        tax_category: expense.tax_category || 'repairs',
         notes: expense.notes || '',
       });
       // Fetch units for this property
@@ -159,6 +161,7 @@ export default function EditExpensePage() {
         vendor: formData.vendor || undefined,
         expense_type: formData.expense_type as any,
         expense_category: formData.expense_category as any,
+        tax_category: formData.tax_category as any || undefined,
         document_storage_id: expense?.document_storage_id || undefined,
         notes: formData.notes || undefined,
         amount: parseFloat(formData.amount),
@@ -356,6 +359,31 @@ export default function EditExpensePage() {
                   <option value="eng_equip">60 - Eng. Equipment</option>
                   <option value="subs">70 - Subcontractors</option>
                   <option value="other">80 - Other</option>
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="tax_category" className="text-xs">IRS Category</Label>
+                <select
+                  id="tax_category"
+                  value={formData.tax_category}
+                  onChange={(e) => setFormData({ ...formData, tax_category: e.target.value })}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm mt-1 !bg-white"
+                >
+                  <option value="advertising">Line 5 - Advertising</option>
+                  <option value="auto_travel">Line 6 - Auto and travel</option>
+                  <option value="cleaning">Line 7 - Cleaning and maintenance</option>
+                  <option value="commissions">Line 8 - Commissions</option>
+                  <option value="insurance">Line 9 - Insurance</option>
+                  <option value="legal_professional">Line 10 - Legal and professional fees</option>
+                  <option value="management_fees">Line 11 - Management fees</option>
+                  <option value="mortgage_interest">Line 12 - Mortgage interest</option>
+                  <option value="other_interest">Line 13 - Other interest</option>
+                  <option value="repairs">Line 14 - Repairs</option>
+                  <option value="supplies">Line 15 - Supplies</option>
+                  <option value="taxes">Line 16 - Taxes</option>
+                  <option value="utilities">Line 17 - Utilities</option>
+                  <option value="capital_improvement">Line 18 - Capital improvements</option>
+                  <option value="other">Line 19 - Other</option>
                 </select>
               </div>
               <div>

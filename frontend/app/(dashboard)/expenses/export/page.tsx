@@ -87,7 +87,15 @@ export default function ExportExpensesPage() {
       return str;
     };
 
-    const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
+    const TAX_CATEGORY_LABELS: Record<string, string> = {
+      'advertising': 'Advertising', 'auto_travel': 'Auto/Travel', 'cleaning': 'Cleaning',
+      'commissions': 'Commissions', 'insurance': 'Insurance', 'legal_professional': 'Legal/Prof',
+      'management_fees': 'Mgmt Fees', 'mortgage_interest': 'Mortgage Int', 'other_interest': 'Other Int',
+      'repairs': 'Repairs', 'supplies': 'Supplies', 'taxes': 'Taxes', 'utilities': 'Utilities',
+      'capital_improvement': 'CapEx', 'other': 'Other',
+    };
+
+    const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'IRS Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
     const rows = filteredExpenses.map(exp => {
       const unitDesc = getUnitDescription(exp.property_id, exp.unit_id);
 
@@ -101,17 +109,14 @@ export default function ExportExpensesPage() {
         escapeCsv(String(exp.vendor || '')),
         escapeCsv(String(exp.expense_type || '')),
         escapeCsv(String(exp.expense_category || '')),
+        escapeCsv(String(TAX_CATEGORY_LABELS[exp.tax_category || ''] || exp.tax_category || '')),
         escapeCsv(String(exp.notes || '')),
         escapeCsv((() => {
-          // Handle has_receipt: true, false, null, undefined
-          // Explicitly check for boolean false (not just falsy)
           if (exp.has_receipt === true) return 'Yes';
           if (exp.has_receipt === false) return 'No';
-          // If has_receipt is null/undefined, check document_storage_id
           if (exp.has_receipt == null) {
             return exp.document_storage_id ? 'Yes' : 'No';
           }
-          // Default to No if we can't determine
           return 'No';
         })()),
         escapeCsv(String(exp.created_at || '')),

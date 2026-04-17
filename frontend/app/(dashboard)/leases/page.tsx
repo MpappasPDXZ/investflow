@@ -76,6 +76,7 @@ export default function LeasesPage() {
   const getStatusDisplay = (status: string) => {
     if (status === 'draft') return 'drafting';
     if (status === 'active' || status === 'pending_signature') return 'signed';
+    if (status === 'past_tenant') return 'past tenant';
     return status;
   };
 
@@ -83,6 +84,8 @@ export default function LeasesPage() {
   const getStatusColor = (status: string) => {
     if (status === 'draft') return 'bg-gray-100 text-gray-700';
     if (status === 'active' || status === 'pending_signature') return 'bg-green-100 text-green-700';
+    if (status === 'final') return 'bg-blue-100 text-blue-700';
+    if (status === 'past_tenant') return 'bg-amber-100 text-amber-700';
     return 'bg-red-100 text-red-700';
   };
 

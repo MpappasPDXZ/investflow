@@ -34,6 +34,25 @@ class ExpenseCategory(str, Enum):
     OTHER = "other"                 # 80 - Other
 
 
+class TaxCategory(str, Enum):
+    """IRS Schedule E line item categories for rental property expenses"""
+    ADVERTISING = "advertising"                 # Line 5
+    AUTO_TRAVEL = "auto_travel"                 # Line 6
+    CLEANING = "cleaning"                       # Line 7
+    COMMISSIONS = "commissions"                 # Line 8
+    INSURANCE = "insurance"                     # Line 9
+    LEGAL_PROFESSIONAL = "legal_professional"   # Line 10
+    MANAGEMENT_FEES = "management_fees"         # Line 11
+    MORTGAGE_INTEREST = "mortgage_interest"     # Line 12
+    OTHER_INTEREST = "other_interest"           # Line 13
+    REPAIRS = "repairs"                         # Line 14 (default)
+    SUPPLIES = "supplies"                       # Line 15
+    TAXES = "taxes"                             # Line 16
+    UTILITIES = "utilities"                     # Line 17
+    CAPITAL_IMPROVEMENT = "capital_improvement" # Line 18 - Depreciation
+    OTHER = "other"                             # Line 19
+
+
 class ExpenseBase(BaseModel):
     """
     Base expense schema with fields ordered to match Iceberg schema column order.
@@ -46,6 +65,7 @@ class ExpenseBase(BaseModel):
     vendor: Optional[str] = Field(None, max_length=255, description="Vendor or service provider name")
     expense_type: ExpenseType = Field(..., description="Expense type")
     expense_category: Optional[ExpenseCategory] = Field(None, description="Cost code category")
+    tax_category: Optional[TaxCategory] = Field(None, description="IRS Schedule E tax classification")
     document_storage_id: Optional[UUID] = Field(None, description="Link to receipt document")
     notes: Optional[str] = Field(None, description="Additional notes")
     
@@ -72,6 +92,7 @@ class ExpenseUpdate(BaseModel):
     vendor: Optional[str] = Field(None, max_length=255)
     expense_type: Optional[ExpenseType] = None
     expense_category: Optional[ExpenseCategory] = None
+    tax_category: Optional[TaxCategory] = None
     document_storage_id: Optional[UUID] = None
     notes: Optional[str] = None
     
@@ -113,12 +134,14 @@ class YearlyExpenseTotal(BaseModel):
     total: float
     count: int
     by_type: dict[str, float]
+    by_tax_category: dict[str, float] = {}
 
 
 class ExpenseSummaryResponse(BaseModel):
     """Schema for expense summary with yearly subtotals"""
     yearly_totals: list[YearlyExpenseTotal]
     type_totals: dict[str, float]
+    tax_category_totals: dict[str, float] = {}
     grand_total: float
     total_count: int
 

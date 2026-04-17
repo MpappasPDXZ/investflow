@@ -420,6 +420,11 @@ export default function LeaseEditPage() {
       // Note: updateLease will handle field ordering automatically
       const updatePayload: any = {};
       
+      // Unit ID - preserve existing unit assignment (or allow clearing)
+      if (lease?.unit_id) {
+        updatePayload.unit_id = lease.unit_id;
+      }
+      
       // Status - in LEASES_FIELD_ORDER: status comes after property_id, unit_id
       // Always include status (defaults to 'draft' if not set)
       updatePayload.status = formData.status || lease?.status || 'draft';
@@ -474,31 +479,25 @@ export default function LeaseEditPage() {
       // Notes
       if (formData.notes !== undefined) updatePayload.notes = formData.notes;
       
-      // JSON fields
+      // JSON fields - ALWAYS send arrays (even if empty) so the backend can clear data
       // Move-out costs: send as array of objects (backend expects List[MoveOutCostItem])
       // The backend will serialize it to JSON string for storage
-      if (moveoutCosts.length > 0) {
-        updatePayload.moveout_costs = moveoutCosts.map(cost => ({
-          item: cost.item,
-          description: cost.description || '',
-          amount: parseFloat(cost.amount.toString()) || 0,
-          order: cost.order || 1
-        }));
-      }
+      updatePayload.moveout_costs = moveoutCosts.map(cost => ({
+        item: cost.item,
+        description: cost.description || '',
+        amount: parseFloat(cost.amount.toString()) || 0,
+        order: cost.order || 1
+      }));
       // Tenants: send as array of objects (like landlord_references - JSON column)
-      if (tenants.length > 0) {
-        updatePayload.tenants = tenants;
-      }
+      updatePayload.tenants = tenants;
       // Pets: send as array of objects, not JSON string (backend expects List[PetInfo])
-      if (pets.length > 0) {
-        updatePayload.pets = pets.map(pet => ({
-          type: pet.type,
-          breed: pet.breed,
-          name: pet.name,
-          weight: pet.weight,
-          isEmotionalSupport: pet.isEmotionalSupport || false
-        }));
-      }
+      updatePayload.pets = pets.map(pet => ({
+        type: pet.type,
+        breed: pet.breed,
+        name: pet.name,
+        weight: pet.weight,
+        isEmotionalSupport: pet.isEmotionalSupport || false
+      }));
       
       // Booleans - in order: auto_convert_month_to_month, show_prorated_rent, include_holding_fee_addendum, has_shared_driveway
       updatePayload.auto_convert_month_to_month = formData.auto_convert_month_to_month;
@@ -676,6 +675,9 @@ export default function LeaseEditPage() {
                     <SelectContent>
                       <SelectItem value="draft">draft</SelectItem>
                       <SelectItem value="final">final</SelectItem>
+                      <SelectItem value="past_tenant">past tenant</SelectItem>
+                      <SelectItem value="expired">expired</SelectItem>
+                      <SelectItem value="terminated">terminated</SelectItem>
                       <SelectItem value="other">other</SelectItem>
                     </SelectContent>
                   </Select>

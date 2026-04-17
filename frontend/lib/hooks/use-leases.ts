@@ -128,7 +128,7 @@ export interface Lease extends Omit<LeaseCreate, 'lease_start' | 'lease_end'> {
   id: string;
   user_id: string;
   lease_number: number;
-  status: 'draft' | 'pending_signature' | 'active' | 'expired' | 'terminated';
+  status: 'draft' | 'pending_signature' | 'active' | 'expired' | 'terminated' | 'final' | 'past_tenant' | 'other';
   lease_version: number;
   created_at: string;
   updated_at: string;

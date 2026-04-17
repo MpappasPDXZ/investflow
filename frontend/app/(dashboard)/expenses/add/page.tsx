@@ -43,6 +43,7 @@ export default function AddExpensePage() {
     vendor: '',
     expense_type: 'maintenance',
     expense_category: 'bulk_comm',
+    tax_category: 'repairs',
     notes: '',
   });
   const [file, setFile] = useState<File | null>(null);
@@ -117,6 +118,7 @@ export default function AddExpensePage() {
         formDataToSend.append('amount', formData.amount);
         formDataToSend.append('expense_type', formData.expense_type);
         if (formData.expense_category) formDataToSend.append('expense_category', formData.expense_category);
+        if (formData.tax_category) formDataToSend.append('tax_category', formData.tax_category);
         if (formData.unit_id) formDataToSend.append('unit_id', formData.unit_id);
         if (formData.vendor) formDataToSend.append('vendor', formData.vendor);
         if (formData.notes) formDataToSend.append('notes', formData.notes);
@@ -135,6 +137,7 @@ export default function AddExpensePage() {
           amount: parseFloat(formData.amount),
           expense_type: formData.expense_type,
           expense_category: formData.expense_category || undefined,
+          tax_category: formData.tax_category || undefined,
           unit_id: formData.unit_id || undefined,
           vendor: formData.vendor || undefined,
           notes: formData.notes || undefined,
@@ -296,6 +299,31 @@ export default function AddExpensePage() {
                   <option value="eng_equip">60 - Eng. Equipment</option>
                   <option value="subs">70 - Subcontractors</option>
                   <option value="other">80 - Other</option>
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="tax_category" className="text-xs md:text-sm">IRS Category</Label>
+                <select
+                  id="tax_category"
+                  value={formData.tax_category}
+                  onChange={(e) => setFormData({ ...formData, tax_category: e.target.value })}
+                  className="w-full px-3 py-2.5 md:py-2 border border-gray-300 rounded-md text-base md:text-sm mt-1 min-h-[44px]"
+                >
+                  <option value="advertising">Line 5 - Advertising</option>
+                  <option value="auto_travel">Line 6 - Auto and travel</option>
+                  <option value="cleaning">Line 7 - Cleaning and maintenance</option>
+                  <option value="commissions">Line 8 - Commissions</option>
+                  <option value="insurance">Line 9 - Insurance</option>
+                  <option value="legal_professional">Line 10 - Legal and professional fees</option>
+                  <option value="management_fees">Line 11 - Management fees</option>
+                  <option value="mortgage_interest">Line 12 - Mortgage interest</option>
+                  <option value="other_interest">Line 13 - Other interest</option>
+                  <option value="repairs">Line 14 - Repairs</option>
+                  <option value="supplies">Line 15 - Supplies</option>
+                  <option value="taxes">Line 16 - Taxes</option>
+                  <option value="utilities">Line 17 - Utilities</option>
+                  <option value="capital_improvement">Line 18 - Capital improvements</option>
+                  <option value="other">Line 19 - Other</option>
                 </select>
               </div>
               <div className="md:col-span-2">

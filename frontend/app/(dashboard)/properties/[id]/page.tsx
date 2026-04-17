@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Building2, Plus, Edit2, Trash2, X, Check, FileText, DollarSign, Home, Eye, TrendingUp, Hammer, ListChecks, Tag, Archive, ShoppingCart, Calendar, LayoutGrid, Key } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, X, Check, FileText, DollarSign, Home, Eye, TrendingUp, Hammer, ListChecks, Tag, Archive, ShoppingCart, Calendar, LayoutGrid, Key, Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import ScheduledFinancialsTab from '@/components/ScheduledFinancialsTab';
@@ -45,6 +45,7 @@ export default function PropertyDetailPage() {
   const [deletingUnit, setDeletingUnit] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'performance' | 'financials' | 'down-payment' | 'rent' | 'comps'>('details');
   const [editingProperty, setEditingProperty] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   // Fetch financial performance for YTD P/L display
   const { data: financialPerformance } = useFinancialPerformance(id);
@@ -225,6 +226,32 @@ export default function PropertyDetailPage() {
       fetchUnits();
     }
   }, [property?.id, isMultiUnit]);
+
+  const handleDownloadIncomeStatement = async (fiscalYear?: number) => {
+    if (!id) return;
+    setDownloadingPdf(true);
+    try {
+      const year = fiscalYear || new Date().getFullYear();
+      const token = localStorage.getItem('auth_token');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const response = await fetch(`${apiUrl}/api/v1/income-statement/${id}/pdf?year=${year}`, { headers });
+      if (!response.ok) throw new Error('Failed to generate PDF');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `income_statement_${year}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error downloading income statement:', err);
+      alert('Failed to download income statement PDF');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const fetchUnits = async () => {
     try {
@@ -582,6 +609,16 @@ export default function PropertyDetailPage() {
           </h1>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => handleDownloadIncomeStatement()}
+            size="sm"
+            className="h-8 text-xs"
+            disabled={downloadingPdf}
+          >
+            <Download className="h-3 w-3 mr-1" />
+            {downloadingPdf ? 'Generating...' : 'Income Statement'}
+          </Button>
           <Button
             variant="outline"
             onClick={() => router.push('/properties')}

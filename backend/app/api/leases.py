@@ -783,6 +783,11 @@ async def update_lease(
         lease_dict["updated_at"] = now
         lease_dict["lease_version"] = existing_lease["lease_version"] + 1
         
+        # Ensure UUID fields are strings for PyArrow serialization
+        for uuid_field in ("property_id", "unit_id", "user_id"):
+            if uuid_field in lease_dict and lease_dict[uuid_field] is not None:
+                lease_dict[uuid_field] = str(lease_dict[uuid_field])
+        
         # Serialize moveout_costs as JSON (like tenants)
         # Check if moveout_costs was explicitly sent (even as empty list = clear)
         if "moveout_costs" in lease_data.model_fields_set:
@@ -883,27 +888,40 @@ async def update_lease(
         table.delete(EqualTo("id", str(lease_id)))
         logger.info(f"⏱️ [PERF] table.delete() for update took {time.time() - delete_start:.2f}s")
         
-        # Append updated lease (fast)
+        # Append updated lease using the same PyArrow-safe approach as create_lease
         append_start = time.time()
-        df = pd.DataFrame([lease_dict])
+        table_schema = table.schema().as_arrow()
+        prepared_lease = _prepare_lease_for_iceberg(lease_dict, table_schema)
         
-        # Debug: Log garage door fields before reindex
-        logger.info(f"🔍 [DEBUG] Before reindex - garage_back_door_keys: {lease_dict.get('garage_back_door_keys')}, has_garage_door_opener: {lease_dict.get('has_garage_door_opener')}, garage_door_opener_fee: {lease_dict.get('garage_door_opener_fee')}")
+        record = {}
+        for field in table_schema:
+            col_name = field.name
+            value = prepared_lease.get(col_name)
+            field_type = field.type
+            
+            if pa.types.is_date(field_type):
+                if value is None:
+                    record[col_name] = None
+                elif isinstance(value, (datetime, pd.Timestamp)):
+                    record[col_name] = value.date()
+                elif isinstance(value, date):
+                    record[col_name] = value
+                else:
+                    record[col_name] = None
+            elif pa.types.is_timestamp(field_type):
+                if value is None:
+                    record[col_name] = None
+                elif isinstance(value, pd.Timestamp):
+                    record[col_name] = value.to_pydatetime()
+                elif isinstance(value, datetime):
+                    record[col_name] = value
+                else:
+                    record[col_name] = value
+            else:
+                record[col_name] = value
         
-        # Reindex but preserve explicit values (don't overwrite with None if they exist)
-        df = df.reindex(columns=schema_columns, fill_value=None)
-        
-        # Explicitly set garage door fields if they were in the update
-        if "garage_back_door_keys" in update_dict:
-            df["garage_back_door_keys"] = update_dict["garage_back_door_keys"]
-        if "has_garage_door_opener" in update_dict:
-            df["has_garage_door_opener"] = update_dict["has_garage_door_opener"]
-        if "garage_door_opener_fee" in update_dict:
-            df["garage_door_opener_fee"] = update_dict["garage_door_opener_fee"]
-        
-        # Debug: Log after explicit setting
-        logger.info(f"🔍 [DEBUG] After explicit set - garage_back_door_keys: {df['garage_back_door_keys'].iloc[0] if 'garage_back_door_keys' in df.columns else 'MISSING'}, has_garage_door_opener: {df['has_garage_door_opener'].iloc[0] if 'has_garage_door_opener' in df.columns else 'MISSING'}, garage_door_opener_fee: {df['garage_door_opener_fee'].iloc[0] if 'garage_door_opener_fee' in df.columns else 'MISSING'}")
-        append_data(NAMESPACE, LEASES_TABLE, df)
+        arrow_table = pa.Table.from_pylist([record], schema=table_schema)
+        table.append(arrow_table)
         logger.info(f"⏱️ [PERF] append_data(leases) for update took {time.time() - append_start:.2f}s")
         logger.info(f"Updated lease {lease_id} (version {lease_dict['lease_version']}) via delete+append")
         

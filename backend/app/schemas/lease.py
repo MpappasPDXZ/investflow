@@ -67,7 +67,7 @@ class LeaseBase(BaseModel):
     
     # Status & State
     state: str = Field(..., pattern="^(NE|MO)$", description="State code: NE or MO")
-    status: Optional[str] = Field("draft", pattern="^(draft|pending_signature|active|expired|terminated|final|other)$")
+    status: Optional[str] = Field("draft", pattern="^(draft|pending_signature|active|expired|terminated|final|past_tenant|other)$")
     
     # Dates
     lease_start: date
@@ -242,7 +242,7 @@ class LeaseUpdate(BaseModel):
     unit_id: Optional[UUID] = None
     
     # Metadata
-    status: Optional[str] = Field(None, pattern="^(draft|pending_signature|active|expired|terminated|final|other)$", description="Lease status")
+    status: Optional[str] = Field(None, pattern="^(draft|pending_signature|active|expired|terminated|final|past_tenant|other)$", description="Lease status")
     
     # Tenants (JSON column - send empty list to clear, omit to keep existing)
     tenants: Optional[List[TenantCreate]] = None

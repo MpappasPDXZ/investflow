@@ -45,6 +45,42 @@ const EXPENSE_TYPE_LABELS: Record<string, string> = {
   'other': 'Other'
 };
 
+const TAX_CATEGORY_LABELS: Record<string, string> = {
+  'advertising': 'Advertising',
+  'auto_travel': 'Auto/Travel',
+  'cleaning': 'Cleaning',
+  'commissions': 'Commissions',
+  'insurance': 'Insurance',
+  'legal_professional': 'Legal/Prof',
+  'management_fees': 'Mgmt Fees',
+  'mortgage_interest': 'Mortgage Int',
+  'other_interest': 'Other Int',
+  'repairs': 'Repairs',
+  'supplies': 'Supplies',
+  'taxes': 'Taxes',
+  'utilities': 'Utilities',
+  'capital_improvement': 'CapEx',
+  'other': 'Other',
+};
+
+const TAX_CATEGORIES = [
+  { key: 'advertising', label: 'Advert', fullLabel: 'Line 5 - Advertising' },
+  { key: 'auto_travel', label: 'Auto', fullLabel: 'Line 6 - Auto and travel' },
+  { key: 'cleaning', label: 'Clean', fullLabel: 'Line 7 - Cleaning and maintenance' },
+  { key: 'commissions', label: 'Comm', fullLabel: 'Line 8 - Commissions' },
+  { key: 'insurance', label: 'Insur', fullLabel: 'Line 9 - Insurance' },
+  { key: 'legal_professional', label: 'Legal', fullLabel: 'Line 10 - Legal and professional fees' },
+  { key: 'management_fees', label: 'Mgmt', fullLabel: 'Line 11 - Management fees' },
+  { key: 'mortgage_interest', label: 'Mortg', fullLabel: 'Line 12 - Mortgage interest' },
+  { key: 'other_interest', label: 'OthInt', fullLabel: 'Line 13 - Other interest' },
+  { key: 'repairs', label: 'Repair', fullLabel: 'Line 14 - Repairs' },
+  { key: 'supplies', label: 'Supply', fullLabel: 'Line 15 - Supplies' },
+  { key: 'taxes', label: 'Taxes', fullLabel: 'Line 16 - Taxes' },
+  { key: 'utilities', label: 'Util', fullLabel: 'Line 17 - Utilities' },
+  { key: 'capital_improvement', label: 'CapEx', fullLabel: 'Line 18 - Capital improvements' },
+  { key: 'other', label: 'Other', fullLabel: 'Line 19 - Other' },
+];
+
 const EXPENSE_CATEGORIES = [
   { key: 'co_equip', label: '10-Co Eq', fullLabel: '10 - Co. Equipment' },
   { key: 'rent_equip', label: '20-Rent', fullLabel: '20 - Rented Equip.' },
@@ -55,6 +91,24 @@ const EXPENSE_CATEGORIES = [
   { key: 'subs', label: '70-Subs', fullLabel: '70 - Subcontractors' },
   { key: 'other', label: '80-Other', fullLabel: '80 - Other' },
 ];
+
+const taxCategoryBadgeColors: Record<string, string> = {
+  advertising: 'bg-cyan-100 text-cyan-800',
+  auto_travel: 'bg-amber-100 text-amber-800',
+  cleaning: 'bg-lime-100 text-lime-800',
+  commissions: 'bg-rose-100 text-rose-800',
+  insurance: 'bg-indigo-100 text-indigo-800',
+  legal_professional: 'bg-violet-100 text-violet-800',
+  management_fees: 'bg-fuchsia-100 text-fuchsia-800',
+  mortgage_interest: 'bg-red-100 text-red-800',
+  other_interest: 'bg-orange-100 text-orange-800',
+  repairs: 'bg-blue-100 text-blue-800',
+  supplies: 'bg-teal-100 text-teal-800',
+  taxes: 'bg-yellow-100 text-yellow-800',
+  utilities: 'bg-green-100 text-green-800',
+  capital_improvement: 'bg-purple-100 text-purple-800',
+  other: 'bg-gray-100 text-gray-800',
+};
 
 const expenseCategoryBadgeColors: Record<string, string> = {
   co_equip: 'bg-purple-100 text-purple-800',
@@ -137,8 +191,8 @@ function YearExpenses({
           <span className="text-[10px] text-gray-500 w-16 shrink-0">
             {expense.date.slice(5).replace('-', '/')}
           </span>
-          <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${expense.expense_category ? expenseCategoryBadgeColors[expense.expense_category] || 'bg-gray-100' : 'bg-gray-100'}`}>
-            {EXPENSE_CATEGORIES.find(t => t.key === expense.expense_category)?.label || EXPENSE_TYPE_LABELS[expense.expense_type] || expense.expense_type}
+          <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${expense.tax_category ? taxCategoryBadgeColors[expense.tax_category] || 'bg-gray-100' : 'bg-gray-100'}`}>
+            {TAX_CATEGORY_LABELS[expense.tax_category || ''] || EXPENSE_TYPE_LABELS[expense.expense_type] || expense.expense_type}
           </span>
           <span className="text-xs truncate flex-1">
             {expense.description}
@@ -296,7 +350,7 @@ export default function ExpensesPage() {
       const allExpenses = await apiClient.get<{ items: Expense[] }>(`/expenses?${params.toString()}`);
       if (!allExpenses?.items?.length) return;
 
-      const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
+      const headers = ['ID', 'Property', 'Unit', 'Date', 'Description', 'Amount', 'Vendor', 'Expense Type', 'Expense Category', 'IRS Category', 'Notes', 'Has Receipt', 'Created At', 'Updated At'];
       const escapeCsv = (value: string): string => {
         const str = String(value || '');
         if (str.includes(',') || str.includes('"') || str.includes('\n')) {
@@ -315,6 +369,7 @@ export default function ExpensesPage() {
         escapeCsv(String(e.vendor || '')),
         escapeCsv(String(e.expense_type || '')),
         escapeCsv(String(e.expense_category || '')),
+        escapeCsv(String(TAX_CATEGORY_LABELS[e.tax_category || ''] || e.tax_category || '')),
         escapeCsv(String(e.notes || '')),
         escapeCsv(e.has_receipt === true ? 'Yes' : e.has_receipt === false ? 'No' : e.document_storage_id ? 'Yes' : 'No'),
         escapeCsv(String(e.created_at || '')),
@@ -466,13 +521,13 @@ export default function ExpensesPage() {
             </div>
 
             <div className="hidden md:flex gap-1 mt-2 flex-wrap">
-              {EXPENSE_CATEGORIES.map(t => (
+              {TAX_CATEGORIES.filter(t => (summary.tax_category_totals?.[t.key] || 0) > 0).map(t => (
                 <div
                   key={t.key}
-                  className={`text-[10px] px-1.5 py-0.5 rounded ${expenseCategoryBadgeColors[t.key]}`}
+                  className={`text-[10px] px-1.5 py-0.5 rounded ${taxCategoryBadgeColors[t.key]}`}
                   title={t.fullLabel}
                 >
-                  {t.label}: {formatAmount(summary.type_totals[t.key] || 0)}
+                  {t.label}: {formatAmount(summary.tax_category_totals[t.key] || 0)}
                 </div>
               ))}
             </div>
@@ -505,12 +560,12 @@ export default function ExpensesPage() {
 
                     {!isYearExpanded && (
                       <div className="hidden md:flex gap-1 px-3 pb-2 flex-wrap">
-                        {EXPENSE_CATEGORIES.filter(t => (yearData.by_type[t.key] || 0) > 0).map(t => (
+                        {TAX_CATEGORIES.filter(t => (yearData.by_tax_category?.[t.key] || 0) > 0).map(t => (
                           <div
                             key={t.key}
-                            className={`text-[9px] px-1 py-0.5 rounded ${expenseCategoryBadgeColors[t.key]}`}
+                            className={`text-[9px] px-1 py-0.5 rounded ${taxCategoryBadgeColors[t.key]}`}
                           >
-                            {t.label}: {formatAmount(yearData.by_type[t.key] || 0)}
+                            {t.label}: {formatAmount(yearData.by_tax_category[t.key] || 0)}
                           </div>
                         ))}
                       </div>

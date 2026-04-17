@@ -123,6 +123,7 @@ def create_expenses_schema() -> pa.Schema:
         pa.field("vendor", pa.string(), nullable=True),
         pa.field("expense_type", pa.string(), nullable=False),  # enum as string (capex, rehab, etc.)
         pa.field("expense_category", pa.string(), nullable=True),  # enum as string (co_equip, bulk_comm, etc.)
+        pa.field("tax_category", pa.string(), nullable=True),  # IRS Schedule E line item
         pa.field("document_storage_id", pa.string(), nullable=True),  # UUID as string
         pa.field("is_planned", pa.bool_(), nullable=True),
         pa.field("notes", pa.string(), nullable=True),

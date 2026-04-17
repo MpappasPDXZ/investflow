@@ -82,9 +82,10 @@ class ExpenseService:
                 "vendor": expense_data.vendor,
                 "expense_type": expense_data.expense_type.value,
                 "expense_category": expense_data.expense_category.value if expense_data.expense_category else None,
+                "tax_category": expense_data.tax_category.value if expense_data.tax_category else None,
                 "document_storage_id": str(expense_data.document_storage_id) if expense_data.document_storage_id else None,
                 "notes": expense_data.notes,
-                "amount": Decimal(str(expense_data.amount)),  # Convert to Decimal
+                "amount": Decimal(str(expense_data.amount)),
                 "date": expense_data.date,
                 "has_receipt": has_receipt,
                 "created_at": now,
@@ -386,6 +387,7 @@ class ExpenseService:
             # Calculate summaries
             yearly_totals = {}
             type_totals = {}
+            tax_category_totals = {}
             
             for expense in all_expenses:
                 expense_date = expense["date"]
@@ -395,28 +397,42 @@ class ExpenseService:
                     if year and expense_year != year:
                         continue
                     
+                    amount = float(expense["amount"])
+                    
                     # Yearly totals
                     if expense_year not in yearly_totals:
                         yearly_totals[expense_year] = {
                             "year": expense_year,
                             "total": 0,
                             "count": 0,
-                            "by_type": {}
+                            "by_type": {},
+                            "by_tax_category": {}
                         }
                     
-                    yearly_totals[expense_year]["total"] += float(expense["amount"])
+                    yearly_totals[expense_year]["total"] += amount
                     yearly_totals[expense_year]["count"] += 1
                     
                     # By type within year
                     exp_type = expense["expense_type"]
                     if exp_type not in yearly_totals[expense_year]["by_type"]:
                         yearly_totals[expense_year]["by_type"][exp_type] = 0
-                    yearly_totals[expense_year]["by_type"][exp_type] += float(expense["amount"])
+                    yearly_totals[expense_year]["by_type"][exp_type] += amount
+                    
+                    # By tax_category within year
+                    tax_cat = expense.get("tax_category") or "repairs"
+                    if tax_cat not in yearly_totals[expense_year]["by_tax_category"]:
+                        yearly_totals[expense_year]["by_tax_category"][tax_cat] = 0
+                    yearly_totals[expense_year]["by_tax_category"][tax_cat] += amount
                     
                     # Overall type totals
                     if exp_type not in type_totals:
                         type_totals[exp_type] = 0
-                    type_totals[exp_type] += float(expense["amount"])
+                    type_totals[exp_type] += amount
+                    
+                    # Overall tax_category totals
+                    if tax_cat not in tax_category_totals:
+                        tax_category_totals[tax_cat] = 0
+                    tax_category_totals[tax_cat] += amount
             
             # Sort yearly totals
             yearly_list = sorted(yearly_totals.values(), key=lambda x: x["year"], reverse=True)
@@ -424,6 +440,7 @@ class ExpenseService:
             return {
                 "yearly_totals": yearly_list,
                 "type_totals": type_totals,
+                "tax_category_totals": tax_category_totals,
                 "grand_total": sum(y["total"] for y in yearly_list),
                 "total_count": sum(y["count"] for y in yearly_list)
             }
@@ -474,7 +491,7 @@ class ExpenseService:
                 if value is not None:
                     if key in ["property_id", "unit_id", "document_storage_id"] and value:
                         existing[key] = str(value)
-                    elif key in ["expense_type", "expense_category"] and value:
+                    elif key in ["expense_type", "expense_category", "tax_category"] and value:
                         existing[key] = value.value
                     elif key == "amount" and value:
                         existing[key] = Decimal(str(value))
@@ -539,6 +556,7 @@ class ExpenseService:
                 "vendor": existing_for_df.get("vendor"),
                 "expense_type": existing_for_df.get("expense_type"),
                 "expense_category": existing_for_df.get("expense_category"),
+                "tax_category": existing_for_df.get("tax_category"),
                 "document_storage_id": existing_for_df.get("document_storage_id"),
                 "notes": existing_for_df.get("notes"),
                 "amount": existing_for_df.get("amount"),

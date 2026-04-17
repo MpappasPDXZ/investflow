@@ -33,6 +33,8 @@ export interface Property {
   updated_at: string; // Iceberg: timestamp (ISO datetime string)
 }
 
+export type TaxCategory = 'advertising' | 'auto_travel' | 'cleaning' | 'commissions' | 'insurance' | 'legal_professional' | 'management_fees' | 'mortgage_interest' | 'other_interest' | 'repairs' | 'supplies' | 'taxes' | 'utilities' | 'capital_improvement' | 'other';
+
 export interface Expense {
   id: string;
   property_id: string;
@@ -43,6 +45,7 @@ export interface Expense {
   vendor?: string;
   expense_type: 'capex' | 'rehab' | 'pandi' | 'tax' | 'utilities' | 'maintenance' | 'insurance' | 'property_management' | 'other';
   expense_category?: 'co_equip' | 'rent_equip' | 'equip_maint' | 'small_tools' | 'bulk_comm' | 'eng_equip' | 'subs' | 'other';
+  tax_category?: TaxCategory;
   document_storage_id?: string;
   notes?: string;
   has_receipt?: boolean; // Iceberg: bool (nullable)
@@ -173,11 +176,13 @@ export interface YearlyExpenseTotal {
   total: number;
   count: number;
   by_type: Record<string, number>;
+  by_tax_category: Record<string, number>;
 }
 
 export interface ExpenseSummary {
   yearly_totals: YearlyExpenseTotal[];
   type_totals: Record<string, number>;
+  tax_category_totals: Record<string, number>;
   grand_total: number;
   total_count: number;
 }

@@ -92,14 +92,20 @@ def create_expenses_schema() -> pa.Schema:
     return pa.schema([
         pa.field("id", pa.string(), nullable=False),
         pa.field("property_id", pa.string(), nullable=False),
-        pa.field("expense_type", pa.string(), nullable=False),
-        pa.field("amount", pa.decimal128(10, 2), nullable=False),
+        pa.field("unit_id", pa.string(), nullable=True),
+        pa.field("description", pa.string(), nullable=False),
         pa.field("date", pa.date32(), nullable=False),
-        pa.field("description", pa.string(), nullable=True),
+        pa.field("amount", pa.decimal128(10, 2), nullable=False),
         pa.field("vendor", pa.string(), nullable=True),
+        pa.field("expense_type", pa.string(), nullable=False),
+        pa.field("expense_category", pa.string(), nullable=True),
+        pa.field("tax_category", pa.string(), nullable=True),
+        pa.field("document_storage_id", pa.string(), nullable=True),
+        pa.field("is_planned", pa.bool_(), nullable=True),
         pa.field("notes", pa.string(), nullable=True),
         pa.field("created_at", pa.timestamp("us"), nullable=True),
         pa.field("updated_at", pa.timestamp("us"), nullable=True),
+        pa.field("created_by_user_id", pa.string(), nullable=True),
     ])
 
 
