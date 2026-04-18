@@ -776,19 +776,24 @@ async def update_property_endpoint(
             logger.info(f"Processing key: {key}, in columns: {key in df.columns}")
             if key in df.columns:
                 logger.info(f"Updating {key} with value {value} (type: {type(value)})")
-                # Convert Decimal fields
-                if key in ["purchase_price", "down_payment", "cash_invested", "current_market_value", "vacancy_rate", "monthly_rent_to_income_ratio", "bathrooms", "current_monthly_rent"]:
-                    df.loc[mask, key] = Decimal(str(value)) if value is not None else None
-                # Handle date fields
+                if value is None:
+                    df.loc[mask, key] = None
                 elif key == "purchase_date":
-                    df.loc[mask, key] = pd.to_datetime(value) if value is not None else None
-                # Handle enum fields - convert to string
+                    df.loc[mask, key] = pd.to_datetime(value)
                 elif key == "property_status":
                     status_value = str(value) if value is not None else "evaluating"
                     logger.info(f"Setting property_status to: {status_value}")
                     df.loc[mask, key] = status_value
                 else:
-                    df.loc[mask, key] = value
+                    col_dtype = df[key].dtype
+                    if pd.api.types.is_integer_dtype(col_dtype):
+                        df.loc[mask, key] = int(value)
+                    elif pd.api.types.is_float_dtype(col_dtype):
+                        df.loc[mask, key] = float(value)
+                    elif pd.api.types.is_bool_dtype(col_dtype):
+                        df.loc[mask, key] = bool(value)
+                    else:
+                        df.loc[mask, key] = value
             else:
                 logger.warning(f"Key {key} not found in dataframe columns")
         
@@ -893,7 +898,7 @@ async def update_property_endpoint(
         prop_dict = {
             "id": UUID(str(updated_row["id"])),
             "user_id": UUID(str(updated_row["user_id"])),
-            "display_name": updated_row.get("display_name"),
+            "display_name": updated_row.get("display_name") if pd.notna(updated_row.get("display_name")) else None,
             "purchase_price": Decimal(str(updated_row["purchase_price"])),
             "down_payment": Decimal(str(updated_row["down_payment"])) if pd.notna(updated_row.get("down_payment")) else None,
             "cash_invested": Decimal(str(updated_row["cash_invested"])) if "cash_invested" in updated_row and pd.notna(updated_row.get("cash_invested")) else None,
@@ -901,18 +906,18 @@ async def update_property_endpoint(
             "property_status": updated_row.get("property_status", "evaluating"),
             "vacancy_rate": Decimal(str(updated_row["vacancy_rate"])) if pd.notna(updated_row.get("vacancy_rate")) else Decimal("0.07"),
             "monthly_rent_to_income_ratio": Decimal(str(updated_row["monthly_rent_to_income_ratio"])) if pd.notna(updated_row.get("monthly_rent_to_income_ratio")) else None,
-            "address_line1": updated_row.get("address_line1"),
-            "address_line2": updated_row.get("address_line2"),
-            "city": updated_row.get("city"),
-            "state": updated_row.get("state"),
-            "zip_code": updated_row.get("zip_code"),
-            "property_type": updated_row.get("property_type"),
+            "address_line1": updated_row.get("address_line1") if pd.notna(updated_row.get("address_line1")) else None,
+            "address_line2": updated_row.get("address_line2") if pd.notna(updated_row.get("address_line2")) else None,
+            "city": updated_row.get("city") if pd.notna(updated_row.get("city")) else None,
+            "state": updated_row.get("state") if pd.notna(updated_row.get("state")) else None,
+            "zip_code": updated_row.get("zip_code") if pd.notna(updated_row.get("zip_code")) else None,
+            "property_type": updated_row.get("property_type") if pd.notna(updated_row.get("property_type")) else None,
             "bedrooms": int(updated_row["bedrooms"]) if pd.notna(updated_row.get("bedrooms")) else None,
             "bathrooms": Decimal(str(updated_row["bathrooms"])) if pd.notna(updated_row.get("bathrooms")) else None,
             "square_feet": int(updated_row["square_feet"]) if pd.notna(updated_row.get("square_feet")) else None,
             "year_built": int(updated_row["year_built"]) if pd.notna(updated_row.get("year_built")) else None,
             "current_monthly_rent": Decimal(str(updated_row["current_monthly_rent"])) if pd.notna(updated_row.get("current_monthly_rent")) else None,
-            "notes": updated_row.get("notes"),
+            "notes": updated_row.get("notes") if pd.notna(updated_row.get("notes")) else None,
             "is_active": bool(updated_row["is_active"]) if pd.notna(updated_row.get("is_active")) else True,
             "created_at": updated_row["created_at"] if pd.notna(updated_row.get("created_at")) else pd.Timestamp.now(),
             "updated_at": updated_row["updated_at"] if pd.notna(updated_row.get("updated_at")) else pd.Timestamp.now(),
