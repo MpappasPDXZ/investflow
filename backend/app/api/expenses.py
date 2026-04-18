@@ -9,7 +9,7 @@ import io
 from app.core.dependencies import get_current_user
 from app.schemas.expense import (
     ExpenseCreate, ExpenseUpdate, ExpenseResponse, ExpenseListResponse, ExpenseSummaryResponse,
-    ExpenseCategory
+    ExpenseCategory, TaxCategory
 )
 from app.services import expense_service, document_service
 from app.services.adls_service import adls_service
@@ -46,6 +46,7 @@ async def create_expense_with_receipt(
     vendor: Optional[str] = Form(None),
     expense_type: str = Form(...),
     expense_category: Optional[str] = Form(None),
+    tax_category: Optional[str] = Form(None),
     unit_id: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
     document_type: Optional[str] = Form("receipt"),
@@ -82,6 +83,7 @@ async def create_expense_with_receipt(
             vendor=vendor,
             expense_type=ExpenseType(expense_type),
             expense_category=ExpenseCategory(expense_category) if expense_category else None,
+            tax_category=TaxCategory(tax_category) if tax_category else None,
             document_storage_id=UUID(document["id"]),
             notes=notes
         )
