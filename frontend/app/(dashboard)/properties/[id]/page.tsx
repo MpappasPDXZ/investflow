@@ -46,6 +46,21 @@ export default function PropertyDetailPage() {
   const [activeTab, setActiveTab] = useState<'details' | 'performance' | 'financials' | 'down-payment' | 'rent' | 'comps'>('details');
   const [editingProperty, setEditingProperty] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
+
+  // Fetch available years for income statement dropdown
+  useEffect(() => {
+    if (!id) return;
+    const fetchYears = async () => {
+      try {
+        const response = await apiClient.get<number[]>(`/income-statement/${id}/years`);
+        setAvailableYears(response);
+      } catch {
+        setAvailableYears([new Date().getFullYear()]);
+      }
+    };
+    fetchYears();
+  }, [id]);
 
   // Fetch financial performance for YTD P/L display
   const { data: financialPerformance } = useFinancialPerformance(id);
@@ -227,22 +242,28 @@ export default function PropertyDetailPage() {
     }
   }, [property?.id, isMultiUnit]);
 
-  const handleDownloadIncomeStatement = async (fiscalYear?: number) => {
+  const handleDownloadIncomeStatement = async (mode: 't12' | 'calendar', year?: number) => {
     if (!id) return;
     setDownloadingPdf(true);
     try {
-      const year = fiscalYear || new Date().getFullYear();
       const token = localStorage.getItem('auth_token');
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const response = await fetch(`${apiUrl}/api/v1/income-statement/${id}/pdf?year=${year}`, { headers });
+      const params = new URLSearchParams({ mode });
+      if (mode === 'calendar' && year) params.set('year', String(year));
+      const response = await fetch(`${apiUrl}/api/v1/income-statement/${id}/pdf?${params}`, { headers });
       if (!response.ok) throw new Error('Failed to generate PDF');
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `income_statement_${year}.pdf`;
+      if (mode === 'calendar') {
+        a.download = `income_statement_${year || new Date().getFullYear()}.pdf`;
+      } else {
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        a.download = `income_statement_T12_${today}.pdf`;
+      }
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -609,16 +630,27 @@ export default function PropertyDetailPage() {
           </h1>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => handleDownloadIncomeStatement()}
-            size="sm"
-            className="h-8 text-xs"
+          <Select
             disabled={downloadingPdf}
+            onValueChange={(val) => {
+              if (val === 't12') {
+                handleDownloadIncomeStatement('t12');
+              } else {
+                handleDownloadIncomeStatement('calendar', Number(val));
+              }
+            }}
           >
-            <Download className="h-3 w-3 mr-1" />
-            {downloadingPdf ? 'Generating...' : 'Income Statement'}
-          </Button>
+            <SelectTrigger className="h-8 w-[180px] text-xs">
+              <Download className="h-3 w-3 mr-1" />
+              <SelectValue placeholder={downloadingPdf ? 'Generating...' : 'Income Statement'} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="t12">Trailing 12 Months</SelectItem>
+              {availableYears.map((y) => (
+                <SelectItem key={y} value={String(y)}>Calendar Year {y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             onClick={() => router.push('/properties')}

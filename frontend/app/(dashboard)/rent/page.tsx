@@ -23,6 +23,11 @@ import { ReceiptViewer } from '@/components/ReceiptViewer';
 import type { RentPayment } from '@/lib/types';
 import Link from 'next/link';
 
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
@@ -60,7 +65,7 @@ export default function RentPage() {
     
     // Sort rents within each property by payment_date (newest first)
     Object.values(result).forEach(propertyRents => {
-      propertyRents.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
+      propertyRents.sort((a, b) => parseLocalDate(b.payment_date).getTime() - parseLocalDate(a.payment_date).getTime());
     });
     
     return result;
@@ -73,7 +78,7 @@ export default function RentPage() {
     rents.forEach(rent => {
       const propId = rent.property_id;
       // Use rent_period_year if available, otherwise use payment_date year
-      const year = rent.rent_period_year || new Date(rent.payment_date).getFullYear();
+      const year = rent.rent_period_year || parseLocalDate(rent.payment_date).getFullYear();
       
       if (!result[propId]) result[propId] = {};
       if (!result[propId][year]) result[propId][year] = [];
@@ -83,7 +88,7 @@ export default function RentPage() {
     // Sort rents within each year by payment_date (newest first)
     Object.values(result).forEach(years => {
       Object.values(years).forEach(yearRents => {
-        yearRents.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
+        yearRents.sort((a, b) => parseLocalDate(b.payment_date).getTime() - parseLocalDate(a.payment_date).getTime());
       });
     });
     
@@ -177,7 +182,7 @@ export default function RentPage() {
       // Expand all properties and all years
       rents.forEach(rent => {
         newExpandedProperties.add(rent.property_id);
-        const year = rent.rent_period_year || new Date(rent.payment_date).getFullYear();
+        const year = rent.rent_period_year || parseLocalDate(rent.payment_date).getFullYear();
         newExpandedYears.add(`${rent.property_id}-${year}`);
       });
       
@@ -203,8 +208,8 @@ export default function RentPage() {
     getPropertyName(a).localeCompare(getPropertyName(b))
   );
 
-  const formatAmount = (amt: number) => 
-    amt > 0 ? `$${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '-';
+  const formatAmount = (amt: number) =>
+    amt > 0 ? `$${Math.round(amt).toLocaleString()}` : '-';
 
   const exportToCSV = () => {
     if (!rents || rents.length === 0) {
@@ -341,13 +346,13 @@ export default function RentPage() {
           <div className="bg-blue-50 px-2 py-1 rounded">
             <span className="text-blue-600">Total:</span>{' '}
             <span className="font-bold text-blue-900">
-              ${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              ${grandTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </span>
           </div>
           <div className="bg-green-50 px-2 py-1 rounded">
             <span className="text-green-600">IRS Total:</span>{' '}
             <span className="font-bold text-green-900">
-              ${irsTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              ${irsTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </span>
           </div>
         </div>
@@ -405,7 +410,7 @@ export default function RentPage() {
                 <span className="font-semibold text-sm">{getPropertyName(propId)}</span>
                 <span className="text-xs text-gray-500">({propertyRents.length})</span>
                 <span className="ml-auto font-bold text-sm">
-                  ${propertyTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ${propertyTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
               </div>
               
@@ -451,7 +456,7 @@ export default function RentPage() {
                         <span className="font-medium text-xs text-gray-900">{year}</span>
                         <span className="text-[10px] text-gray-700">({yearRents.length})</span>
                         <span className="ml-auto font-semibold text-xs">
-                          ${yearTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          ${yearTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </span>
                       </div>
 
@@ -491,7 +496,7 @@ export default function RentPage() {
                             >
                               {/* Date */}
                               <span className="text-[10px] text-gray-800 w-16 shrink-0">
-                                {format(new Date(rent.payment_date), 'MM/dd')}
+                                {format(parseLocalDate(rent.payment_date), 'MM/dd')}
                               </span>
                               
                               {/* Period */}
@@ -526,7 +531,7 @@ export default function RentPage() {
                               <span className={`font-semibold text-xs w-20 text-right shrink-0 ${
                                 Number(rent.amount) < 0 ? 'text-red-600' : 'text-blue-700'
                               }`}>
-                                {Number(rent.amount) < 0 ? '-' : ''}${Math.abs(Number(rent.amount)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                {Number(rent.amount) < 0 ? '-' : ''}${Math.abs(Number(rent.amount)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                               </span>
                               
                               {/* Actions */}

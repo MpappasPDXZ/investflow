@@ -856,6 +856,11 @@ async def update_rent_endpoint(
                 if not isinstance(update_dict[key], int):
                     update_dict[key] = int(update_dict[key])
         
+        # Convert NaN/float values in string fields to None (pandas NaN breaks PyArrow large_string)
+        for key, value in update_dict.items():
+            if isinstance(value, float) and pd.isna(value):
+                update_dict[key] = None
+        
         # Create PyArrow table directly from dict with schema (avoids pandas type inference)
         arrow_table = pa.Table.from_pylist([update_dict], schema=schema)
         table.append(arrow_table)

@@ -280,7 +280,6 @@ class FinancialPerformanceCacheService:
             # Fetch expenses (excluding rehab)
             expense_service = ExpenseService()
             all_expenses = expense_service.list_expenses(
-                user_id=user_id,
                 property_id=property_id,
                 limit=10000
             )[0]  # Returns (items, total)
@@ -422,8 +421,6 @@ class FinancialPerformanceCacheService:
                 investment_amount = Decimal(str(down_payment))
             
             if investment_amount and investment_amount > 0:
-                # Annualized profit/loss
-                from datetime import date
                 days_ytd = (date.today() - ytd_start).days
                 if days_ytd > 0:
                     annual_profit_loss = (ytd_profit_loss / Decimal(str(days_ytd))) * Decimal("365")

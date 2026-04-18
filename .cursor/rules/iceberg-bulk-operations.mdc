@@ -1,0 +1,23 @@
+---
+description: Safety protocol for bulk Iceberg table operations
+globs: backend/**/*.py
+alwaysApply: false
+---
+
+# Iceberg Bulk Operation Safety Protocol
+
+Before ANY bulk write to an Iceberg table (overwrite, mass delete, mass update, schema change):
+
+1. **Backup first**: Read the current snapshot into a pandas DataFrame, deduplicate by `id` (`keep='last'`), and write to parquet inside the container AND copy to the workspace:
+   ```python
+   df = table.scan().to_pandas()
+   df = df.drop_duplicates(subset=['id'], keep='last')
+   pq.write_table(pa.Table.from_pandas(df, schema=table.schema().as_arrow(), preserve_index=False), backup_path)
+   ```
+   Then: `docker cp <container>:<path> ./backup.parquet`
+
+2. **Never loop individual deletes**: Iceberg `table.delete(EqualTo(...))` is slow per row. For bulk updates, read the full table, modify the DataFrame in memory, then call `table.overwrite(arrow_table)` once.
+
+3. **Verify after overwrite**: Re-scan the table and confirm row count, unique IDs, zero duplicates, and that key fields (like `document_storage_id` for receipts) are intact.
+
+4. **Conflict handling**: If `CommitFailedException` (409 Conflict) occurs, re-read the table from the latest snapshot and retry the overwrite. The table state may have changed between read and write.

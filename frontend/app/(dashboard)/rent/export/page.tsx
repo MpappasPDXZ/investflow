@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileDown } from 'lucide-react';
 import { format } from 'date-fns';
 
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 export default function ExportRentsPage() {
   const { data: properties } = useProperties();
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
@@ -38,7 +43,7 @@ export default function ExportRentsPage() {
       const startDate = new Date(parseInt(year), 0, 1);
       const endDate = new Date(parseInt(year), 11, 31);
       filteredRents = rents.filter(rent => {
-        const paymentDate = new Date(rent.payment_date);
+        const paymentDate = parseLocalDate(rent.payment_date);
         return paymentDate >= startDate && paymentDate <= endDate;
       });
     }

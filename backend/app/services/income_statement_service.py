@@ -93,22 +93,53 @@ class IncomeStatementService:
     def __init__(self):
         self.catalog = get_catalog()
 
+    @staticmethod
+    def _trailing_12_months() -> List[Tuple[int, int]]:
+        """Return 12 (year, month) tuples ending with the current month."""
+        today = date.today()
+        slots: List[Tuple[int, int]] = []
+        for offset in range(11, -1, -1):
+            # Subtract `offset` months from current month
+            total_months = today.year * 12 + (today.month - 1) - offset
+            y, m = divmod(total_months, 12)
+            slots.append((y, m + 1))
+        return slots
+
+    @staticmethod
+    def _calendar_year_slots(year: int) -> List[Tuple[int, int]]:
+        """Return 12 (year, month) tuples for Jan-Dec of the given year."""
+        return [(year, m) for m in range(1, 13)]
+
     def generate_pdf(
         self,
         property_id: str,
         fiscal_year: int,
+        mode: str = "t12",
     ) -> bytes:
         """
-        Generate an income statement PDF for a property and fiscal year.
+        Generate an income statement PDF.
 
-        Returns PDF bytes.
+        mode="t12"  -> trailing 12 months ending with current month
+        mode="calendar" -> calendar year Jan-Dec for fiscal_year
         """
+        if mode == "calendar":
+            month_slots = self._calendar_year_slots(fiscal_year)
+            title_right = f"Fiscal Year {fiscal_year}"
+        else:
+            month_slots = self._trailing_12_months()
+            s = month_slots[0]
+            e = month_slots[-1]
+            title_right = f"{MONTH_ABBR[s[1]-1]} {s[0]} -- {MONTH_ABBR[e[1]-1]} {e[0]}"
+
+        start_month = date(month_slots[0][0], month_slots[0][1], 1)
+        end_month = date(month_slots[-1][0], month_slots[-1][1], 1)
+
         property_data = self._get_property(property_id)
         units = self._get_units(property_id)
-        revenue_data = self._get_revenue(property_id, fiscal_year)
-        expense_data = self._get_expenses(property_id, fiscal_year)
+        revenue_data = self._get_revenue_t12(property_id, month_slots)
+        expense_data = self._get_expenses_t12(property_id, start_month, end_month)
 
-        latex = self._build_latex(property_data, units, revenue_data, expense_data, fiscal_year)
+        latex = self._build_latex(property_data, units, revenue_data, expense_data, title_right, month_slots)
         return self._compile_pdf(latex)
 
     def _get_property(self, property_id: str) -> Dict[str, Any]:
@@ -190,24 +221,35 @@ class IncomeStatementService:
                 continue
         return result
 
-    def _get_revenue(self, property_id: str, year: int) -> pd.DataFrame:
+    def _get_revenue_t12(self, property_id: str, month_slots: List[Tuple[int, int]]) -> pd.DataFrame:
+        """Fetch revenue for the trailing 12 month window."""
         if not table_exists(NAMESPACE, "rents"):
             return pd.DataFrame()
         df = read_table(NAMESPACE, "rents")
         df = df[df["property_id"] == property_id]
-        if "rent_period_year" in df.columns:
-            df = df[df["rent_period_year"].notna() & (df["rent_period_year"] == year)]
-        if len(df) == 0:
+        if "rent_period_year" not in df.columns or "rent_period_month" not in df.columns:
             return pd.DataFrame()
-        return df
+        df = df[df["rent_period_year"].notna() & df["rent_period_month"].notna()]
+        # Filter to only rows within the month_slots window
+        slot_set = set(month_slots)
+        mask = df.apply(lambda r: (int(r["rent_period_year"]), int(r["rent_period_month"])) in slot_set, axis=1)
+        return df[mask]
 
-    def _get_expenses(self, property_id: str, year: int) -> List[Dict[str, Any]]:
+    def _get_expenses_t12(self, property_id: str, start_month: date, end_month: date) -> List[Dict[str, Any]]:
+        """Fetch expenses for the trailing 12 month window."""
         import uuid as _uuid
+        from datetime import timedelta
         from app.services.expense_service import expense_service
+        # End date = last day of the end_month
+        if end_month.month == 12:
+            next_first = date(end_month.year + 1, 1, 1)
+        else:
+            next_first = date(end_month.year, end_month.month + 1, 1)
+        end_date = next_first - timedelta(days=1)
         expenses, _ = expense_service.list_expenses(
             property_id=_uuid.UUID(property_id),
-            start_date=date(year, 1, 1),
-            end_date=date(year, 12, 31),
+            start_date=start_month,
+            end_date=end_date,
             limit=5000,
         )
         return expenses
@@ -218,8 +260,12 @@ class IncomeStatementService:
         units: List[Dict[str, Any]],
         revenue_df: pd.DataFrame,
         expenses: List[Dict[str, Any]],
-        year: int,
+        title_right: str,
+        month_slots: List[Tuple[int, int]],
     ) -> str:
+        # Build (year, month) -> column index mapping (0-based)
+        slot_index = {slot: i for i, slot in enumerate(month_slots)}
+
         # Build address string
         addr_parts = [prop["address_line1"]]
         city_state = []
@@ -237,13 +283,17 @@ class IncomeStatementService:
         col_spec = "l" + "r" * num_months + "r"  # account name + 12 months + total
 
         # ---- REVENUE SECTION ----
-        # Group revenue by (unit_id, revenue_description) -> month -> amount
+        # Group revenue by (unit_id, revenue_description) -> column_index -> amount
         rev_by_unit: Dict[str, Dict[str, Dict[int, float]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
         if len(revenue_df) > 0:
             for _, row in revenue_df.iterrows():
                 unit_id = str(row.get("unit_id")) if pd.notna(row.get("unit_id")) else "property"
-                month = int(row["rent_period_month"]) if pd.notna(row.get("rent_period_month")) else None
-                if month is None:
+                r_year = int(row["rent_period_year"]) if pd.notna(row.get("rent_period_year")) else None
+                r_month = int(row["rent_period_month"]) if pd.notna(row.get("rent_period_month")) else None
+                if r_year is None or r_month is None:
+                    continue
+                col = slot_index.get((r_year, r_month))
+                if col is None:
                     continue
                 raw_desc = str(row.get("revenue_description") or "Rent") if pd.notna(row.get("revenue_description")) else "Rent"
                 desc = raw_desc.replace("Monthly Rent", "Rent")
@@ -251,7 +301,7 @@ class IncomeStatementService:
                 if is_non_irs:
                     continue
                 amount = float(row["amount"]) if pd.notna(row.get("amount")) else 0
-                rev_by_unit[unit_id][desc][month] += amount
+                rev_by_unit[unit_id][desc][col] += amount
 
         # Build unit label map (include tenant name if available)
         unit_label_map = {}
@@ -278,7 +328,7 @@ class IncomeStatementService:
                 months = descs[desc]
                 cells = []
                 row_total = 0
-                for m in range(1, 13):
+                for m in range(12):
                     val = round(months.get(m, 0))
                     revenue_month_totals[m] += val
                     row_total += val
@@ -289,73 +339,124 @@ class IncomeStatementService:
                 )
 
         # Revenue totals row
-        rev_total_cells = [_fmt_raw(revenue_month_totals.get(m, 0)) for m in range(1, 13)]
+        rev_total_cells = [_fmt_raw(revenue_month_totals.get(m, 0)) for m in range(12)]
         rev_total_row = f"    \\textbf{{Total Revenue}} & " + " & ".join(rev_total_cells) + f" & \\textbf{{{_fmt_raw(revenue_grand_total)}}} \\\\"
 
         # ---- EXPENSE SECTION ----
-        # Group expenses by tax_category -> month -> amount
+        # Group expenses by tax_category -> column_index -> amount
         exp_by_cat: Dict[str, Dict[int, float]] = defaultdict(lambda: defaultdict(float))
         for exp in expenses:
             exp_date = exp.get("date")
             if not exp_date:
                 continue
-            if hasattr(exp_date, 'month'):
-                month = exp_date.month
+            if hasattr(exp_date, 'year') and hasattr(exp_date, 'month'):
+                e_year, e_month = exp_date.year, exp_date.month
             else:
                 try:
-                    month = int(str(exp_date).split("-")[1])
+                    parts = str(exp_date).split("-")
+                    e_year, e_month = int(parts[0]), int(parts[1])
                 except (IndexError, ValueError):
                     continue
+            col = slot_index.get((e_year, e_month))
+            if col is None:
+                continue
             cat = exp.get("tax_category") or "repairs"
             amount = float(exp.get("amount", 0))
-            exp_by_cat[cat][month] += amount
+            exp_by_cat[cat][col] += amount
 
-        # Build expense rows in Schedule E order
-        schedule_e_order = [
-            "advertising", "auto_travel", "cleaning", "commissions", "insurance",
-            "legal_professional", "management_fees", "mortgage_interest", "other_interest",
-            "repairs", "supplies", "taxes", "utilities", "capital_improvement", "other",
+        # Operating expenses: ordered from most consistently recurring to most variable
+        opex_order = [
+            "insurance", "taxes", "management_fees", "utilities",
+            "cleaning", "repairs", "advertising", "auto_travel",
+            "legal_professional", "commissions", "supplies", "other",
         ]
+        capex_cats = ["capital_improvement"]
+        interest_cats = ["mortgage_interest", "other_interest"]
 
-        expense_rows_latex = []
-        expense_month_totals = defaultdict(float)
-        expense_grand_total = 0.0
+        def _build_expense_group(categories):
+            """Build LaTeX rows and month totals for a list of expense categories."""
+            rows = []
+            month_totals = defaultdict(float)
+            grand_total = 0.0
+            for cat in categories:
+                months = exp_by_cat.get(cat)
+                if not months:
+                    continue
+                label = TAX_CATEGORY_LABELS.get(cat, cat)
+                cells = []
+                row_total = 0
+                for m in range(12):
+                    val = round(months.get(m, 0))
+                    month_totals[m] += val
+                    row_total += val
+                    cells.append(_fmt(val))
+                grand_total += row_total
+                rows.append(f"    {label} & " + " & ".join(cells) + f" & {_fmt(row_total)} \\\\")
+            return rows, month_totals, grand_total
 
-        for cat in schedule_e_order:
-            months = exp_by_cat.get(cat)
-            if not months:
-                continue
-            label = TAX_CATEGORY_LABELS.get(cat, cat)
-            cells = []
-            row_total = 0
-            for m in range(1, 13):
-                val = round(months.get(m, 0))
-                expense_month_totals[m] += val
-                row_total += val
-                cells.append(_fmt(val))
-            expense_grand_total += row_total
-            expense_rows_latex.append(
-                f"    {label} & " + " & ".join(cells) + f" & {_fmt(row_total)} \\\\"
+        opex_rows, opex_month_totals, opex_grand_total = _build_expense_group(opex_order)
+        capex_rows, capex_month_totals, capex_grand_total = _build_expense_group(capex_cats)
+        interest_rows, interest_month_totals, interest_grand_total = _build_expense_group(interest_cats)
+
+        # Total Operating Expenses row
+        opex_total_cells = [_fmt_raw(opex_month_totals.get(m, 0)) for m in range(12)]
+        opex_total_row = f"    \\textbf{{Total Operating Expenses}} & " + " & ".join(opex_total_cells) + f" & \\textbf{{{_fmt_raw(opex_grand_total)}}} \\\\"
+
+        # NOI before CapEx = Revenue - OpEx
+        noi_pre_cells = []
+        for m in range(12):
+            val = revenue_month_totals.get(m, 0) - opex_month_totals.get(m, 0)
+            noi_pre_cells.append(f"\\textbf{{{_fmt_noi(val)}}}")
+        noi_pre_total = revenue_grand_total - opex_grand_total
+        noi_pre_row = f"    \\textbf{{Net Operating Income}} & " + " & ".join(noi_pre_cells) + f" & \\textbf{{{_fmt_noi(noi_pre_total)}}} \\\\"
+        noi_pre_color = "noirow" if noi_pre_total >= 0 else "totalrow"
+
+        # CapEx totals row
+        capex_total_cells = [_fmt_raw(capex_month_totals.get(m, 0)) for m in range(12)]
+        capex_total_row = f"    \\textbf{{Total Capital Expenditures}} & " + " & ".join(capex_total_cells) + f" & \\textbf{{{_fmt_raw(capex_grand_total)}}} \\\\"
+
+        # NOI after CapEx = NOI before CapEx - CapEx
+        noi_post_cells = []
+        for m in range(12):
+            val = revenue_month_totals.get(m, 0) - opex_month_totals.get(m, 0) - capex_month_totals.get(m, 0)
+            noi_post_cells.append(f"\\textbf{{{_fmt_noi(val)}}}")
+        noi_post_total = noi_pre_total - capex_grand_total
+        noi_post_row = f"    \\textbf{{NOI after Capital Improvements}} & " + " & ".join(noi_post_cells) + f" & \\textbf{{{_fmt_noi(noi_post_total)}}} \\\\"
+        noi_post_color = "noirow" if noi_post_total >= 0 else "totalrow"
+
+        # Interest totals row
+        interest_total_cells = [_fmt_raw(interest_month_totals.get(m, 0)) for m in range(12)]
+        interest_total_row = f"    \\textbf{{Total Interest Expense}} & " + " & ".join(interest_total_cells) + f" & \\textbf{{{_fmt_raw(interest_grand_total)}}} \\\\"
+
+        # Net Profit = NOI after CapEx - Interest
+        profit_cells = []
+        for m in range(12):
+            val = (revenue_month_totals.get(m, 0)
+                   - opex_month_totals.get(m, 0)
+                   - capex_month_totals.get(m, 0)
+                   - interest_month_totals.get(m, 0))
+            profit_cells.append(f"\\textbf{{{_fmt_noi(val)}}}")
+        profit_total = noi_post_total - interest_grand_total
+        profit_row = f"    \\textbf{{Net Profit}} & " + " & ".join(profit_cells) + f" & \\textbf{{{_fmt_noi(profit_total)}}} \\\\"
+        profit_color = "noirow" if profit_total >= 0 else "totalrow"
+
+        # Month headers — include year suffix only when slots span multiple years
+        all_same_year = len(set(s[0] for s in month_slots)) == 1
+        if all_same_year:
+            month_headers = " & ".join(
+                [f"\\textbf{{{MONTH_ABBR[slot[1]-1]}}}" for slot in month_slots]
+            )
+        else:
+            month_headers = " & ".join(
+                [f"\\textbf{{{MONTH_ABBR[slot[1]-1]} '{slot[0] % 100:02d}}}" for slot in month_slots]
             )
 
-        # Expense totals row
-        exp_total_cells = [_fmt_raw(expense_month_totals.get(m, 0)) for m in range(1, 13)]
-        exp_total_row = f"    \\textbf{{Total Expenses}} & " + " & ".join(exp_total_cells) + f" & \\textbf{{{_fmt_raw(expense_grand_total)}}} \\\\"
-
-        # ---- NOI ROW ----
-        noi_cells = []
-        for m in range(1, 13):
-            noi = revenue_month_totals.get(m, 0) - expense_month_totals.get(m, 0)
-            noi_cells.append(f"\\textbf{{{_fmt_noi(noi)}}}")
-        noi_total = revenue_grand_total - expense_grand_total
-        noi_total_fmt = _fmt_noi(noi_total)
-        noi_row = f"    \\textbf{{Net Operating Income}} & " + " & ".join(noi_cells) + f" & \\textbf{{{noi_total_fmt}}} \\\\"
-        noi_color = "noirow" if noi_total >= 0 else "noiloss"
-
-        # Month header
-        month_headers = " & ".join([f"\\textbf{{{MONTH_ABBR[m-1]}}}" for m in range(1, 13)])
-
         # ---- ASSEMBLE LATEX ----
+        # Pre-compute fallback rows for empty sections (Python 3.11 forbids backslashes in f-string expressions)
+        empty_row = "    \\quad -- & " + " & ".join(["-"] * 12) + " & - \\\\"
+        capex_body = chr(10).join(capex_rows) if capex_rows else empty_row
+        interest_body = chr(10).join(interest_rows) if interest_rows else empty_row
+
         latex = f"""\\documentclass[8pt,landscape]{{article}}
 \\usepackage[landscape,margin=0.35in,top=0.4in,bottom=0.3in]{{geometry}}
 \\usepackage{{booktabs}}
@@ -382,7 +483,7 @@ class IncomeStatementService:
 % Title
 \\noindent
 \\begin{{minipage}}{{\\textwidth}}
-\\textbf{{\\large Income Statement --- {_tex_escape(address)}}} \\hfill \\textbf{{Fiscal Year {year}}}
+\\textbf{{\\large Income Statement --- {_tex_escape(address)}}} \\hfill \\textbf{{{title_right}}}
 \\end{{minipage}}
 
 \\vspace{{6pt}}
@@ -408,18 +509,48 @@ class IncomeStatementService:
 
 \\addlinespace[4pt]
 
-% --- EXPENSES ---
+% --- OPERATING EXPENSES ---
 \\rowcolor{{headerbg}}
-\\multicolumn{{{num_months + 2}}}{{l}}{{\\textbf{{Operating Expenses (Schedule E)}}}} \\\\
-{chr(10).join(expense_rows_latex)}
+\\multicolumn{{{num_months + 2}}}{{l}}{{\\textbf{{Operating Expenses}}}} \\\\
+{chr(10).join(opex_rows)}
 \\midrule
 \\rowcolor{{totalrow}}
-{exp_total_row}
+{opex_total_row}
 
 \\addlinespace[2pt]
 \\midrule
-\\rowcolor{{{noi_color}}}
-{noi_row}
+\\rowcolor{{{noi_pre_color}}}
+{noi_pre_row}
+
+\\addlinespace[4pt]
+
+% --- CAPITAL EXPENDITURES ---
+\\rowcolor{{headerbg}}
+\\multicolumn{{{num_months + 2}}}{{l}}{{\\textbf{{Capital Expenditures}}}} \\\\
+{capex_body}
+\\midrule
+\\rowcolor{{totalrow}}
+{capex_total_row}
+
+\\addlinespace[2pt]
+\\midrule
+\\rowcolor{{{noi_post_color}}}
+{noi_post_row}
+
+\\addlinespace[4pt]
+
+% --- INTEREST EXPENSE ---
+\\rowcolor{{headerbg}}
+\\multicolumn{{{num_months + 2}}}{{l}}{{\\textbf{{Interest Expense}}}} \\\\
+{interest_body}
+\\midrule
+\\rowcolor{{totalrow}}
+{interest_total_row}
+
+\\addlinespace[2pt]
+\\midrule
+\\rowcolor{{{profit_color}}}
+{profit_row}
 
 \\bottomrule
 \\end{{tabular*}}
