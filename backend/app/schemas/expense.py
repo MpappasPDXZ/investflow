@@ -13,7 +13,7 @@ class ExpenseType(str, Enum):
     """Expense type enum"""
     CAPEX = "capex"
     REHAB = "rehab"  # Initial repairs/renovation to make property rent-ready
-    PANDI = "pandi"
+    PANDI = "pandi" # Principal pay down is not an expense.  Interest and escrow are.
     TAX = "tax"  # Property taxes
     UTILITIES = "utilities"
     MAINTENANCE = "maintenance"

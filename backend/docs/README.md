@@ -1,11 +1,11 @@
 # Backend documentation
 
-InvestFlow backend docs for the Lakekeeper → Postgres migration.
+InvestFlow backend docs (Postgres tabular store + ADLS blobs).
 
 | Doc | Purpose |
 |-----|---------|
 | [api-directory.md](./api-directory.md) | Every API route → screen → status |
-| [data-model.md](./data-model.md) | Generated Iceberg/Postgres schema + relationships |
+| [data-model.md](./data-model.md) | Schema + relationships |
 | [unit-test-catalog.md](./unit-test-catalog.md) | Planned/implemented unit tests |
 | [exports/](./exports/) | Local snapshot dumps (gitignored PII); also uploaded to ADLS |
 
@@ -13,7 +13,7 @@ InvestFlow backend docs for the Lakekeeper → Postgres migration.
 
 ```bash
 cd backend
-uv run python -m app.scripts.export_iceberg_docs
+USE_POSTGRES_STORE=true uv run python -m app.scripts.export_postgres_to_adls
 ```
 
-Uploads parquet + markdown for every `investflow.*` table to ADLS under `backups/docs/{timestamp}/` and writes local copies under `docs/exports/{timestamp}/`.
+Writes parquet backups to ADLS and can leave local copies under `docs/exports/` (gitignored).

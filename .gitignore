@@ -147,12 +147,18 @@ backend/app/scripts/*
 !backend/app/scripts/_archive_iceberg/
 !backend/app/scripts/_archive_iceberg/**
 
-# readme / docs — ignore most md, keep migration playbook + ops notes
+# readme / docs — ignore most md, keep migration / ops / lease notes
 *.md
 !README.md
 !docs/migration/
 !docs/migration/**/*.md
 !docs/ops/
 !docs/ops/**/*.md
+!docs/leases/
+!docs/leases/**/*.md
 !backend/app/scripts/_archive_iceberg/README.md
+
+# Local data dumps accidentally dropped in repo root
+*.xlsx
+*.zip
 

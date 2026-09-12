@@ -60,7 +60,8 @@ backend/
 │   ├── models/
 │   ├── schemas/
 │   ├── services/
-│   └── scripts/      # export_postgres_to_adls, smoke_postgres_writes, …
+│   └── scripts/      # export_postgres_to_adls, smoke_postgres_writes
+│                     # (+ _archive_iceberg/ historical one-offs)
 ├── docker-compose.yml
 ├── Dockerfile
 └── env.example

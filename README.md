@@ -74,9 +74,8 @@ LOCAL_KEY=$(grep "^LAKEKEEPER__PG_ENCRYPTION_KEY=" backend/.env | cut -d'=' -f2-
 PROD_KEY=$(az containerapp show --name investflow-lakekeeper --resource-group investflow-rg \
   --query "properties.template.containers[0].env[?name=='LAKEKEEPER__PG_ENCRYPTION_KEY'].value" -o tsv)
 
-# 2. If they don't match, fix it
-if [ "$LOCAL_KEY" != "$PROD_KEY" ]; then
-  ./fix_production_encryption_key.sh
+# 2. Lakekeeper was removed (2026-09-12). Encryption-key sync is obsolete.
+#    Tabular store is Azure Postgres; blobs remain on ADLS.
 fi
 ```
 
@@ -134,30 +133,25 @@ LAKEKEEPER__OAUTH2__SCOPE=api://9c72d190-0a2f-4b94-9cb5-99349363f4f7/.default
 ### Troubleshooting
 
 **Production broken after git push, but local works?**
-1. Check encryption key: `./fix_production_encryption_key.sh`
-2. Check Lakekeeper health: `curl https://investflow-lakekeeper.yellowsky-ca466dfe.eastus.azurecontainerapps.io/health`
-3. Check backend logs: `az containerapp logs show --name investflow-backend --resource-group investflow-rg --tail 50`
+1. Check backend health: `curl https://<backend-fqdn>/api/v1/health`
+2. Check backend logs: `az containerapp logs show --name investflow-backend --resource-group investflow-rg --tail 50`
+3. Confirm Postgres env on the Container App (`USE_POSTGRES_STORE=true`, `POSTGRES_*`)
 
-**"SecretFetchError: Wrong key or corrupt data"**
-→ Encryption key mismatch. Run `./fix_production_encryption_key.sh`
-
-**"No data returned" but data exists in ADLS**
-→ Lakekeeper can't access ADLS. Check `AZURE_STORAGE_ACCOUNT_KEY` is set in Lakekeeper container app.
+**Historical Lakekeeper notes** live under `docs/ops/` (catalog removed 2026-09-12).
 
 ## Project Structure
 
 ```
 investflow/
 ├── backend/          # FastAPI application
-│   ├── app/         # Application code
-│   ├── tests/       # Test files
-│   └── pyproject.toml
 ├── frontend/         # Next.js application
-│   ├── app/         # Next.js app directory
-│   ├── components/  # React components
-│   └── package.json
-├── azure-resources.md  # Azure infrastructure documentation
-└── make_app.txt     # Complete application specification
+├── docs/
+│   ├── migration/    # Iceberg → Postgres playbook
+│   ├── ops/          # Deploy / Azure / auth notes
+│   └── leases/       # Lease template + state references
+├── scripts/          # Local/ops helper scripts
+├── deploy.sh         # Production deploy
+└── README.md
 ```
 
 ## Leasing Workflow (Tenant Onboarding)
@@ -300,7 +294,7 @@ documents/  (ADLS container)
 
 ### Template Structure
 
-Leases follow the `NE_res_agreement.tex` template with 39 sections:
+Leases follow the `docs/leases/NE_res_agreement.tex` template with 39 sections:
 
 1. Premises (property description)
 2. Lease Term (dates)
@@ -421,7 +415,7 @@ docker-compose logs backend --tail=50
 ```
 
 **Rollback (if needed):**
-See `backend/app/scripts/MIGRATION_README.md` for detailed rollback procedures using ADLS backups.
+See `backend/app/scripts/_archive_iceberg/MIGRATION_README.md` for historical rollback notes using ADLS backups.
 
 ### Common Migration Mistakes
 

@@ -129,7 +129,7 @@ def main():
     print("="*80)
     
     # Paths
-    tex_path = Path("/Users/matt/code/property/NE_res_agreement.tex")
+    tex_path = Path("/Users/matt/code/property/docs/leases/NE_res_agreement.tex")
     
     # Find most recent generated PDF from ADLS
     print("\nSearching for most recent lease PDF in ADLS...")
