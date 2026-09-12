@@ -57,6 +57,8 @@ jobs:
             --name ${{ env.BACKEND_APP }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --image ${{ env.ACR_SERVER }}/backend:${{ github.sha }} \
+            --min-replicas 0 \
+            --max-replicas 3 \
             --set-env-vars \
               CORS_ORIGINS=${{ env.FRONTEND_URL }} \
               USE_POSTGRES_STORE=true
@@ -66,7 +68,9 @@ jobs:
           az containerapp update \
             --name ${{ env.FRONTEND_APP }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ env.ACR_SERVER }}/frontend:${{ github.sha }}
+            --image ${{ env.ACR_SERVER }}/frontend:${{ github.sha }} \
+            --min-replicas 0 \
+            --max-replicas 3
 
       - name: Deployment Summary
         run: |
