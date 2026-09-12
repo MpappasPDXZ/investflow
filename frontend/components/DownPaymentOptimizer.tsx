@@ -80,60 +80,67 @@ export default function DownPaymentOptimizer({
   const DOWN_PAYMENT_INCREMENT = 25000;
   const MIN_DOWN_PAYMENT = 25000;
   const BANK_EXPENSE_RATIO = 0.35; // 35% of annual rent for bank underwriting
-  
+  const LOAN_TERM_YEARS = 30;
+
+  // Bank underwriting: full amortized P&I (30-year), not interest-only
+  const calculateMonthlyPI = (loanAmount: number, rate: number): number => {
+    if (loanAmount === 0 || rate === 0) return 0;
+    const monthlyRate = rate / 12;
+    const numPayments = LOAN_TERM_YEARS * 12;
+    return (
+      loanAmount *
+      (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) /
+      (Math.pow(1 + monthlyRate, numPayments) - 1)
+    );
+  };
+
   // Fetch data on mount
   useEffect(() => {
     fetchData();
   }, [propertyId]);
-  
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch units
-      const unitsResponse = await apiClient.get<{items: Unit[], total: number}>(
-        `/units?property_id=${propertyId}`
+      const unitsResponse = await apiClient.get<{ items: Unit[]; total: number }>(
+        `/units?property_id=${propertyId}`,
       );
-      setUnits(unitsResponse.items.filter(u => u.is_active));
-      
-      // Fetch scheduled expenses
-      const expensesResponse = await apiClient.get<{items: ScheduledExpense[], total: number}>(
-        `/scheduled-expenses?property_id=${propertyId}`
-      );
-      setScheduledExpenses(expensesResponse.items.filter(e => e.is_active));
-      
-      // Fetch user profile
+      setUnits(unitsResponse.items.filter((u) => u.is_active));
+
+      const expensesResponse = await apiClient.get<{
+        items: ScheduledExpense[];
+        total: number;
+      }>(`/scheduled-expenses?property_id=${propertyId}`);
+      setScheduledExpenses(expensesResponse.items.filter((e) => e.is_active));
+
       const profileResponse = await apiClient.get<UserProfile>('/users/me');
       setUserProfile(profileResponse);
-      
-      // Set defaults from fetched data
+
       if (unitsResponse.items.length > 0) {
-        const avgRent = unitsResponse.items
-          .filter(u => u.current_monthly_rent && u.is_active)
-          .reduce((sum, u) => sum + (u.current_monthly_rent || 0), 0) / 
-          unitsResponse.items.filter(u => u.current_monthly_rent && u.is_active).length;
+        const activeWithRent = unitsResponse.items.filter(
+          (u) => u.current_monthly_rent && u.is_active,
+        );
+        const avgRent =
+          activeWithRent.length > 0
+            ? activeWithRent.reduce((sum, u) => sum + (u.current_monthly_rent || 0), 0) /
+              activeWithRent.length
+            : 0;
         setMonthlyRentPerUnit(avgRent || 0);
       }
-      
+
       if (profileResponse.mortgage_interest_rate) {
         setMortgageRate(profileResponse.mortgage_interest_rate);
       }
       if (profileResponse.loc_interest_rate) {
         setLocRate(profileResponse.loc_interest_rate);
       }
-      
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
   };
-  
-  // Annual mortgage interest = loan balance × rate (not amortized P&I)
-  const calculateAnnualInterest = (loanAmount: number, rate: number): number => {
-    if (loanAmount === 0 || rate === 0) return 0;
-    return loanAmount * rate;
-  };
-  
+
   // Calculate expense categories from scheduled expenses
   const expenseCategories = useMemo(() => {
     const categories = {
@@ -208,30 +215,31 @@ export default function DownPaymentOptimizer({
       if (downPaymentPercent < 10) continue;
       
       const loanAmount = purchasePrice - downPayment;
-      const annualPI = calculateAnnualInterest(loanAmount, mortgageRate);
-      const escrowAndInterest = taxAndInsurance + annualPI;
-      
-      // Total expenses excluding mortgage interest
-      const totalExpensesExcludingPI = repairCosts + taxAndInsurance + capex + maintenance + vacancyCost;
-      
-      // Total expenses including mortgage interest
+      const monthlyPI = calculateMonthlyPI(loanAmount, mortgageRate);
+      const annualPI = monthlyPI * 12;
+
+      // Total expenses excluding P&I for bank ratio
+      const totalExpensesExcludingPI =
+        repairCosts + taxAndInsurance + capex + maintenance + vacancyCost;
+
+      // Total expenses including amortized P&I (bank underwriting cash flow)
       const totalExpenses = totalExpensesExcludingPI + annualPI;
-      
+
       // Cash flow = Effective Annual Rent - Total Expenses
       const cashFlow = effectiveAnnualRent - totalExpenses;
-      
-      // Coverage using Escrow + Interest (not bank DSCR with full amortized P&I)
-      const bankRatioDenominator = (grossAnnualRent * BANK_EXPENSE_RATIO) + escrowAndInterest;
+
+      // Bank Ratio = (Annual Rent - Vacancy) / ((Annual Rent × 35%) + amortized P&I)
+      const bankRatioDenominator = grossAnnualRent * BANK_EXPENSE_RATIO + annualPI;
       const bankRatio = bankRatioDenominator > 0 ? effectiveAnnualRent / bankRatioDenominator : 0;
-      
+
       // Cash on Cash = Cash Flow / Down Payment
       const cashOnCash = downPayment > 0 ? (cashFlow / downPayment) * 100 : 0;
-      
+
       scenarios.push({
         downPayment,
         downPaymentPercent,
         loanAmount,
-        monthlyPI: annualPI / 12,
+        monthlyPI,
         annualPI,
         monthlyRent,
         annualRent: grossAnnualRent,
@@ -423,7 +431,7 @@ export default function DownPaymentOptimizer({
                 <th className="p-2 text-right whitespace-nowrap bg-red-50">Tax & Ins</th>
                 <th className="p-2 text-right whitespace-nowrap bg-red-50">CapEx</th>
                 <th className="p-2 text-right whitespace-nowrap bg-red-50">Maint</th>
-                <th className="p-2 text-right whitespace-nowrap bg-yellow-50">Mortgage Interest</th>
+                <th className="p-2 text-right whitespace-nowrap bg-yellow-50">Annual P&I</th>
                 <th className="p-2 text-right whitespace-nowrap bg-blue-50">Cash Flow</th>
                 <th className="p-2 text-right whitespace-nowrap bg-purple-100 font-bold">Bank Ratio</th>
                 <th className="p-2 text-right whitespace-nowrap bg-green-100 font-bold">CoC %</th>
@@ -478,9 +486,21 @@ export default function DownPaymentOptimizer({
       
       {/* Legend */}
       <div className="bg-gray-50 border rounded-lg p-3 text-xs space-y-1">
-        <div><strong>Coverage Formula:</strong> (Annual Rent - Vacancy) ÷ ((Annual Rent × 35%) + Escrow + Interest) ≥ 1.2</div><div className="text-xs text-gray-500">Not bank DSCR — banks usually use full amortized P&amp;I</div>
-        <div><strong>Cash on Cash:</strong> (Cash Flow ÷ Down Payment) × 100</div>
-        <div><strong>Cash Flow:</strong> Effective Annual Rent - Total Expenses (including Mortgage Interest)</div>
+        <div>
+          <strong>Bank Ratio Formula:</strong> (Annual Rent - Vacancy) ÷ ((Annual Rent × 35%) +
+          amortized P&amp;I) ≥ 1.2
+        </div>
+        <div>
+          <strong>Annual P&amp;I:</strong> 30-year amortized payment from loan amount × mortgage
+          rate (bank debt service — separate from scheduled interest-only modeling)
+        </div>
+        <div>
+          <strong>Cash on Cash:</strong> (Cash Flow ÷ Down Payment) × 100
+        </div>
+        <div>
+          <strong>Cash Flow:</strong> Effective Annual Rent - Total Expenses (including amortized
+          P&amp;I)
+        </div>
         <div className="text-purple-700 font-medium">✓ = Meets bank requirement (ratio ≥ 1.2)</div>
       </div>
     </div>

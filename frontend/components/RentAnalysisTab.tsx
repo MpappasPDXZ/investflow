@@ -91,12 +91,19 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
 
   const FINANCED_AMOUNT_INCREMENT = 5000;
   const RANGE_AROUND_INPUT = 25000; // Show ±$25k around input amount
+  const LOAN_TERM_YEARS = 30;
   const isMultiUnit = property?.property_type === 'multi_family' || property?.property_type === 'duplex';
 
-  // Annual mortgage interest = loan balance × rate (not amortized P&I)
-  const calculateAnnualInterest = (loanAmount: number, interestRate: number): number => {
+  // Bank underwriting: full amortized P&I (30-year)
+  const calculateMonthlyPI = (loanAmount: number, interestRate: number): number => {
     if (loanAmount === 0 || interestRate === 0) return 0;
-    return loanAmount * interestRate;
+    const monthlyRate = interestRate / 12;
+    const numPayments = LOAN_TERM_YEARS * 12;
+    return (
+      loanAmount *
+      (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) /
+      (Math.pow(1 + monthlyRate, numPayments) - 1)
+    );
   };
 
   useEffect(() => {
@@ -204,24 +211,23 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
   // Cash invested from property (for CoC calculation)
   const cashInvested = property.cash_invested || 0;
 
-  // Mortgage interest from financed amount; escrow from scheduled PTI
-  const annualInterest = calculateAnnualInterest(financedAmount, mortgageRate);
-  const escrowAndInterest = taxAndInsurance + annualInterest;
+  // Bank debt service = amortized P&I from financed amount
+  const monthlyPI = calculateMonthlyPI(financedAmount, mortgageRate);
+  const annualPI = monthlyPI * 12;
 
-  // Total expenses (excluding financing for some calculations)
+  // Total expenses (excluding P&I for some calculations)
   const totalExpensesExcludingFinancing = taxAndInsurance + capex + maintenance;
-  const totalExpenses = totalExpensesExcludingFinancing + annualInterest;
+  const totalExpenses = totalExpensesExcludingFinancing + annualPI;
 
-  // Cash Flow = Effective Annual Rent - Total Expenses
+  // Cash Flow = Effective Annual Rent - Total Expenses (incl. amortized P&I)
   const cashFlow = effectiveAnnualRent - totalExpenses;
 
-  // Coverage ratio using Escrow + Interest (not bank DSCR, which uses full amortized P&I)
+  // BANK DSCR: NOI / amortized P&I
   const adjustedRents = effectiveAnnualRent;
   const operatingExpenses = adjustedRents * 0.35;
   const netOperatingIncome = adjustedRents - operatingExpenses;
-  const debtService = escrowAndInterest;
+  const debtService = annualPI;
   const dscr = debtService > 0 ? netOperatingIncome / debtService : 0;
-  const annualPI = annualInterest; // kept for table field compatibility
 
   // Cash on Cash = Cash Flow / Cash Invested × 100
   const cashOnCash = cashInvested > 0 ? (cashFlow / cashInvested) * 100 : 0;
@@ -238,19 +244,19 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
     const startFinanced = Math.floor(minFinanced / FINANCED_AMOUNT_INCREMENT) * FINANCED_AMOUNT_INCREMENT;
 
     for (let financed = startFinanced; financed <= maxFinanced; financed += FINANCED_AMOUNT_INCREMENT) {
-      const annPI = calculateAnnualInterest(financed, mortgageRate);
+      const monthlyPIForScenario = calculateMonthlyPI(financed, mortgageRate);
+      const annPI = monthlyPIForScenario * 12;
 
       const effAnnualRent = annualRent - vacancyCost;
       const tExpExcludingPI = taxAndInsurance + capex + maintenance;
       const tExp = tExpExcludingPI + annPI;
       const cf = effAnnualRent - tExp;
 
-      // DSCR calculation
+      // DSCR calculation (bank: amortized P&I only)
       const adjRents = effAnnualRent;
       const opEx = adjRents * 0.35;
       const noi = adjRents - opEx;
-      const rowDebtService = taxAndInsurance + annPI;
-      const rowDSCR = rowDebtService > 0 ? noi / rowDebtService : 0;
+      const rowDSCR = annPI > 0 ? noi / annPI : 0;
 
       // Cash on Cash uses cash_invested from property
       const coc = cashInvested > 0 ? (cf / cashInvested) * 100 : 0;
@@ -399,7 +405,7 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
               </div>
 
               <div className="border-t pt-4 mb-4">
-                <div className="text-xs font-semibold text-gray-700 mb-2">Coverage (Escrow + Interest)</div>
+                <div className="text-xs font-semibold text-gray-700 mb-2">Bank DSCR Calculation</div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm bg-purple-50 p-3 rounded">
                   <div>
                     <div className="text-xs text-gray-600 mb-1">Adjusted Rents</div>
@@ -414,18 +420,17 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                     <div className="font-bold text-blue-700">${netOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Escrow + Interest</div>
-                    <div className="font-bold text-orange-700">${escrowAndInterest.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                    <div className="text-xs text-gray-600 mb-1">Annual P&amp;I</div>
+                    <div className="font-bold text-orange-700">${annualPI.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                   </div>
                 </div>
-                <div className="text-xs text-gray-500 mt-2">Not bank DSCR — banks usually use full amortized P&amp;I</div>
               </div>
 
               <div className="border-t pt-4 mb-4">
                 <div className="text-xs font-semibold text-gray-700 mb-2">Your Actual Expenses</div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Escrow</div>
+                    <div className="text-xs text-gray-600 mb-1">Escrow (Tax &amp; Ins)</div>
                     <div className="font-semibold text-red-700">${taxAndInsurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                     <div className="text-xs text-gray-500">From scheduled</div>
                   </div>
@@ -440,8 +445,9 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
                     <div className="text-xs text-gray-500">{expenseTotals.maintenance > 0 ? 'Scheduled' : 'Default'}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Mortgage Interest</div>
+                    <div className="text-xs text-gray-600 mb-1">P&amp;I (Financing)</div>
                     <div className="font-bold text-orange-700">${annualPI.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                    <div className="text-xs text-gray-500">30-yr amortized</div>
                   </div>
                 </div>
               </div>
@@ -561,18 +567,17 @@ export default function RentAnalysisTab({ propertyId, property }: Props) {
           <div>• Annual Rent (Gross) = Monthly Rent × Unit Count × 12</div>
           <div>• Vacancy Loss = Annual Rent × Vacancy Rate</div>
           <div>• <strong>Adjusted Rents = Annual Rent × (1 - Vacancy Rate)</strong></div>
-          <div className="mt-2"><strong>Coverage (Escrow + Interest):</strong></div>
-          <div className="ml-4">• Operating Expenses = 35% × Adjusted Rents (simplified estimate)</div>
+          <div className="mt-2"><strong>Bank DSCR Calculation:</strong></div>
+          <div className="ml-4">• Operating Expenses = 35% × Adjusted Rents (bank&apos;s simplified estimate)</div>
           <div className="ml-4">• Net Operating Income (NOI) = Adjusted Rents - Operating Expenses</div>
-          <div className="ml-4">• Mortgage Interest = Financed Amount × Interest Rate</div>
-          <div className="ml-4">• Escrow + Interest = Tax &amp; Insurance + Mortgage Interest</div>
-          <div className="ml-4">• <strong className="text-purple-700">Coverage = NOI ÷ (Escrow + Interest) (must be ≥ 1.20)</strong></div>
-          <div className="ml-4 text-xs text-gray-500">Not bank DSCR — banks usually use full amortized P&amp;I</div>
+          <div className="ml-4">• Annual P&amp;I = Financed Amount using 30-year mortgage amortization</div>
+          <div className="ml-4">• <strong className="text-purple-700">DSCR = NOI ÷ Annual P&amp;I (must be ≥ 1.20)</strong></div>
           <div className="mt-2"><strong>Your Actual Cash Flow:</strong></div>
-          <div className="ml-4">• Tax & Insurance, CapEx, Maintenance = From scheduled expenses</div>
-          <div className="ml-4">• <strong>Cash Flow = Adjusted Rents - (All Actual Expenses + Mortgage Interest)</strong></div>
+          <div className="ml-4">• Escrow (Tax &amp; Ins), CapEx, Maintenance = From scheduled expenses</div>
+          <div className="ml-4">• <strong>Cash Flow = Adjusted Rents - (All Actual Expenses + amortized P&amp;I)</strong></div>
           <div className="ml-4">• <strong>Cash on Cash = Cash Flow ÷ Cash Invested × 100%</strong></div>
-          <div className="ml-4 text-xs text-gray-500 italic">Cash Invested comes from the property's cash_invested field</div>
+          <div className="ml-4 text-xs text-gray-500 italic">Scheduled Mortgage Interest (balance × rate) is for operating modeling; this tab uses bank-style amortized P&amp;I</div>
+          <div className="ml-4 text-xs text-gray-500 italic">Cash Invested comes from the property&apos;s cash_invested field</div>
         </div>
       </CardContent>
     </Card>
