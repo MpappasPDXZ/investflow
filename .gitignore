@@ -147,10 +147,12 @@ backend/app/scripts/*
 !backend/app/scripts/_archive_iceberg/
 !backend/app/scripts/_archive_iceberg/**
 
-# readme / docs — ignore most md, keep migration playbook
+# readme / docs — ignore most md, keep migration playbook + ops notes
 *.md
 !README.md
 !docs/migration/
 !docs/migration/**/*.md
+!docs/ops/
+!docs/ops/**/*.md
 !backend/app/scripts/_archive_iceberg/README.md
 

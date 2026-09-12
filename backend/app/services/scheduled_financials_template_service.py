@@ -300,9 +300,9 @@ class ScheduledFinancialsTemplateService:
             'Mortgage'
         }
 
-        # Expense types that should NOT be added automatically (principal and interest)
+        # Expense types that should NOT be added automatically (mortgage interest is property-specific)
         EXCLUDE_EXPENSE_TYPES = {
-            'pi'  # Principal and Interest - should be added manually per property
+            'pi'  # Mortgage Interest - should be added manually per property
         }
 
         # Items that scale with square footage
@@ -327,7 +327,7 @@ class ScheduledFinancialsTemplateService:
             if item_name in EXCLUDE_ITEMS:
                 continue
 
-            # Skip excluded expense types (principal and interest)
+            # Skip excluded expense types (mortgage interest)
             if exp_type in EXCLUDE_EXPENSE_TYPES:
                 continue
 

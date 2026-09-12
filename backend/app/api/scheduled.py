@@ -420,82 +420,6 @@ async def create_scheduled_expense(
 
         logger.info(f"✅ Scheduled expense created: {expense_id}")
 
-        # If P&I expense, automatically create/update principal paydown revenue
-        if expense_data.expense_type == 'pi' and expense_data.principal and expense_data.interest_rate:
-            try:
-                logger.info(f"💰 Processing P&I expense - creating/updating principal paydown revenue")
-                principal_decimal = Decimal(str(expense_data.principal))
-                interest_rate_decimal = Decimal(str(expense_data.interest_rate))
-                logger.info(f"   Principal: {principal_decimal}, Interest Rate: {interest_rate_decimal}")
-
-                # Calculate amortized payment
-                monthly_payment = calculate_monthly_amortized_payment(principal_decimal, interest_rate_decimal)
-                annual_payment = monthly_payment * Decimal('12')
-                logger.info(f"   Monthly payment: {monthly_payment}, Annual payment: {annual_payment}")
-
-                # Calculate principal paydown (annual payment - annual interest)
-                annual_interest = principal_decimal * interest_rate_decimal
-                principal_paydown = annual_payment - annual_interest
-                logger.info(f"   Annual interest: {annual_interest}, Principal paydown: {principal_paydown}")
-
-                # Check if principal_paydown revenue already exists for this property
-                revenue_df = read_table(NAMESPACE, REVENUE_TABLE)
-                logger.info(f"   Revenue table read: {len(revenue_df) if revenue_df is not None and not revenue_df.empty else 0} rows")
-
-                existing_revenue = None
-                if revenue_df is not None and not revenue_df.empty:
-                    existing_revenue = revenue_df[
-                        (revenue_df['property_id'] == expense_data.property_id) &
-                        (revenue_df['revenue_type'] == 'principal_paydown') &
-                        (revenue_df['is_active'] == True)
-                    ]
-                    logger.info(f"   Found existing principal_paydown revenue: {len(existing_revenue)} rows")
-
-                if existing_revenue is not None and not existing_revenue.empty:
-                    # Update existing revenue
-                    revenue_id = existing_revenue.iloc[0]['id']
-                    revenue_idx = revenue_df[revenue_df['id'] == revenue_id].index[0]
-                    revenue_df.loc[revenue_idx, 'annual_amount'] = float(principal_paydown)
-                    revenue_df.loc[revenue_idx, 'updated_at'] = datetime.utcnow()
-                    _overwrite_scheduled_revenue_table(revenue_df)
-                    logger.info(f"✅ Updated principal paydown revenue: {revenue_id} with amount: {principal_paydown}")
-                else:
-                    # Create new revenue
-                    revenue_id = str(uuid.uuid4())
-                    revenue_dict = {}
-                    for field_name in SCHEDULED_REVENUE_FIELD_ORDER:
-                        if field_name == "id":
-                            revenue_dict[field_name] = revenue_id
-                        elif field_name == "property_id":
-                            revenue_dict[field_name] = expense_data.property_id
-                        elif field_name == "revenue_type":
-                            revenue_dict[field_name] = "principal_paydown"
-                        elif field_name == "item_name":
-                            revenue_dict[field_name] = "Principal Paydown"
-                        elif field_name == "annual_amount":
-                            revenue_dict[field_name] = float(principal_paydown)
-                        elif field_name == "appreciation_rate":
-                            revenue_dict[field_name] = None
-                        elif field_name == "property_value":
-                            revenue_dict[field_name] = None
-                        elif field_name == "value_added_amount":
-                            revenue_dict[field_name] = None
-                        elif field_name == "notes":
-                            revenue_dict[field_name] = f"Auto-generated from P&I expense: {expense_data.item_name}"
-                        elif field_name == "created_at":
-                            revenue_dict[field_name] = datetime.utcnow()
-                        elif field_name == "updated_at":
-                            revenue_dict[field_name] = datetime.utcnow()
-                        elif field_name == "is_active":
-                            revenue_dict[field_name] = True
-
-                    logger.info(f"   Creating revenue with dict: {revenue_dict}")
-                    _append_scheduled_revenue(revenue_dict)
-                    logger.info(f"✅ Created principal paydown revenue: {revenue_id} with amount: {principal_paydown}")
-            except Exception as e:
-                logger.error(f"❌ Failed to create/update principal paydown revenue: {e}", exc_info=True)
-                # Don't fail the expense creation if revenue creation fails
-
         # Calculate annual cost
         calculated_cost = calculate_expense_annual_cost(expense_dict)
 
@@ -616,114 +540,6 @@ async def update_scheduled_expense(
         updated_row = expenses_df.loc[expense_idx[0]].to_dict()
         # Replace NaN with None for Pydantic validation
         updated_row = {k: (None if pd.isna(v) else v) for k, v in updated_row.items()}
-
-        # If P&I expense was updated, automatically update principal paydown revenue
-        if updated_row.get('expense_type') == 'pi' and updated_row.get('principal') and updated_row.get('interest_rate'):
-            try:
-                logger.info(f"💰 Processing P&I expense update - creating/updating principal paydown revenue")
-                principal_decimal = Decimal(str(updated_row['principal']))
-                interest_rate_decimal = Decimal(str(updated_row['interest_rate']))
-                logger.info(f"   Principal: {principal_decimal}, Interest Rate: {interest_rate_decimal}")
-
-                # Calculate amortized payment
-                monthly_payment = calculate_monthly_amortized_payment(principal_decimal, interest_rate_decimal)
-                annual_payment = monthly_payment * Decimal('12')
-                logger.info(f"   Monthly payment: {monthly_payment}, Annual payment: {annual_payment}")
-
-                # Calculate principal paydown (annual payment - annual interest)
-                annual_interest = principal_decimal * interest_rate_decimal
-                principal_paydown = annual_payment - annual_interest
-                logger.info(f"   Annual interest: {annual_interest}, Principal paydown: {principal_paydown}")
-
-                # Check if principal_paydown revenue exists for this property
-                revenue_df = read_table(NAMESPACE, REVENUE_TABLE)
-                logger.info(f"   Revenue table read: {len(revenue_df) if revenue_df is not None and not revenue_df.empty else 0} rows")
-
-                if revenue_df is not None and not revenue_df.empty:
-                    existing_revenue = revenue_df[
-                        (revenue_df['property_id'] == updated_row['property_id']) &
-                        (revenue_df['revenue_type'] == 'principal_paydown') &
-                        (revenue_df['is_active'] == True)
-                    ]
-                    logger.info(f"   Found existing principal_paydown revenue: {len(existing_revenue)} rows")
-
-                    if not existing_revenue.empty:
-                        # Update existing revenue
-                        revenue_id = existing_revenue.iloc[0]['id']
-                        revenue_idx = revenue_df[revenue_df['id'] == revenue_id].index[0]
-                        revenue_df.loc[revenue_idx, 'annual_amount'] = float(principal_paydown)
-                        revenue_df.loc[revenue_idx, 'updated_at'] = datetime.utcnow()
-                        _overwrite_scheduled_revenue_table(revenue_df)
-                        logger.info(f"✅ Updated principal paydown revenue: {revenue_id} with amount: {principal_paydown}")
-                    else:
-                        # Create new revenue
-                        revenue_id = str(uuid.uuid4())
-                        revenue_dict = {}
-                        for field_name in SCHEDULED_REVENUE_FIELD_ORDER:
-                            if field_name == "id":
-                                revenue_dict[field_name] = revenue_id
-                            elif field_name == "property_id":
-                                revenue_dict[field_name] = updated_row['property_id']
-                            elif field_name == "revenue_type":
-                                revenue_dict[field_name] = "principal_paydown"
-                            elif field_name == "item_name":
-                                revenue_dict[field_name] = "Principal Paydown"
-                            elif field_name == "annual_amount":
-                                revenue_dict[field_name] = float(principal_paydown)
-                            elif field_name == "appreciation_rate":
-                                revenue_dict[field_name] = None
-                            elif field_name == "property_value":
-                                revenue_dict[field_name] = None
-                            elif field_name == "value_added_amount":
-                                revenue_dict[field_name] = None
-                            elif field_name == "notes":
-                                revenue_dict[field_name] = f"Auto-generated from P&I expense: {updated_row.get('item_name', 'P&I')}"
-                            elif field_name == "created_at":
-                                revenue_dict[field_name] = datetime.utcnow()
-                            elif field_name == "updated_at":
-                                revenue_dict[field_name] = datetime.utcnow()
-                            elif field_name == "is_active":
-                                revenue_dict[field_name] = True
-
-                        logger.info(f"   Creating revenue with dict: {revenue_dict}")
-                        _append_scheduled_revenue(revenue_dict)
-                        logger.info(f"✅ Created principal paydown revenue: {revenue_id} with amount: {principal_paydown}")
-                else:
-                    # Create new revenue if table is empty
-                    revenue_id = str(uuid.uuid4())
-                    revenue_dict = {}
-                    for field_name in SCHEDULED_REVENUE_FIELD_ORDER:
-                        if field_name == "id":
-                            revenue_dict[field_name] = revenue_id
-                        elif field_name == "property_id":
-                            revenue_dict[field_name] = updated_row['property_id']
-                        elif field_name == "revenue_type":
-                            revenue_dict[field_name] = "principal_paydown"
-                        elif field_name == "item_name":
-                            revenue_dict[field_name] = "Principal Paydown"
-                        elif field_name == "annual_amount":
-                            revenue_dict[field_name] = float(principal_paydown)
-                        elif field_name == "appreciation_rate":
-                            revenue_dict[field_name] = None
-                        elif field_name == "property_value":
-                            revenue_dict[field_name] = None
-                        elif field_name == "value_added_amount":
-                            revenue_dict[field_name] = None
-                        elif field_name == "notes":
-                            revenue_dict[field_name] = f"Auto-generated from P&I expense: {updated_row.get('item_name', 'P&I')}"
-                        elif field_name == "created_at":
-                            revenue_dict[field_name] = datetime.utcnow()
-                        elif field_name == "updated_at":
-                            revenue_dict[field_name] = datetime.utcnow()
-                        elif field_name == "is_active":
-                            revenue_dict[field_name] = True
-
-                    logger.info(f"   Creating revenue with dict: {revenue_dict}")
-                    _append_scheduled_revenue(revenue_dict)
-                    logger.info(f"✅ Created principal paydown revenue: {revenue_id} with amount: {principal_paydown}")
-            except Exception as e:
-                logger.error(f"❌ Failed to create/update principal paydown revenue: {e}", exc_info=True)
-                # Don't fail the expense update if revenue update fails
 
         calculated_cost = calculate_expense_annual_cost(updated_row)
 
@@ -1035,22 +851,6 @@ async def delete_scheduled_revenue(
 
 # ========== HELPER FUNCTIONS ==========
 
-def calculate_monthly_amortized_payment(principal: Decimal, interest_rate: Decimal, loan_term_years: int = 30) -> Decimal:
-    """Calculate monthly amortized payment using standard mortgage formula"""
-    if principal == 0 or interest_rate == 0:
-        return Decimal('0')
-
-    monthly_rate = interest_rate / Decimal('12')
-    num_payments = loan_term_years * 12
-
-    # Standard amortization formula: P * (r * (1+r)^n) / ((1+r)^n - 1)
-    one_plus_rate = Decimal('1') + monthly_rate
-    rate_power = one_plus_rate ** num_payments
-
-    monthly_payment = principal * (monthly_rate * rate_power) / (rate_power - Decimal('1'))
-    return monthly_payment
-
-
 def calculate_expense_annual_cost(expense: dict) -> Decimal | None:
     """Calculate the annual cost based on expense type"""
     expense_type = expense.get('expense_type')
@@ -1065,24 +865,20 @@ def calculate_expense_annual_cost(expense: dict) -> Decimal | None:
             return Decimal(str(purchase)) * Decimal(str(depreciation)) * Decimal(str(count))
 
     elif expense_type == 'pti':
-        # PTI: direct annual_cost
+        # Escrow (tax & insurance): direct annual_cost
         return expense.get('annual_cost')
 
     elif expense_type == 'maintenance' or expense_type == 'vacancy':
-        # Maintenance and Vacancy: direct annual_cost (same as PTI)
+        # Maintenance and Vacancy: direct annual_cost
         return expense.get('annual_cost')
 
     elif expense_type == 'pi':
-        # P&I: Calculate full amortized payment (principal + interest)
+        # Mortgage interest: loan balance × interest rate (not amortized P&I)
         principal = expense.get('principal')
         interest_rate = expense.get('interest_rate')
 
         if principal and interest_rate:
-            principal_decimal = Decimal(str(principal))
-            interest_rate_decimal = Decimal(str(interest_rate))
-            monthly_payment = calculate_monthly_amortized_payment(principal_decimal, interest_rate_decimal)
-            annual_payment = monthly_payment * Decimal('12')
-            return annual_payment
+            return Decimal(str(principal)) * Decimal(str(interest_rate))
 
     return None
 

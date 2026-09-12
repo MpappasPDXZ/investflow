@@ -232,41 +232,9 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
 
       console.log('📝 [EXPENSE] Creating expense with ordered payload:', orderedPayload);
       console.log('📝 [EXPENSE] Payload field order:', Object.keys(orderedPayload));
-      const isPIExpense = expenseForm.expense_type === 'pi';
       await apiClient.post('/scheduled-expenses', orderedPayload);
       resetExpenseForm();
       await fetchExpenses();
-
-      // If P&I expense, fetch revenues to show principal paydown
-      if (isPIExpense) {
-        // Wait a moment for backend to create the revenue, then fetch
-        setTimeout(async () => {
-          try {
-            // Fetch revenues directly to get the latest data
-            const revenuesResponse = await apiClient.get<{ items: ScheduledRevenue[]; total: number }>(
-              `/scheduled-revenue?property_id=${propertyId}`
-            );
-            // Also update state
-            await fetchRevenues();
-
-            // Find the principal paydown revenue that was automatically created
-            const principalPaydown = revenuesResponse.items.find(
-              r => r.revenue_type === 'principal_paydown' && r.is_active
-            );
-            if (principalPaydown && principalPaydown.annual_amount) {
-              const principalPaydownFormatted = new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              }).format(principalPaydown.annual_amount);
-              alert(`✅ P&I expense created!\n\nPrincipal paydown (automatically added to scheduled revenue): ${principalPaydownFormatted}/year`);
-            }
-          } catch (err) {
-            console.error('❌ [REVENUE] Error fetching principal paydown:', err);
-          }
-        }, 500);
-      }
     } catch (err) {
       console.error('❌ [EXPENSE] Error creating:', err);
       alert(`Failed to create expense: ${(err as Error).message}`);
@@ -280,7 +248,6 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
       };
 
       const expense = expenses.find(e => e.id === expenseId);
-      const isPIExpense = expense?.expense_type === 'pi';
       if (expense?.expense_type === 'capex') {
         payload.purchase_price = parseFloat(expenseForm.purchase_price);
         payload.depreciation_rate = parseFloat(expenseForm.depreciation_rate);
@@ -295,37 +262,6 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
       await apiClient.put(`/scheduled-expenses/${expenseId}`, payload);
       resetExpenseForm();
       await fetchExpenses();
-
-      // If P&I expense was updated, fetch revenues to show principal paydown
-      if (isPIExpense) {
-        // Wait a moment for backend to update the revenue, then fetch
-        setTimeout(async () => {
-          try {
-            // Fetch revenues directly to get the latest data
-            const revenuesResponse = await apiClient.get<{ items: ScheduledRevenue[]; total: number }>(
-              `/scheduled-revenue?property_id=${propertyId}`
-            );
-            // Also update state
-            await fetchRevenues();
-
-            // Find the principal paydown revenue that was automatically updated
-            const principalPaydown = revenuesResponse.items.find(
-              r => r.revenue_type === 'principal_paydown' && r.is_active
-            );
-            if (principalPaydown && principalPaydown.annual_amount) {
-              const principalPaydownFormatted = new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              }).format(principalPaydown.annual_amount);
-              alert(`✅ P&I expense updated!\n\nPrincipal paydown (automatically updated in scheduled revenue): ${principalPaydownFormatted}/year`);
-            }
-          } catch (err) {
-            console.error('❌ [REVENUE] Error fetching principal paydown:', err);
-          }
-        }, 500);
-      }
     } catch (err) {
       console.error('❌ [EXPENSE] Error updating:', err);
       alert(`Failed to update expense: ${(err as Error).message}`);
@@ -540,7 +476,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
 
       setTemplatePreview(response);
 
-      // Select all items by default, EXCEPT principal and interest (pi) items
+      // Select all items by default, EXCEPT mortgage interest (pi) items
       const expenseIndices = response.expenses
         .map((exp, idx) => exp.expense_type !== 'pi' ? idx : -1)
         .filter(idx => idx !== -1);
@@ -688,8 +624,8 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                           <SelectContent>
                             <SelectItem value="capex">Capital Expense (CapEx)</SelectItem>
                             <SelectItem value="maintenance">Maintenance</SelectItem>
-                            <SelectItem value="pti">Property Tax & Insurance (PTI)</SelectItem>
-                            <SelectItem value="pi">Principal & Interest (P&I)</SelectItem>
+                            <SelectItem value="pti">Escrow (Property Tax & Insurance)</SelectItem>
+                            <SelectItem value="pi">Mortgage Interest</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -756,11 +692,11 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                         </div>
                       )}
 
-                      {/* P&I Fields */}
+                      {/* Mortgage Interest Fields */}
                       {expenseForm.expense_type === 'pi' && (
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <Label>Principal</Label>
+                            <Label>Loan Balance</Label>
                             <Input
                               type="number"
                               step="0.01"
@@ -827,8 +763,8 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                     const typeLabel = type === 'capex' ? 'Capital Expenses' :
                                      type === 'maintenance' ? 'Maintenance' :
                                      type === 'vacancy' ? 'Vacancy Costs' :
-                                     type === 'pti' ? 'PTI (Tax & Insurance)' :
-                                     'P&I (Financing)';
+                                     type === 'pti' ? 'Escrow (Tax & Insurance)' :
+                                     'Mortgage Interest';
                     const isCollapsed = collapsedExpenseSections.has(type);
 
                     return (
@@ -916,7 +852,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                                       {expense.expense_type === 'pi' && (
                                         <div className="grid grid-cols-2 gap-3">
                                           <div>
-                                            <Label>Principal</Label>
+                                            <Label>Loan Balance</Label>
                                             <Input
                                               type="number"
                                               step="0.01"
@@ -1352,7 +1288,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
             <p className="text-xs text-gray-600 mt-1">
               Select which items to add from <strong>{templatePropertyAddress}</strong> template (scaled to your property)
               <br />
-              <span className="text-[10px] text-gray-500">Note: Principal & Interest items are excluded and must be added manually</span>
+              <span className="text-[10px] text-gray-500">Note: Mortgage Interest items are excluded and must be added manually</span>
             </p>
           </DialogHeader>
 
@@ -1424,7 +1360,7 @@ export default function ScheduledFinancialsTab({ propertyId, purchasePrice }: Pr
                                   <>Annual Cost: ${expense.annual_cost.toFixed(2)}</>
                                 )}
                                 {expense.expense_type === 'pi' && expense.principal && (
-                                  <>Principal: ${expense.principal.toFixed(2)} | Rate: {(expense.interest_rate || 0) * 100}%</>
+                                  <>Loan balance: ${expense.principal.toFixed(2)} | Rate: {(expense.interest_rate || 0) * 100}%</>
                                 )}
                               </div>
                             </div>

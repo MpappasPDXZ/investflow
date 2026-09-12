@@ -186,7 +186,7 @@ async def preview_template(
             property_data
         )
 
-        # Filter out principal and interest items
+        # Filter out mortgage interest items
         filtered_expenses = [
             exp for exp in result["expenses"]
             if exp.get("expense_type") != "pi"

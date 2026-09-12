@@ -66,7 +66,7 @@ export default function PropertyDetailPage() {
   const { data: financialPerformance } = useFinancialPerformance(id);
   const { data: expensesData } = useExpenses(id);
   
-  // Fetch scheduled expenses for principal & interest calculation
+  // Fetch scheduled expenses for loan balance (mortgage interest) calculation
   const [scheduledExpenses, setScheduledExpenses] = useState<any[]>([]);
   const [loadingScheduledExpenses, setLoadingScheduledExpenses] = useState(false);
 
@@ -83,7 +83,7 @@ export default function PropertyDetailPage() {
     ?.reduce((sum: number, exp: any) => sum + Number(exp.amount), 0) || 0;
 
 
-  // Find Principal & Interest expense from scheduled expenses
+  // Find Mortgage Interest expense from scheduled expenses (stores loan balance in `principal`)
   const piExpense = scheduledExpenses.find((exp: any) => exp.expense_type === 'pi' && exp.is_active);
   const principalAmount = piExpense?.principal ? Number(piExpense.principal) : 0;
 
@@ -990,7 +990,7 @@ export default function PropertyDetailPage() {
                           </div>
                           {principalAmount > 0 && (
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Principal (from scheduled financials):</span>
+                              <span className="text-gray-600">Loan balance (from scheduled financials):</span>
                               <span className="font-semibold text-gray-900">
                               -${Math.round(principalAmount / 1000).toLocaleString()}k
                             </span>

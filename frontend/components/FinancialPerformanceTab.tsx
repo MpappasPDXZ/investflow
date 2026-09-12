@@ -145,10 +145,10 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
               <span className="text-[10px] text-gray-500 font-medium">Less: Expenses</span>
             </div>
             
-            {/* PITI */}
+            {/* Escrow / Mortgage Interest (expense_type pandi) */}
             {performance.cumulative_piti > 0 && (
               <div className="flex justify-between items-center pl-4">
-                <span className="text-xs text-gray-600">PITI</span>
+                <span className="text-xs text-gray-600">Escrow / Interest</span>
                 <span className="text-xs text-gray-900">({formatCurrency(performance.cumulative_piti)})</span>
               </div>
             )}
@@ -263,14 +263,14 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
                 <div>• <strong>Annual Rent</strong> = YTD Rent Annualized ({formatCurrency(performance.ytd_rent)})</div>
                 <div>• <strong>Vacancy (Lost Rent)</strong> = Calculated in vacancy expenses</div>
                 <div>• <strong>Adjusted Rent</strong> = Annual Rent - Vacancy</div>
-                <div>• <strong>Annual Expenses</strong> = Tax + Ins + CapEx + Maintenance + Vacancy Costs + P&I ({formatCurrency(performance.ytd_expenses)})</div>
+                <div>• <strong>Annual Expenses</strong> = Tax + Ins + CapEx + Maintenance + Vacancy Costs + Escrow/Interest ({formatCurrency(performance.ytd_expenses)})</div>
                 <div className="ml-4 text-[9px] text-gray-500">
                   Tax ({formatCurrency(performance.ytd_tax || 0)}) + 
                   Ins ({formatCurrency(performance.ytd_insurance)}) + 
                   CapEx ({formatCurrency(performance.ytd_capex)}) + 
                   Maintenance ({formatCurrency(performance.ytd_maintenance)}) + 
                   Vacancy/Utilities ({formatCurrency(performance.ytd_utilities)}) + 
-                  P&I ({formatCurrency(performance.ytd_piti)}) + 
+                  Escrow/Interest ({formatCurrency(performance.ytd_piti)}) + 
                   Other ({formatCurrency(performance.ytd_other)})
                 </div>
                 <div>• <strong>Cash Flow</strong> = Adjusted Rent - Annual Expenses = <strong>{formatCurrency(performance.ytd_profit_loss)}</strong></div>
@@ -293,7 +293,7 @@ export default function FinancialPerformanceTab({ propertyId, units, isMultiUnit
 
       {/* Note */}
       <div className="text-[10px] text-gray-500 italic">
-        <strong>Note:</strong> Rehab expenses are excluded from this calculation as they are included in P&I financing.
+        <strong>Note:</strong> Rehab expenses are excluded from this calculation as they are included in financing / cash invested.
       </div>
     </div>
   );

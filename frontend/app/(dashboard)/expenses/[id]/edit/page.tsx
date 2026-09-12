@@ -335,7 +335,7 @@ export default function EditExpensePage() {
                   <option value="maintenance">Maintenance</option>
                   <option value="capex">Capital Expenditure</option>
                   <option value="rehab">Rehab</option>
-                  <option value="pandi">Principal & Interest</option>
+                  <option value="pandi">Escrow / Mortgage Interest</option>
                   <option value="tax">Tax</option>
                   <option value="utilities">Utilities</option>
                   <option value="insurance">Insurance</option>

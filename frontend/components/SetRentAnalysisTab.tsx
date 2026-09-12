@@ -208,17 +208,11 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
   const cashInvested = property.cash_invested || downPayment;
   const mortgageRate = userProfile?.mortgage_interest_rate || 0.07;
   
-  // Use scheduled P&I if available, otherwise calculate it
+  // Use scheduled mortgage interest if available, otherwise loan balance × rate
   let annualPI = expenseTotals.pi;
   if (annualPI === 0) {
-    // Calculate P&I payment using mortgage amortization formula
     const loanAmount = purchasePrice - downPayment;
-    const monthlyRate = mortgageRate / 12;
-    const numPayments = 30 * 12; // 30 year loan
-    const monthlyPI = loanAmount > 0 ? loanAmount * 
-      (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / 
-      (Math.pow(1 + monthlyRate, numPayments) - 1) : 0;
-    annualPI = monthlyPI * 12;
+    annualPI = loanAmount > 0 ? loanAmount * mortgageRate : 0;
   }
   
   // Tax and Insurance from scheduled expenses
@@ -244,7 +238,7 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
       const effectiveAnnualRent = annualRent - vacancyCost;
       
       const annualExpenses = taxAndInsurance + capex + maintenance + vacancyCosts + annualPI;
-      const operatingExpenses = taxAndInsurance + capex + maintenance + vacancyCosts; // Exclude P&I
+      const operatingExpenses = taxAndInsurance + capex + maintenance + vacancyCosts; // Exclude Mortgage Interest
       const operatingExpensePercent = effectiveAnnualRent > 0 ? (operatingExpenses / effectiveAnnualRent) * 100 : 0;
       const cashFlow = effectiveAnnualRent - annualExpenses;
       const cocPercent = cashInvested > 0 ? (cashFlow / cashInvested) * 100 : 0;
@@ -468,7 +462,7 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
                 <div>• <strong>Annual Rent</strong> = Monthly Rent × Unit Count × 12 = ${row.monthlyRent.toLocaleString()} × {row.unitCount} × 12 = <strong>${row.annualRent.toLocaleString()}</strong></div>
                 <div>• <strong>Vacancy (Lost Rent)</strong> = Annual Rent × Vacancy Rate = ${row.annualRent.toLocaleString()} × {(vacancyRate * 100).toFixed(0)}% = <strong>-${row.vacancyCost.toLocaleString()}</strong></div>
                 <div>• <strong>Adjusted Rent</strong> = Annual Rent - Vacancy (Lost Rent) = ${row.annualRent.toLocaleString()} - ${row.vacancyCost.toLocaleString()} = <strong>${row.effectiveAnnualRent.toLocaleString()}</strong></div>
-                <div>• <strong>Annual Expenses</strong> = Tax & Ins + CapEx + Maintenance + Vacancy Costs + P&I</div>
+                <div>• <strong>Annual Expenses</strong> = Escrow + CapEx + Maintenance + Vacancy Costs + Mortgage Interest</div>
                 <div className="ml-4 text-[10px] text-gray-600">
                   = ${taxAndInsurance.toLocaleString()} + ${capex.toLocaleString()} + ${maintenance.toLocaleString()} + ${vacancyCosts.toLocaleString()} + ${annualPI.toLocaleString()} = <strong>${row.annualExpenses.toLocaleString()}</strong>
                 </div>
@@ -477,7 +471,7 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
                 <div className="ml-4 text-[10px] text-gray-600">
                   = (${row.operatingExpenses.toLocaleString()} ÷ ${row.effectiveAnnualRent.toLocaleString()}) × 100% = <strong>{((row.operatingExpenses / row.effectiveAnnualRent) * 100).toFixed(0)}</strong>
                 </div>
-                <div className="ml-4 text-xs text-gray-500 italic">Operating Expenses = Tax & Ins + CapEx + Maintenance + Vacancy Costs (excludes P&I)</div>
+                <div className="ml-4 text-xs text-gray-500 italic">Operating Expenses = Tax & Ins + CapEx + Maintenance + Vacancy Costs (excludes Mortgage Interest)</div>
                 <div>• <strong>Cash Flow</strong> = Adjusted Rent - Annual Expenses = ${row.effectiveAnnualRent.toLocaleString()} - ${row.annualExpenses.toLocaleString()} = <strong>${row.cashFlow.toLocaleString()}</strong></div>
                 <div>• <strong>Cash on Cash %</strong> = Cash Flow ÷ Cash Invested × 100% = ${row.cashFlow.toLocaleString()} ÷ ${row.cashInvested.toLocaleString()} × 100% = <strong>{row.cocPercent.toFixed(2)}%</strong></div>
                 <div className="ml-4 text-xs text-gray-500 italic">Uses manually entered Cash Invested (down payment + cash rehab costs)</div>
@@ -495,10 +489,10 @@ export default function SetRentAnalysisTab({ propertyId, property }: Props) {
               <div>• Annual Rent = Monthly Rent × Unit Count × 12</div>
               <div>• Vacancy (Lost Rent) = Annual Rent × Vacancy Rate</div>
               <div>• <strong>Adjusted Rent = Annual Rent - Vacancy (Lost Rent)</strong></div>
-              <div>• Annual Expenses = Tax & Ins + CapEx + Maintenance + Vacancy Costs + P&I</div>
+              <div>• Annual Expenses = Escrow + CapEx + Maintenance + Vacancy Costs + Mortgage Interest</div>
               <div className="ml-4 text-xs text-gray-500">Note: Vacancy Costs = utilities/costs while unit is vacant</div>
               <div>• <strong>Operating Expense % = (Operating Expenses ÷ Adjusted Rent) × 100%</strong></div>
-              <div className="ml-4 text-xs text-gray-500 italic">Operating Expenses = Tax & Ins + CapEx + Maintenance + Vacancy Costs (excludes P&I)</div>
+              <div className="ml-4 text-xs text-gray-500 italic">Operating Expenses = Tax & Ins + CapEx + Maintenance + Vacancy Costs (excludes Mortgage Interest)</div>
               <div>• <strong>Cash Flow = Adjusted Rent - Annual Expenses</strong></div>
               <div>• <strong>Cash on Cash % = Cash Flow ÷ Cash Invested × 100%</strong></div>
               <div className="ml-4 text-xs text-gray-500 italic">Uses manually entered Cash Invested (down payment + cash rehab costs)</div>

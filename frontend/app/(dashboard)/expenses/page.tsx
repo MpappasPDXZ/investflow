@@ -37,7 +37,7 @@ const EXPENSE_TYPE_LABELS: Record<string, string> = {
   'maintenance': 'Maintenance',
   'capex': 'CapEx',
   'rehab': 'Rehab',
-  'pandi': 'P&I',
+  'pandi': 'Escrow/Int',
   'tax': 'Tax',
   'utilities': 'Utilities',
   'insurance': 'Insurance',

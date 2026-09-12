@@ -50,7 +50,7 @@ class FinancialPerformanceSummary(BaseModel):
     ytd_profit_loss: Decimal  # IRS revenue - expenses
     
     # YTD expense breakdown by type
-    ytd_piti: Decimal = Decimal("0")  # Principal, Interest
+    ytd_piti: Decimal = Decimal("0")  # Escrow / mortgage interest (expense_type pandi)
     ytd_tax: Decimal = Decimal("0")  # Property taxes
     ytd_utilities: Decimal = Decimal("0")
     ytd_maintenance: Decimal = Decimal("0")
