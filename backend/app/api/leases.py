@@ -17,7 +17,7 @@ from app.schemas.lease import (
     TenantResponse, TenantUpdate, GeneratePDFRequest, GeneratePDFResponse,
     TerminateLeaseRequest, TerminateLeaseResponse, PropertySummary, MoveOutCostItem, PetInfo
 )
-from app.core.iceberg import read_table, append_data, upsert_data, table_exists, load_table, get_catalog
+from app.core.iceberg import read_table, append_data, upsert_data, table_exists, load_table
 from app.core.logging import get_logger
 from app.services.lease_defaults import apply_lease_defaults, get_default_moveout_costs_json
 from app.services.lease_generator_service import LeaseGeneratorService
@@ -1394,8 +1394,9 @@ async def generate_lease_pdf(
             holding_fee_latex_url = adls_service.get_blob_download_url(holding_fee_latex_blob_name)
         
         # Update lease record with PDF location
-        catalog = get_catalog()
-        leases_table = catalog.load_table(f"{NAMESPACE[0]}.{LEASES_TABLE}")
+        # NOTE: update_dict below was never written historically; keep load_table routing
+        # so any future persist uses the migrated store.
+        leases_table = load_table(NAMESPACE, LEASES_TABLE)
         
         # Update the record (using Iceberg update pattern)
         update_dict = {
@@ -1608,12 +1609,10 @@ async def delete_lease(
                 detail="Can only delete leases in draft status"
             )
         
-        # HARD DELETE: Remove all rows for this lease ID from Iceberg
+        # HARD DELETE: Remove all rows for this lease ID
         from pyiceberg.expressions import EqualTo
-        from app.core.iceberg import get_catalog
         
-        catalog = get_catalog()
-        table = catalog.load_table((*NAMESPACE, LEASES_TABLE))
+        table = load_table(NAMESPACE, LEASES_TABLE)
         table.delete(EqualTo("id", str(lease_id)))
         logger.info(f"Hard deleted all rows for lease {lease_id} (tenants are stored in JSON column, so no separate deletion needed)")
         
@@ -1625,41 +1624,4 @@ async def delete_lease(
     except Exception as e:
         logger.error(f"Error deleting lease: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error deleting lease: {str(e)}")
-
-
-@router.get("/{lease_id}/tenants", response_model=List[TenantResponse])
-async def list_tenants(
-    lease_id: UUID,
-    current_user: dict = Depends(get_current_user)
-):
-    """List all tenants for a lease"""
-    try:
-        user_id = current_user["sub"]
-        
-        # Verify lease ownership
-        leases_df = read_table(NAMESPACE, LEASES_TABLE)
-        lease_row = leases_df[leases_df["id"] == str(lease_id)]
-        
-        if len(lease_row) == 0:
-            raise HTTPException(status_code=404, detail="Lease not found")
-        
-        lease = lease_row.iloc[0]
-        
-        # Verify ownership via property
-        _verify_property_ownership(lease["property_id"], user_id)
-        
-        # Get tenants from JSON column
-        tenants_json = lease.get("tenants")
-        tenant_responses = _deserialize_tenants(tenants_json) if tenants_json else []
-        # Set lease_id on all tenant responses
-        for tenant_resp in tenant_responses:
-            tenant_resp.lease_id = lease_id
-        
-        return tenant_responses
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error listing tenants: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error listing tenants: {str(e)}")
 

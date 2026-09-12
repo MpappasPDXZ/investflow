@@ -1,23 +1,17 @@
 """Authentication endpoints"""
 from datetime import timedelta
-from typing import Optional
 import uuid
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials
-from pyiceberg.expressions import EqualTo
-
+from fastapi import APIRouter, HTTPException, status
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
-    decode_access_token,
     get_password_hash,
     verify_password
 )
-from app.core.dependencies import security
 from app.core.exceptions import UnauthorizedError, ConflictError
 from app.schemas.auth import UserRegister, UserLogin, Token
-from app.core.iceberg import read_table, read_table_filtered, append_data, table_exists
+from app.core.iceberg import append_data
 from app.core.logging import get_logger
 from app.services.auth_cache_service import auth_cache
 
@@ -122,34 +116,4 @@ async def login(
     except Exception as e:
         logger.error(f"Login error: {e}", exc_info=True)
         raise UnauthorizedError("Incorrect email or password")
-
-
-@router.post("/refresh", response_model=Token)
-async def refresh_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """
-    Refresh access token.
-    TODO: Implement token refresh logic
-    """
-    token = credentials.credentials
-    payload = decode_access_token(token)
-    
-    if payload is None:
-        raise UnauthorizedError("Invalid token")
-    
-    user_id = payload.get("sub")
-    email = payload.get("email")
-    
-    if not user_id or not email:
-        raise UnauthorizedError("Invalid token payload")
-    
-    # Create new token
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user_id, "email": email},
-        expires_delta=access_token_expires
-    )
-    
-    return Token(access_token=access_token)
 

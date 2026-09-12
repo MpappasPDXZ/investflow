@@ -876,130 +876,6 @@ async def generate_walkthrough_pdf(
         raise HTTPException(status_code=500, detail=f"Error generating PDF: {str(e)}")
 
 
-@router.get("/{walkthrough_id}/download-pdf")
-async def download_walkthrough_pdf(
-    walkthrough_id: UUID,
-    current_user: dict = Depends(get_current_user)
-):
-    """Download walkthrough PDF"""
-    try:
-        user_id = current_user["sub"]
-        
-        # Get walkthrough
-        if not table_exists(NAMESPACE, WALKTHROUGHS_TABLE):
-            raise HTTPException(status_code=404, detail="Walkthrough not found")
-        
-        walkthroughs_df = read_table_filtered(
-            NAMESPACE,
-            WALKTHROUGHS_TABLE,
-            EqualTo("id", str(walkthrough_id))
-        )
-        
-        if len(walkthroughs_df) == 0:
-            raise HTTPException(status_code=404, detail="Walkthrough not found")
-        
-        walkthrough = walkthroughs_df.iloc[0]
-        
-        # Verify property access (ownership or sharing)
-        user_email = current_user["email"]
-        _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
-        
-        # Get PDF blob name
-        pdf_blob_name = walkthrough.get("generated_pdf_blob_name")
-        if not pdf_blob_name:
-            raise HTTPException(status_code=404, detail="PDF not generated for this walkthrough")
-        
-        # Get download URL
-        pdf_url = adls_service.get_blob_download_url(pdf_blob_name)
-        
-        return {"pdf_url": pdf_url}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting PDF download URL: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error getting PDF download URL: {str(e)}")
-
-
-@router.get("/{walkthrough_id}/pdf/proxy")
-async def proxy_walkthrough_pdf_download(
-    walkthrough_id: UUID,
-    current_user: dict = Depends(get_current_user)
-):
-    """Proxy download for walkthrough PDF (forces actual download instead of opening in browser - IE compatible)"""
-    try:
-        from fastapi.responses import StreamingResponse
-        import io
-        
-        user_id = current_user["sub"]
-        
-        # Get walkthrough
-        if not table_exists(NAMESPACE, WALKTHROUGHS_TABLE):
-            raise HTTPException(status_code=404, detail="Walkthrough not found")
-        
-        walkthroughs_df = read_table_filtered(
-            NAMESPACE,
-            WALKTHROUGHS_TABLE,
-            EqualTo("id", str(walkthrough_id))
-        )
-        
-        if len(walkthroughs_df) == 0:
-            raise HTTPException(status_code=404, detail="Walkthrough not found")
-        
-        walkthrough = walkthroughs_df.iloc[0]
-        
-        # Verify property access (ownership or sharing)
-        user_email = current_user["email"]
-        _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
-        
-        # Get PDF blob name
-        pdf_blob_name = walkthrough.get("generated_pdf_blob_name")
-        if not pdf_blob_name:
-            raise HTTPException(status_code=404, detail="PDF not generated for this walkthrough")
-        
-        if not adls_service.blob_exists(pdf_blob_name):
-            raise HTTPException(status_code=404, detail="PDF file not found")
-        
-        # Download blob content
-        blob_content, content_type, filename = adls_service.download_blob(pdf_blob_name)
-        
-        # Use property name and date for filename if available
-        property_name = walkthrough.get("property_display_name", "Property")
-        inspection_date = walkthrough.get("inspection_date")
-        if inspection_date:
-            try:
-                from datetime import datetime
-                if isinstance(inspection_date, str):
-                    date_obj = datetime.fromisoformat(inspection_date.replace('Z', '+00:00'))
-                else:
-                    date_obj = inspection_date
-                date_str = date_obj.strftime("%Y-%m-%d")
-                download_filename = f"Inspection_{property_name}_{date_str}.pdf"
-            except:
-                download_filename = f"Inspection_{property_name}.pdf"
-        else:
-            download_filename = f"Inspection_{property_name}.pdf"
-        
-        # Sanitize filename
-        download_filename = "".join(c for c in download_filename if c.isalnum() or c in (' ', '-', '_', '.')).strip()
-        
-        # Return as streaming response with Content-Disposition header to force download
-        return StreamingResponse(
-            io.BytesIO(blob_content),
-            media_type=content_type or "application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="{download_filename}"'
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error proxying walkthrough PDF download: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error downloading walkthrough PDF: {str(e)}")
-
-
-
-
 @router.put("/{walkthrough_id}", response_model=WalkthroughResponse)
 async def update_walkthrough(
     walkthrough_id: UUID,
@@ -1273,19 +1149,13 @@ async def delete_walkthrough(
         user_email = current_user["email"]
         property_data = _verify_property_access(str(walkthrough["property_id"]), user_id, user_email)
         
-        # HARD DELETE: Remove all rows for this walkthrough ID from Iceberg
-        from app.core.iceberg import get_catalog
-        
-        catalog = get_catalog()
-        
-        # Delete walkthrough areas first
+        # HARD DELETE: Remove rows via routed load_table (Postgres or Iceberg)
         if table_exists(NAMESPACE, WALKTHROUGH_AREAS_TABLE):
-            areas_table = catalog.load_table((*NAMESPACE, WALKTHROUGH_AREAS_TABLE))
+            areas_table = load_table(NAMESPACE, WALKTHROUGH_AREAS_TABLE)
             areas_table.delete(EqualTo("walkthrough_id", str(walkthrough_id)))
             logger.info(f"Deleted all areas for walkthrough {walkthrough_id}")
-        
-        # Delete walkthrough
-        walkthroughs_table = catalog.load_table((*NAMESPACE, WALKTHROUGHS_TABLE))
+
+        walkthroughs_table = load_table(NAMESPACE, WALKTHROUGHS_TABLE)
         walkthroughs_table.delete(EqualTo("id", str(walkthrough_id)))
         logger.info(f"Hard deleted all rows for walkthrough {walkthrough_id}")
         

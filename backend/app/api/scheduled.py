@@ -7,7 +7,7 @@ from app.schemas.scheduled import (
     ScheduledExpenseCreate, ScheduledExpenseUpdate, ScheduledExpenseResponse, ScheduledExpenseListResponse,
     ScheduledRevenueCreate, ScheduledRevenueUpdate, ScheduledRevenueResponse, ScheduledRevenueListResponse
 )
-from app.core.iceberg import get_catalog, read_table, table_exists
+from app.core.iceberg import read_table, table_exists, load_table
 from app.core.logging import get_logger
 from decimal import Decimal
 from datetime import datetime
@@ -67,10 +67,8 @@ SCHEDULED_REVENUE_FIELD_ORDER = [
 # ========== DEDICATED SCHEDULED REVENUE ICEBERG FUNCTIONS ==========
 
 def _load_scheduled_revenue_table():
-    """Load the scheduled_revenue Iceberg table (dedicated function)"""
-    catalog = get_catalog()
-    table_identifier = (*NAMESPACE, REVENUE_TABLE)
-    return catalog.load_table(table_identifier)
+    """Load scheduled_revenue from Postgres once migrated (else Iceberg)."""
+    return load_table(NAMESPACE, REVENUE_TABLE)
 
 
 def _append_scheduled_revenue(revenue_dict: dict):
@@ -179,10 +177,8 @@ def _overwrite_scheduled_revenue_table(revenue_df: pd.DataFrame):
 # ========== DEDICATED SCHEDULED EXPENSES ICEBERG FUNCTIONS ==========
 
 def _load_scheduled_expenses_table():
-    """Load the scheduled_expenses Iceberg table (dedicated function)"""
-    catalog = get_catalog()
-    table_identifier = (*NAMESPACE, EXPENSES_TABLE)
-    return catalog.load_table(table_identifier)
+    """Load scheduled_expenses from Postgres once migrated (else Iceberg)."""
+    return load_table(NAMESPACE, EXPENSES_TABLE)
 
 
 def _log_scheduled_expenses_schema():
@@ -567,47 +563,6 @@ async def list_scheduled_expenses(
         raise
     except Exception as e:
         logger.error(f"❌ Error listing scheduled expenses: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/scheduled-expenses/{expense_id}", response_model=ScheduledExpenseResponse)
-async def get_scheduled_expense(
-    expense_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """Get a specific scheduled expense"""
-    try:
-        user_id = current_user["sub"]
-        expenses_df = _read_scheduled_expenses_table()
-        if expenses_df is None or expenses_df.empty:
-            raise HTTPException(status_code=404, detail="Expense not found")
-
-        expense_row = expenses_df[expenses_df['id'] == expense_id]
-        if expense_row.empty:
-            raise HTTPException(status_code=404, detail="Expense not found")
-
-        # Verify property belongs to user
-        property_id = expense_row.iloc[0]['property_id']
-        properties_df = read_table(NAMESPACE, "properties")
-        property_match = properties_df[
-            (properties_df['id'] == property_id) &
-            (properties_df['user_id'] == user_id)
-        ]
-
-        if property_match.empty:
-            raise HTTPException(status_code=404, detail="Property not found")
-
-        expense_dict = expense_row.iloc[0].to_dict()
-        # Replace NaN with None for Pydantic validation
-        expense_dict = {k: (None if pd.isna(v) else v) for k, v in expense_dict.items()}
-        calculated_cost = calculate_expense_annual_cost(expense_dict)
-
-        return ScheduledExpenseResponse(**expense_dict, calculated_annual_cost=calculated_cost)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error fetching scheduled expense: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -43,8 +43,22 @@ class DocumentResponse(BaseModel):
     def from_document(cls, doc: Dict[str, Any]) -> "DocumentResponse":
         """Create response from document dict"""
         try:
+            import pandas as pd
+
+            def _none_if_null(value: Any) -> Any:
+                if value is None:
+                    return None
+                try:
+                    if pd.isna(value):
+                        return None
+                except Exception:
+                    pass
+                if value == "" or value == "None" or value == "nan" or value == "NaT":
+                    return None
+                return value
+
             # Handle document_type - validate against enum, fallback to OTHER
-            doc_type = doc.get("document_type")
+            doc_type = _none_if_null(doc.get("document_type"))
             if doc_type:
                 try:
                     doc_type = DocumentType(doc_type)
@@ -52,27 +66,15 @@ class DocumentResponse(BaseModel):
                     doc_type = DocumentType.OTHER
             
             # Handle property_id, unit_id, and tenant_id - could be None or empty string
-            property_id = doc.get("property_id")
-            if property_id == "" or property_id == "None" or property_id is None:
-                property_id = None
-                
-            unit_id = doc.get("unit_id")
-            if unit_id == "" or unit_id == "None" or unit_id is None:
-                unit_id = None
-            
-            tenant_id = doc.get("tenant_id")
-            if tenant_id == "" or tenant_id == "None" or tenant_id is None:
-                tenant_id = None
+            property_id = _none_if_null(doc.get("property_id"))
+            unit_id = _none_if_null(doc.get("unit_id"))
+            tenant_id = _none_if_null(doc.get("tenant_id"))
             
             # Handle user_id field
-            user_id = doc.get("uploaded_by_user_id") or doc.get("user_id")
-            if user_id == "" or user_id == "None":
-                user_id = None
+            user_id = _none_if_null(doc.get("uploaded_by_user_id") or doc.get("user_id"))
             
             # Get display_name directly (it's now a direct column)
-            display_name = doc.get("display_name")
-            if display_name == "" or display_name == "None":
-                display_name = None
+            display_name = _none_if_null(doc.get("display_name"))
             
             # Handle document_metadata for backwards compatibility
             metadata = doc.get("document_metadata")
@@ -83,8 +85,8 @@ class DocumentResponse(BaseModel):
                 id=doc["id"],
                 blob_location=doc["blob_location"],
                 file_name=doc["file_name"],
-                file_type=doc.get("file_type"),
-                file_size=doc.get("file_size"),
+                file_type=_none_if_null(doc.get("file_type")),
+                file_size=_none_if_null(doc.get("file_size")),
                 document_type=doc_type,
                 property_id=property_id,
                 unit_id=unit_id,
@@ -94,7 +96,7 @@ class DocumentResponse(BaseModel):
                 uploaded_by_user_id=user_id,
                 created_at=doc["created_at"],
                 updated_at=doc["updated_at"],
-                expires_at=doc.get("expires_at")
+                expires_at=_none_if_null(doc.get("expires_at"))
             )
         except Exception as e:
             # Log the problematic document for debugging

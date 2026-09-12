@@ -10,7 +10,7 @@ import pyarrow as pa
 from pyiceberg.expressions import EqualTo, And
 import pandas as pd
 
-from app.core.iceberg import get_catalog, read_table, table_exists
+from app.core.iceberg import load_table, read_table, table_exists, uses_postgres
 from app.schemas.financial_performance import FinancialPerformanceSummary
 from app.services.expense_service import ExpenseService
 
@@ -33,8 +33,7 @@ class FinancialPerformanceService:
     """Service for calculating and caching financial performance metrics"""
     
     def __init__(self):
-        self.catalog = get_catalog()
-        self.namespace = "investflow"
+        self.namespace = ("investflow",)
         self.table_name = "financial_performance"
         self.expense_service = ExpenseService()
         self._table_cache = None
@@ -42,7 +41,7 @@ class FinancialPerformanceService:
         self._cache_ttl = 60  # Cache table reference for 60 seconds
     
     def _get_table(self, force_refresh: bool = False):
-        """Get the financial_performance table with caching"""
+        """Get the financial_performance table with caching (rarely used; calc is live)."""
         import time
         now = time.time()
         
@@ -51,10 +50,10 @@ class FinancialPerformanceService:
                 return self._table_cache
         
         try:
-            self._table_cache = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
+            self._table_cache = load_table(self.namespace, self.table_name)
         except Exception:
-            # Table doesn't exist, create it
-            logger.info(f"Creating {self.namespace}.{self.table_name} table")
+            # Table doesn't exist — create in the active store
+            logger.info(f"Creating {'.'.join(self.namespace)}.{self.table_name} table")
             schema = pa.schema([
                 pa.field("id", pa.string(), nullable=False),
                 pa.field("property_id", pa.string(), nullable=False),
@@ -72,10 +71,9 @@ class FinancialPerformanceService:
                 pa.field("created_at", pa.timestamp("us"), nullable=False),
                 pa.field("updated_at", pa.timestamp("us"), nullable=False),
             ])
-            
-            self._table_cache = self.catalog.create_table(
-                identifier=f"{self.namespace}.{self.table_name}",
-                schema=schema
+            from app.core.postgres_store import get_postgres_catalog
+            self._table_cache = get_postgres_catalog().create_table(
+                f"{self.namespace[0]}.{self.table_name}", schema=schema
             )
         
         self._table_cache_time = now

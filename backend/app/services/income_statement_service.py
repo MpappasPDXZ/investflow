@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from pyiceberg.expressions import EqualTo, And
 
-from app.core.iceberg import get_catalog, table_exists, read_table_filtered, read_table
+from app.core.iceberg import table_exists, read_table_filtered, read_table
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -91,7 +91,7 @@ class IncomeStatementService:
     """Generates income statement PDFs for a property"""
 
     def __init__(self):
-        self.catalog = get_catalog()
+        pass
 
     @staticmethod
     def _trailing_12_months() -> List[Tuple[int, int]]:

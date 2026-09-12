@@ -10,8 +10,12 @@ from typing import Optional
 import pandas as pd
 import pyarrow as pa
 
+from sqlalchemy import text
+
 from app.core.dependencies import get_current_user
-from app.core.iceberg import get_catalog, read_table, table_exists, load_table, append_data, upsert_data
+from app.core.database import get_engine
+from app.core.iceberg import read_table, table_exists, load_table, append_data, uses_postgres
+from app.core.postgres_store import APP_SCHEMA
 from app.schemas.comparable import (
     ComparableCreate,
     ComparableUpdate,
@@ -107,9 +111,8 @@ def get_comparable_schema() -> pa.Schema:
 
 
 def _load_comps_table():
-    """Load comps table (dedicated function, no shared functions)"""
-    catalog = get_catalog()
-    return catalog.load_table(f"{NAMESPACE[0]}.{TABLE_NAME}")
+    """Load comps via migration-aware load_table (Postgres or Iceberg)."""
+    return load_table(NAMESPACE, TABLE_NAME)
 
 
 def _convert_comparable_types(df: pd.DataFrame, table_schema) -> pd.DataFrame:
@@ -182,6 +185,12 @@ def _convert_comparable_types(df: pd.DataFrame, table_schema) -> pd.DataFrame:
 def _append_comparable(comparable_dict: dict):
     """Append a comparable with strict field ordering (dedicated function, no shared functions)"""
     try:
+        if uses_postgres(TABLE_NAME):
+            df = pd.DataFrame([comparable_dict])
+            append_data(NAMESPACE, TABLE_NAME, df)
+            logger.info(f"✅ [COMPS] Appended comparable (Postgres): {comparable_dict.get('id')}")
+            return
+
         table = _load_comps_table()
         table_schema = table.schema().as_arrow()
         
@@ -218,6 +227,25 @@ def _overwrite_comps_table(df: pd.DataFrame):
     """Overwrite comps table with DataFrame (dedicated function, no shared functions)"""
     try:
         table = _load_comps_table()
+        if uses_postgres(TABLE_NAME):
+            # Cast through comps Arrow schema so Decimal columns (bathrooms, asking_price)
+            # do not fail pa.Table.from_pandas type inference (decimal→double).
+            schema = get_comparable_schema()
+            field_names = [f.name for f in schema]
+            out = df.copy()
+            for field_name in field_names:
+                if field_name not in out.columns:
+                    out[field_name] = None
+            out = out[field_names]
+            out = _convert_comparable_types(out, schema)
+            for col in out.columns:
+                if pd.api.types.is_datetime64_any_dtype(out[col]):
+                    out[col] = out[col].astype("datetime64[us]")
+            arrow_table = pa.Table.from_pandas(out, schema=schema, preserve_index=False)
+            table.overwrite(arrow_table)
+            logger.info(f"✅ [COMPS] Overwrote comps table (Postgres) with {len(out)} rows")
+            return
+
         table_schema = table.schema().as_arrow()
         
         # Get actual table schema field order
@@ -246,16 +274,9 @@ def _overwrite_comps_table(df: pd.DataFrame):
 
 
 def ensure_table_exists():
-    """Create rental_comparables table if it doesn't exist"""
+    """Ensure comps table exists in Postgres."""
     if not table_exists(NAMESPACE, TABLE_NAME):
-        logger.info(f"Creating {TABLE_NAME} table")
-        catalog = get_catalog()
-        schema = get_comparable_schema()
-        catalog.create_table(
-            identifier=f"{NAMESPACE[0]}.{TABLE_NAME}",
-            schema=schema
-        )
-        logger.info(f"✅ Created {TABLE_NAME} table")
+        raise RuntimeError(f"Postgres table {TABLE_NAME} missing — run migration / restore")
 
 
 def calculate_computed_fields(row: dict) -> dict:
@@ -337,9 +358,7 @@ async def list_comparables(
         user_id = current_user["sub"]
         logger.info(f"Fetching comparables for property {property_id}")
         
-        ensure_table_exists()
-        
-        # Verify property belongs to user
+        # Verify property belongs to user (still Iceberg)
         properties_df = read_table(NAMESPACE, "properties")
         if properties_df is None or properties_df.empty:
             raise HTTPException(status_code=404, detail="Property not found")
@@ -352,17 +371,16 @@ async def list_comparables(
         if property_match.empty:
             raise HTTPException(status_code=404, detail="Property not found")
         
-        # Get comparables
-        if not table_exists(NAMESPACE, TABLE_NAME):
-            return ComparableListResponse(items=[], total=0)
-        
-        df = read_table(NAMESPACE, TABLE_NAME)
+        # Comps reads from Postgres app.comps (Iceberg left intact for writes / other tables)
+        with get_engine().connect() as conn:
+            df = pd.read_sql(
+                text(f'SELECT * FROM "{APP_SCHEMA}".comps WHERE property_id = :property_id'),
+                conn,
+                params={"property_id": property_id},
+            )
         
         if df is None or df.empty:
             return ComparableListResponse(items=[], total=0)
-        
-        # Filter by property
-        df = df[df['property_id'] == property_id]
         
         # Deduplicate: keep only the latest version of each comparable (by id)
         # Sort by updated_at descending and drop duplicates keeping first (most recent)

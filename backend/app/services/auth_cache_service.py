@@ -387,25 +387,25 @@ class AuthCacheService:
     
     def sync_from_iceberg(self) -> bool:
         """
-        Full refresh from Iceberg source tables.
-        Called on startup if ADLS cache doesn't exist.
+        Full refresh from source-of-truth tables (Iceberg or Postgres via read_table).
+        Called on startup if ADLS cache doesn't exist, or via /health/cache/sync.
         """
         try:
             # Import here to avoid circular imports
             from app.core.iceberg import read_table, table_exists
             
-            # Load users from Iceberg
+            # Load users from active store
             if not table_exists(NAMESPACE, "users"):
-                logger.warning("Users table does not exist in Iceberg")
+                logger.warning("Users table does not exist")
                 return False
             
             users_df = read_table(NAMESPACE, "users")
-            logger.info(f"Loaded {len(users_df)} users from Iceberg")
+            logger.info(f"Loaded {len(users_df)} users from source store")
             
-            # Load shares from Iceberg (may not exist)
+            # Load shares (may not exist)
             if table_exists(NAMESPACE, "user_shares"):
                 shares_df = read_table(NAMESPACE, "user_shares")
-                logger.info(f"Loaded {len(shares_df)} shares from Iceberg")
+                logger.info(f"Loaded {len(shares_df)} shares from source store")
             else:
                 shares_df = pd.DataFrame()
                 logger.info("User shares table does not exist yet")
@@ -423,7 +423,7 @@ class AuthCacheService:
             return True
             
         except Exception as e:
-            logger.error(f"Error syncing from Iceberg: {e}", exc_info=True)
+            logger.error(f"Error syncing auth cache from source: {e}", exc_info=True)
             return False
     
     # ═══════════════════════════════════════════════════════════════════

@@ -4,7 +4,11 @@ from uuid import UUID, uuid4
 import pandas as pd
 from datetime import datetime
 
+from sqlalchemy import text
+
 from app.core.iceberg import read_table, append_data, upsert_data, table_exists
+from app.core.database import get_engine
+from app.core.postgres_store import APP_SCHEMA
 from app.core.logging import get_logger
 from app.core.dependencies import get_current_user
 from app.schemas.landlord_reference import (
@@ -92,16 +96,22 @@ async def list_landlord_references(
     try:
         user_id = current_user["sub"]
         
-        # Read references table
-        df = read_table(NAMESPACE, TABLE_NAME)
-        
-        # Filter by user
-        mask = (df["user_id"] == user_id)
-        
+        # Reads from Postgres app schema (Iceberg left intact for writes)
+        sql = f'SELECT * FROM "{APP_SCHEMA}"."{TABLE_NAME}" WHERE user_id = :user_id'
+        params = {"user_id": user_id}
         if tenant_id:
-            mask = mask & (df["tenant_id"] == str(tenant_id))
-        
-        filtered_df = df[mask].head(limit)
+            sql += " AND tenant_id = :tenant_id"
+            params["tenant_id"] = str(tenant_id)
+        sql += " LIMIT :limit"
+        params["limit"] = limit
+
+        with get_engine().connect() as conn:
+            df = pd.read_sql(text(sql), conn, params=params)
+
+        if df is None or df.empty:
+            return LandlordReferenceListResponse(references=[], total=0, passed_count=0)
+
+        filtered_df = df
         
         # Convert to list of dicts
         references = []
@@ -158,17 +168,20 @@ async def get_landlord_reference(
     try:
         user_id = current_user["sub"]
         
-        # Read references table
-        df = read_table(NAMESPACE, TABLE_NAME)
-        
-        # Filter by ID and user
-        mask = (df["id"] == str(reference_id)) & (df["user_id"] == user_id)
-        reference_row = df[mask]
-        
-        if len(reference_row) == 0:
+        with get_engine().connect() as conn:
+            df = pd.read_sql(
+                text(
+                    f'SELECT * FROM "{APP_SCHEMA}"."{TABLE_NAME}" '
+                    f"WHERE id = :id AND user_id = :user_id"
+                ),
+                conn,
+                params={"id": str(reference_id), "user_id": user_id},
+            )
+
+        if df is None or df.empty:
             raise HTTPException(status_code=404, detail="Landlord reference not found")
         
-        ref_dict = reference_row.iloc[0].to_dict()
+        ref_dict = df.iloc[0].to_dict()
         
         # Convert timestamps
         for field in ["created_at", "updated_at"]:

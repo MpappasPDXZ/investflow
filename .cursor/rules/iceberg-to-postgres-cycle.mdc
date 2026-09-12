@@ -1,0 +1,44 @@
+---
+description: Virtuous cycle for Iceberg/Lakekeeper → Postgres table swaps. Agents must follow this for every migration step.
+alwaysApply: true
+---
+
+# Iceberg → Postgres Migration Cycle (Agency Protocol)
+
+You have agency to advance the Lakekeeper/Iceberg → Azure Postgres (`app` schema) migration **one table at a time**, but only by following this cycle. Do not freestyle drops, bulk rewrites, or skip validation.
+
+## Canonical playbook (source of truth)
+
+Read and update: `docs/migration/ICEBERG_TO_POSTGRES_CYCLE.md`
+
+That file holds: procedure, table/endpoint inventory, risk tiers, lessons learned, do-not-forget list, and **current next table**.
+
+## Begin every new table swap
+
+1. **Read** `docs/migration/ICEBERG_TO_POSTGRES_CYCLE.md` end-to-end (lessons + procedure + inventory for the target).
+2. **Confirm** the nominated next table (or the one the user named). Do not jump to CRITICAL-risk tables without explicit user go-ahead.
+3. **Follow** the procedure in that doc exactly (map → load → route → flag → deploy → UI validate → closeout).
+4. **Do not drop** the Iceberg table until the user explicitly says to drop it after UI validation.
+
+## After every successful swap (closeout — mandatory before next table)
+
+1. **Log lessons learned** into the playbook (what broke, what almost broke, what to repeat).
+2. **Verify the procedure** is still 100% correct; amend steps if reality diverged.
+3. **Search for dependents**: ripgrep for the table name, `get_catalog().load_table`, raw `catalog.load_table`, services that hardcode the table, property-update side effects, frontend hooks. Note any callers still on Iceberg-only paths.
+4. **Update do-not-forget** and the table status / next-table pointer in the playbook.
+5. **Then** take the next step (next table in the ordered list, unless the user redirects).
+
+## Hard rules (non-negotiable)
+
+- **Never delete live Iceberg data** before the user validates the UI for that table.
+- **Document-bearing tables** (`rents`, `expenses`, `leases`, walkthrough photos, `vault`): after load, assert every `document_storage_id` exists in `vault`; after deploy, open ≥1 attachment in UI before asking to drop Iceberg.
+- **Never self-expand** into unrelated refactors, commits, or Lakekeeper teardown without being asked.
+- **Load source of truth** = live `read_table` / Iceberg scan **while the table is NOT yet** in `POSTGRES_MIGRATED_TABLES`. Do not invent a second client. Prefer live copy over old parquet dumps unless Iceberg is already gone.
+- **Cutover** = every read/write path for that table goes through `load_table` / `read_table` / `read_table_filtered` / `append_data` / `upsert_data` (or helpers that call them). Fix `get_catalog()` bypasses **before** flipping the flag.
+- **Flag both places**: `config.py` default `POSTGRES_MIGRATED_TABLES` **and** Container App env (env overrides image defaults).
+- **Expenses, vault/documents, users/login** = CRITICAL. Extra map, shadow checks, full UI validation, no drop until signed off.
+- Blobs stay on ADLS (`investflowadls`); only tabular metadata moves to Postgres.
+
+## If blocked or unsure
+
+Stop, write the blocker into the playbook “Open risks” section, and ask the user. Do not guess on CRITICAL tables.

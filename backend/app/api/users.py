@@ -1,80 +1,20 @@
 """API routes for user profile management"""
-from typing import Optional, Dict, Any, List
-import uuid
 import pandas as pd
 import pyarrow as pa
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
-from pyiceberg.expressions import EqualTo
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.dependencies import get_current_user
-from app.schemas.user import UserResponse, UserUpdate, UserCreate
-from app.core.security import get_password_hash
-from app.core.exceptions import ConflictError
-from app.core.iceberg import read_table, read_table_filtered, append_data, table_exists, load_table
+from app.schemas.user import UserResponse, UserUpdate
+from app.core.iceberg import read_table, table_exists, load_table, uses_postgres
 from app.core.logging import get_logger
 from app.services.auth_cache_service import auth_cache
 
 NAMESPACE = ("investflow",)
 TABLE_NAME = "users"
-SHARES_TABLE = "user_shares"
 
 router = APIRouter(prefix="/users", tags=["users"])
 logger = get_logger(__name__)
-
-
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(
-    user_data: UserCreate,
-):
-    """Create a new user in Iceberg with CDC cache update"""
-    logger.info(f"Creating user with email: {user_data.email}")
-    
-    try:
-        # Check if user already exists using CDC cache (fast O(1) lookup)
-        if auth_cache.email_exists(user_data.email):
-            logger.warning(f"Attempted to create user with existing email: {user_data.email}")
-            raise ConflictError("User with this email already exists")
-        
-        # Create user with string UUID
-        user_id = str(uuid.uuid4())
-        now = pd.Timestamp.now()
-        logger.info(f"Creating user with ID: {user_id}, email: {user_data.email}")
-        
-        # Create user record
-        user_dict = {
-            "id": user_id,
-            "first_name": user_data.first_name,
-            "last_name": user_data.last_name,
-            "email": user_data.email,
-            "password_hash": get_password_hash(user_data.password),
-            "tax_rate": float(user_data.tax_rate) if user_data.tax_rate else None,
-            "created_at": now,
-            "updated_at": now,
-            "is_active": True,
-        }
-        
-        # Append to Iceberg table (source of truth)
-        df = pd.DataFrame([user_dict])
-        append_data(NAMESPACE, TABLE_NAME, df)
-        
-        # Update CDC cache (inline CDC)
-        auth_cache.on_user_created(user_dict)
-        
-        logger.info(f"Successfully created user {user_id} with email {user_data.email}")
-        
-        # Return response (exclude password_hash)
-        response_dict = {k: v for k, v in user_dict.items() if k != "password_hash"}
-        return UserResponse(**response_dict)
-        
-    except ConflictError:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating user {user_data.email}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create user: {str(e)}"
-        )
 
 
 @router.get("/me", response_model=UserResponse)
@@ -158,20 +98,30 @@ async def update_current_user_profile(
         
         # Load table and overwrite (Iceberg update pattern)
         table = load_table(NAMESPACE, TABLE_NAME)
-        table_schema = table.schema().as_arrow()
-        
-        # Reorder DataFrame columns to match table schema
-        schema_column_order = [field.name for field in table_schema]
-        df = df[[col for col in schema_column_order if col in df.columns]]
-        
-        # Convert to PyArrow and cast to table schema
-        arrow_table = pa.Table.from_pandas(df, preserve_index=False)
-        arrow_table = arrow_table.cast(table_schema)
-        
-        # Overwrite the table (source of truth)
-        logger.info("Overwriting table with updated data")
-        table.overwrite(arrow_table)
-        logger.info("Table overwritten successfully")
+
+        if uses_postgres(TABLE_NAME):
+            for col in df.columns:
+                if pd.api.types.is_datetime64_any_dtype(df[col]):
+                    df[col] = df[col].astype("datetime64[us]")
+            arrow_table = pa.Table.from_pandas(df, preserve_index=False)
+            logger.info("Overwriting users table with updated data (postgres)")
+            table.overwrite(arrow_table)
+            logger.info("Table overwritten successfully")
+        else:
+            table_schema = table.schema().as_arrow()
+
+            # Reorder DataFrame columns to match table schema
+            schema_column_order = [field.name for field in table_schema]
+            df = df[[col for col in schema_column_order if col in df.columns]]
+
+            # Convert to PyArrow and cast to table schema
+            arrow_table = pa.Table.from_pandas(df, preserve_index=False)
+            arrow_table = arrow_table.cast(table_schema)
+
+            # Overwrite the table (source of truth)
+            logger.info("Overwriting table with updated data")
+            table.overwrite(arrow_table)
+            logger.info("Table overwritten successfully")
         
         # Get the updated user row
         updated_user = df[mask].iloc[0]
@@ -201,46 +151,4 @@ async def update_current_user_profile(
         raise
     except Exception as e:
         logger.error(f"Error updating user profile: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/shared", response_model=List[UserResponse])
-async def get_shared_users(
-    current_user: dict = Depends(get_current_user)
-):
-    """Get list of users who have bidirectional sharing with the current user (using CDC cache)"""
-    try:
-        user_id = current_user["sub"]
-        user_email = current_user["email"]
-        
-        # Use CDC cache for fast O(1) shared user lookup
-        shared_user_ids = auth_cache.get_shared_user_ids(user_id, user_email)
-        
-        if len(shared_user_ids) == 0:
-            return []
-        
-        # Get shared users from cache
-        shared_users = auth_cache.get_users_by_ids(shared_user_ids)
-        
-        # Convert to UserResponse objects (exclude password_hash)
-        result = []
-        for user in shared_users:
-            user_dict = {
-                "id": str(user["id"]),
-                "first_name": user["first_name"],
-                "last_name": user["last_name"],
-                "email": user["email"],
-                "tax_rate": float(user["tax_rate"]) if pd.notna(user.get("tax_rate")) else None,
-                "mortgage_interest_rate": float(user["mortgage_interest_rate"]) if pd.notna(user.get("mortgage_interest_rate")) else None,
-                "loc_interest_rate": float(user["loc_interest_rate"]) if pd.notna(user.get("loc_interest_rate")) else None,
-                "created_at": user["created_at"] if pd.notna(user.get("created_at")) else datetime.now(),
-                "updated_at": user["updated_at"] if pd.notna(user.get("updated_at")) else datetime.now(),
-                "is_active": bool(user["is_active"]) if pd.notna(user.get("is_active")) else True,
-            }
-            result.append(UserResponse(**user_dict))
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error getting shared users: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

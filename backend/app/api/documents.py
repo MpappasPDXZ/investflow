@@ -131,27 +131,6 @@ async def list_documents_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/{document_id}", response_model=DocumentResponse)
-async def get_document_endpoint(
-    document_id: UUID,
-    current_user: dict = Depends(get_current_user)
-):
-    """Get document metadata by ID"""
-    try:
-        user_id = UUID(current_user["sub"])
-        document = document_service.get_document(document_id, user_id)
-        
-        if not document:
-            raise HTTPException(status_code=404, detail="Document not found")
-        
-        return DocumentResponse.from_document(document)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting document: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.patch("/{document_id}", response_model=DocumentResponse)
 async def update_document_endpoint(
     document_id: UUID,

@@ -1,14 +1,20 @@
-"""Document service for managing documents in Iceberg and ADLS"""
+"""Document service for managing documents in Iceberg/Postgres and ADLS"""
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from io import BytesIO
-from pyiceberg.expressions import EqualTo, And
+import pandas as pd
+import pyarrow as pa
+from pyiceberg.expressions import EqualTo
 from app.services.adls_service import adls_service
-from app.core.iceberg import get_catalog
+from app.core.iceberg import load_table, read_table, append_data, uses_postgres
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+NAMESPACE = ("investflow",)
+TABLE_NAME = "vault"
+
 
 def _fix_image_orientation(file_content: bytes, content_type: str) -> bytes:
     """
@@ -55,18 +61,17 @@ def _fix_image_orientation(file_content: bytes, content_type: str) -> bytes:
 
 
 class DocumentService:
-    """Service for managing document metadata in Iceberg"""
+    """Service for managing document metadata in Iceberg or Postgres"""
     
     def __init__(self):
-        self.catalog = get_catalog()
-        self.namespace = "investflow"
-        self.table_name = "vault"
+        self.namespace = NAMESPACE
+        self.table_name = TABLE_NAME
         self._table_cache = None
         self._table_cache_time = None
         self._cache_ttl = 60  # Cache table reference for 60 seconds
     
     def _get_table(self):
-        """Get the document metadata table with caching"""
+        """Get the document metadata table with caching (migration-aware)."""
         import time
         now = time.time()
         
@@ -76,9 +81,25 @@ class DocumentService:
                 return self._table_cache
         
         # Load table and cache it
-        self._table_cache = self.catalog.load_table(f"{self.namespace}.{self.table_name}")
+        self._table_cache = load_table(self.namespace, self.table_name)
         self._table_cache_time = now
         return self._table_cache
+
+    def _read_vault_df(self) -> pd.DataFrame:
+        return read_table(self.namespace, self.table_name)
+
+    def _append_record(self, record: dict) -> None:
+        table = self._get_table()
+        if uses_postgres(self.table_name):
+            df = pd.DataFrame([record])
+            for col in df.columns:
+                if pd.api.types.is_datetime64_any_dtype(df[col]):
+                    df[col] = df[col].astype("datetime64[us]")
+            table.append(pa.Table.from_pandas(df, preserve_index=False))
+            return
+        schema = table.schema().as_arrow()
+        arrow_table = pa.Table.from_pylist([record], schema=schema)
+        table.append(arrow_table)
     
     def upload_document(
         self,
@@ -150,15 +171,9 @@ class DocumentService:
                 "updated_at": now
             }
             
-            # Write to Iceberg
+            # Write metadata row
             table = self._get_table()
-            import pyarrow as pa
-            
-            # Create PyArrow Table (not RecordBatch - PyIceberg requires Table)
-            schema = table.schema().as_arrow()
-            arrow_table = pa.Table.from_pylist([record], schema=schema)
-            
-            table.append(arrow_table)
+            self._append_record(record)
             
             logger.info(f"Created document record: {doc_id}")
             
@@ -180,22 +195,16 @@ class DocumentService:
             Document metadata dictionary or None if not found
         """
         try:
-            table = self._get_table()
-            
-            # Query for the document - vault table uses user_id column
-            scan = table.scan(
-                row_filter=And(
-                    EqualTo("id", str(document_id)),
-                    EqualTo("user_id", str(user_id))
-                )
-            )
-            
-            # Get first result - scan.to_arrow() returns a Table
-            arrow_table = scan.to_arrow()
-            if len(arrow_table) > 0:
-                return arrow_table.to_pylist()[0]
-            
-            return None
+            df = self._read_vault_df()
+            if df.empty:
+                return None
+            match = df[
+                (df["id"].astype(str) == str(document_id))
+                & (df["user_id"].astype(str) == str(user_id))
+            ]
+            if len(match) == 0:
+                return None
+            return match.iloc[0].to_dict()
             
         except Exception as e:
             logger.error(f"Error getting document: {e}", exc_info=True)
@@ -250,40 +259,28 @@ class DocumentService:
             Tuple of (list of documents, total count)
         """
         try:
-            table = self._get_table()
-            
-            # Build filter - vault table uses user_id and has property_id, unit_id, tenant_id
-            filters = [
-                EqualTo("user_id", str(user_id)),
-                EqualTo("is_deleted", False)  # Filter out deleted documents
-            ]
-            
+            df = self._read_vault_df()
+            if df.empty:
+                return [], 0
+
+            mask = (df["user_id"].astype(str) == str(user_id))
+            if "is_deleted" in df.columns:
+                mask &= (df["is_deleted"].fillna(False) == False)
+
             if property_id:
-                filters.append(EqualTo("property_id", str(property_id)))
-            
+                mask &= (df["property_id"].astype(str) == str(property_id))
             if unit_id:
-                filters.append(EqualTo("unit_id", str(unit_id)))
-            
+                mask &= (df["unit_id"].astype(str) == str(unit_id))
             if tenant_id:
-                filters.append(EqualTo("tenant_id", str(tenant_id)))
-            
+                mask &= (df["tenant_id"].astype(str) == str(tenant_id))
             if document_type:
-                filters.append(EqualTo("document_type", document_type))
-            
-            # Combine filters
-            row_filter = filters[0]
-            for f in filters[1:]:
-                row_filter = And(row_filter, f)
-            
-            # Query
-            scan = table.scan(row_filter=row_filter)
-            
-            # Collect all results - scan.to_arrow() returns a Table
-            arrow_table = scan.to_arrow()
-            all_docs = arrow_table.to_pylist()
+                mask &= (df["document_type"].astype(str) == str(document_type))
+
+            filtered = df[mask]
+            all_docs = filtered.to_dict(orient="records")
             
             # Sort by uploaded_at descending
-            all_docs.sort(key=lambda x: x["uploaded_at"], reverse=True)
+            all_docs.sort(key=lambda x: x.get("uploaded_at") or datetime.min, reverse=True)
             
             total = len(all_docs)
             paginated_docs = all_docs[skip:skip + limit]
@@ -323,15 +320,14 @@ class DocumentService:
         """
         try:
             # Step 1: Get existing document by primary key (id)
-            table = self._get_table()
-            scan = table.scan(row_filter=EqualTo("id", str(document_id)))
-            arrow_table = scan.to_arrow()
+            df = self._read_vault_df()
+            match = df[df["id"].astype(str) == str(document_id)] if not df.empty else df
             
-            if len(arrow_table) == 0:
+            if len(match) == 0:
                 logger.warning(f"Document {document_id} not found")
                 return None
             
-            document = arrow_table.to_pylist()[0]
+            document = match.iloc[0].to_dict()
             
             # Get user_id from document if not provided
             if not user_id:
@@ -366,12 +362,8 @@ class DocumentService:
             updated_document["id"] = str(document_id)
             updated_document["user_id"] = str(user_id)
             
-            # Step 3: Fast update using delete-then-append (vault-specific, avoids duplicate row issues)
-            import pandas as pd
-            from app.core.iceberg import append_data
-            # EqualTo is already imported at the top of the file
-            
-            # Get table schema to ensure correct field order
+            # Step 3: Fast update using delete-then-append
+            table = self._get_table()
             table_schema = table.schema().as_arrow()
             schema_field_names = [field.name for field in table_schema]
             
@@ -385,7 +377,7 @@ class DocumentService:
                 else:
                     ordered_dict[field_name] = value
             
-            df = pd.DataFrame([ordered_dict])
+            out_df = pd.DataFrame([ordered_dict])
             
             # Delete existing row(s) with this ID (handles duplicates)
             table.delete(EqualTo("id", str(document_id)))
@@ -393,9 +385,9 @@ class DocumentService:
             
             # Append the updated row (fast, avoids upsert complexity)
             append_data(
-                namespace=(self.namespace,),
+                namespace=self.namespace,
                 table_name=self.table_name,
-                data=df
+                data=out_df
             )
             
             logger.info(f"Updated document: {document_id}")
@@ -409,7 +401,7 @@ class DocumentService:
 
     def soft_delete_document(self, document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """
-        Soft delete a document (mark as deleted in Iceberg, keep in ADLS)
+        Soft delete a document (mark as deleted in metadata, keep blob in ADLS)
         
         Args:
             document_id: Document ID
@@ -425,29 +417,15 @@ class DocumentService:
             if not document:
                 return False
             
-            # Update the record to mark as deleted
-            # Note: Iceberg doesn't support in-place updates, so we need to:
-            # 1. Delete the old record (row-level delete)
+            # 1. Delete the old record (id PK — Postgres delete supports EqualTo only)
             # 2. Insert a new record with is_deleted=True
-            
             table = self._get_table()
-            
-            # Delete old record
-            table.delete(
-                And(
-                    EqualTo("id", str(document_id)),
-                    EqualTo("user_id", str(user_id))
-                )
-            )
+            table.delete(EqualTo("id", str(document_id)))
             
             # Insert updated record
             document["is_deleted"] = True
             document["updated_at"] = datetime.utcnow()
-            
-            import pyarrow as pa
-            schema = table.schema().as_arrow()
-            arrow_table = pa.Table.from_pylist([document], schema=schema)
-            table.append(arrow_table)
+            self._append_record(document)
             
             logger.info(f"Soft deleted document: {document_id}")
             

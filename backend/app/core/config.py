@@ -1,7 +1,6 @@
 """Application configuration using Pydantic Settings"""
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
-from pydantic import field_validator
 
 
 class Settings(BaseSettings):
@@ -54,24 +53,25 @@ class Settings(BaseSettings):
     
     # Application Insights
     APPLICATIONINSIGHTS_CONNECTION_STRING: str = ""
-    
-    # Lakekeeper Configuration (optional - for data lake management)
-    LAKEKEEPER__BASE_URI: str = "http://localhost:8181"
+
+    # When true, all tabular reads/writes use Postgres (always on after Lakekeeper teardown).
+    USE_POSTGRES_STORE: bool = True
+    # Inventory of tables in app schema (kept for scripts / ops).
+    POSTGRES_MIGRATED_TABLES: str = "scheduled_expenses,scheduled_revenue,units,tenants,rents,leases,walkthroughs,walkthrough_areas,properties,users,user_shares,vault,expenses,comps,tenant_landlord_references"
+
+    # Legacy Lakekeeper env vars (ignored at runtime; accepted so old Container App env does not crash Settings)
+    LAKEKEEPER__BASE_URI: str = ""
     LAKEKEEPER__PG_DATABASE_URL_READ: str = ""
     LAKEKEEPER__PG_DATABASE_URL_WRITE: str = ""
     LAKEKEEPER__PG_ENCRYPTION_KEY: str = ""
     LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS: bool = False
-    # Optional: OAuth2 token for Lakekeeper authentication (if using external auth)
     LAKEKEEPER__AUTH_TOKEN: str = ""
-    # Default warehouse name to use
-    LAKEKEEPER__WAREHOUSE_NAME: str = "lakekeeper"
-    
-    # OAuth2 Configuration for Lakekeeper (Azure AD)
+    LAKEKEEPER__WAREHOUSE_NAME: str = ""
     LAKEKEEPER__OAUTH2__CLIENT_ID: str = ""
     LAKEKEEPER__OAUTH2__CLIENT_SECRET: str = ""
     LAKEKEEPER__OAUTH2__TENANT_ID: str = ""
-    LAKEKEEPER__OAUTH2__SCOPE: str = "api://lakekeeper/.default"
-    LAKEKEEPER__OAUTH2__AUTHORITY: str = ""  # Auto-constructed from tenant_id if not set
+    LAKEKEEPER__OAUTH2__SCOPE: str = ""
+    LAKEKEEPER__OAUTH2__AUTHORITY: str = ""
     
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -79,9 +79,7 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore"
     )
-    
 
 
 # Global settings instance
 settings = Settings()
-

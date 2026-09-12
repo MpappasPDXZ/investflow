@@ -97,6 +97,9 @@ coverage/
 *.temp
 .cache/
 
+# Local Iceberg/Postgres full-row dumps (PII) — ADLS is system of record
+backend/docs/exports/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -136,8 +139,18 @@ site/
 
 backend/.env.backup
 
-# scripts
+# scripts (keep operational Postgres tooling in git)
 backend/app/scripts/*
-#readme
+!backend/app/scripts/__init__.py
+!backend/app/scripts/export_postgres_to_adls.py
+!backend/app/scripts/smoke_postgres_writes.py
+!backend/app/scripts/_archive_iceberg/
+!backend/app/scripts/_archive_iceberg/**
+
+# readme / docs — ignore most md, keep migration playbook
 *.md
+!README.md
+!docs/migration/
+!docs/migration/**/*.md
+!backend/app/scripts/_archive_iceberg/README.md
 

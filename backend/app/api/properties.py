@@ -13,7 +13,7 @@ from app.core.dependencies import get_current_user
 from app.schemas.property import (
     PropertyCreate, PropertyUpdate, PropertyResponse, PropertyListResponse
 )
-from app.core.iceberg import get_catalog, read_table, read_table_filtered, table_exists
+from app.core.iceberg import load_table, read_table, read_table_filtered, table_exists, uses_postgres
 from app.core.logging import get_logger
 from app.api.vacancy_utils import create_or_update_vacancy_expenses
 from app.api.tax_savings_utils import create_or_update_tax_savings
@@ -57,13 +57,20 @@ PROPERTIES_FIELD_ORDER = [
 ]
 
 
-# ========== DEDICATED PROPERTIES ICEBERG FUNCTIONS ==========
+# ========== DEDICATED PROPERTIES TABLE FUNCTIONS ==========
 
 def _load_properties_table():
-    """Load the properties Iceberg table (dedicated function)"""
-    catalog = get_catalog()
-    table_identifier = (*NAMESPACE, TABLE_NAME)
-    return catalog.load_table(table_identifier)
+    """Load properties via migration-aware load_table (Postgres or Iceberg)."""
+    return load_table(NAMESPACE, TABLE_NAME)
+
+
+def _df_to_arrow_for_write(df: pd.DataFrame) -> pa.Table:
+    """Build Arrow for append/upsert; skip Iceberg cast on Postgres."""
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[col]):
+            out[col] = out[col].astype("datetime64[us]")
+    return pa.Table.from_pandas(out, preserve_index=False)
 
 
 def _read_properties_table() -> pd.DataFrame:
@@ -186,6 +193,12 @@ def _append_property(property_dict: dict):
         
         logger.info(f"📋 [PROPERTY] _append_property: Final DataFrame dtypes before PyArrow: {df.dtypes.to_dict()}")
         
+        if uses_postgres(TABLE_NAME):
+            arrow_table = _df_to_arrow_for_write(df)
+            table.append(arrow_table)
+            logger.info(f"✅ [PROPERTY] _append_property: Successfully appended property (postgres)")
+            return
+
         # Convert to PyArrow and cast to schema
         arrow_table = pa.Table.from_pandas(df, preserve_index=False)
         table_schema = table.schema().as_arrow()
@@ -298,6 +311,12 @@ def _upsert_property(property_df: pd.DataFrame):
         
         logger.info(f"📋 [PROPERTY] _upsert_property: Final DataFrame dtypes: {property_df.dtypes.to_dict()}")
         
+        if uses_postgres(TABLE_NAME):
+            arrow_table = _df_to_arrow_for_write(property_df)
+            table.upsert(arrow_table, join_cols=["id"])
+            logger.info(f"✅ [PROPERTY] _upsert_property: Upsert successful (postgres)")
+            return
+
         # Convert to PyArrow and cast to schema
         arrow_table = pa.Table.from_pandas(property_df)
         table_schema = table.schema().as_arrow()
@@ -487,7 +506,10 @@ async def create_property_endpoint(
         # Create table from single record with explicit schema - this ensures exact types
         try:
             logger.info(f"📋 [PROPERTY] Creating PyArrow table with {len(prepared_record)} fields")
-            arrow_table = pa.Table.from_pylist([prepared_record], schema=table_schema)
+            if uses_postgres(TABLE_NAME):
+                arrow_table = _df_to_arrow_for_write(pd.DataFrame([prepared_record]))
+            else:
+                arrow_table = pa.Table.from_pylist([prepared_record], schema=table_schema)
             logger.info(f"✅ [PROPERTY] PyArrow table created successfully")
         except Exception as e:
             logger.error(f"❌ [PROPERTY] Failed to create PyArrow table: {e}", exc_info=True)
@@ -883,9 +905,11 @@ async def update_property_endpoint(
         
         # Create DataFrame and convert to PyArrow
         property_df = pd.DataFrame([ordered_dict])
-        import pyarrow as pa
-        arrow_table = pa.Table.from_pandas(property_df, preserve_index=False)
-        arrow_table = arrow_table.cast(table_schema)
+        if uses_postgres(TABLE_NAME):
+            arrow_table = _df_to_arrow_for_write(property_df)
+        else:
+            arrow_table = pa.Table.from_pandas(property_df, preserve_index=False)
+            arrow_table = arrow_table.cast(table_schema)
         
         # Perform upsert
         table.upsert(arrow_table, join_cols=["id"])
@@ -967,13 +991,9 @@ async def delete_property_endpoint(
         if not is_active:
             raise HTTPException(status_code=404, detail="Property not found")
         
-        # Get fresh table reference for writes to avoid lock issues
-        catalog = get_catalog()
-        table_identifier = (*NAMESPACE, TABLE_NAME)
-        table = catalog.load_table(table_identifier)
-        
-        # HARD DELETE: Permanently remove the property using Iceberg's delete API
+        # HARD DELETE via migration-aware load_table
         logger.info(f"🗑️ [PROPERTY] Hard deleting property {property_id} by user {user_id}")
+        table = load_table(NAMESPACE, TABLE_NAME)
         table.delete(EqualTo("id", property_id))
         
         logger.info(f"✅ Property {property_id} permanently deleted by user {user_id}")

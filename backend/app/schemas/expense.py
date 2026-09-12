@@ -119,6 +119,63 @@ class ExpenseResponse(ExpenseBase):
     class Config:
         from_attributes = True
 
+    @classmethod
+    def from_expense(cls, exp: dict) -> "ExpenseResponse":
+        """Nan-safe constructor for pandas/Postgres rows."""
+        import pandas as pd
+        from typing import Any
+
+        def _none_if_null(value: Any) -> Any:
+            if value is None:
+                return None
+            try:
+                if pd.isna(value):
+                    return None
+            except Exception:
+                pass
+            if value == "" or value == "None" or value == "nan" or value == "NaT":
+                return None
+            return value
+
+        has_receipt = _none_if_null(exp.get("has_receipt"))
+        doc_id = _none_if_null(exp.get("document_storage_id"))
+        if has_receipt is None:
+            has_receipt = doc_id is not None
+        else:
+            has_receipt = bool(has_receipt)
+
+        raw_date = _none_if_null(exp.get("date"))
+        if raw_date is None:
+            created = _none_if_null(exp.get("created_at"))
+            raw_date = pd.Timestamp(created).date() if created is not None else datetime.date(1970, 1, 1)
+        elif hasattr(raw_date, "date") and not isinstance(raw_date, datetime.date):
+            raw_date = raw_date.date()
+
+        created_at = exp.get("created_at")
+        updated_at = exp.get("updated_at")
+        if created_at is not None and not isinstance(created_at, datetime.datetime):
+            created_at = pd.Timestamp(created_at).to_pydatetime()
+        if updated_at is not None and not isinstance(updated_at, datetime.datetime):
+            updated_at = pd.Timestamp(updated_at).to_pydatetime()
+
+        return cls(
+            id=exp["id"],
+            property_id=exp["property_id"],
+            unit_id=_none_if_null(exp.get("unit_id")),
+            description=exp["description"],
+            vendor=_none_if_null(exp.get("vendor")),
+            expense_type=exp["expense_type"],
+            expense_category=_none_if_null(exp.get("expense_category")),
+            tax_category=_none_if_null(exp.get("tax_category")),
+            document_storage_id=doc_id,
+            notes=_none_if_null(exp.get("notes")),
+            amount=exp["amount"],
+            date=raw_date,
+            has_receipt=has_receipt,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+
 
 class ExpenseListResponse(BaseModel):
     """Schema for paginated expense list response"""

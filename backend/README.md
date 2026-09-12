@@ -1,123 +1,67 @@
 # InvestFlow Backend
 
-FastAPI backend for InvestFlow property management system.
+FastAPI backend for InvestFlow property management.
 
-## ⚠️ CRITICAL: Local vs Production Data
+**Tabular store:** Azure Postgres (`app` schema) via `USE_POSTGRES_STORE=true`.  
+**Blobs:** Azure Data Lake (`investflowadls`). Lakekeeper/Iceberg has been removed.
 
-### Architecture Overview
-
-```
-LOCAL DEVELOPMENT                     PRODUCTION (AZURE)
-─────────────────                     ──────────────────
-Docker Container                      Azure Container App
-       │                                     │
-       ▼                                     ▼
-Local Lakekeeper                      Azure Lakekeeper
-(http://lakekeeper:8181)              (https://investflow-lakekeeper.*.azurecontainerapps.io)
-       │                                     │
-       ▼                                     ▼
-Local PostgreSQL                      Azure PostgreSQL
-(Docker container)                    (if-postgres.postgres.database.azure.com)
-       │                                     │
-       ▼                                     ▼
-Local filesystem                      Azure Data Lake (ADLS)
-(/tmp/iceberg-data)                   (investflowadls)
-```
-
-### 🚨 HOW TO RUN SCRIPTS CORRECTLY
-
-| Command | Target | When to Use |
-|---------|--------|-------------|
-| `docker-compose exec backend python -m app.scripts.xxx` | **LOCAL** Lakekeeper | Testing locally only |
-| `uv run python -m app.scripts.xxx` | **PRODUCTION** Azure | Uploading real data |
-
-**NEVER use `docker-compose exec` for production data!** It connects to the local Lakekeeper container, not Azure.
-
-### Schema Must Match
-
-Both local and production use the **same Iceberg table schemas**. When you add columns:
-
-1. Update the schema in `app/api/` or `app/schemas/`
-2. Update ALL upload scripts to include new columns
-3. Deploy backend to Azure (GitHub Actions auto-deploys on push to `main`)
-4. Run upload scripts with `uv run` for production
-
-### Example: Uploading Data to Production
+## Local Docker (recommended)
 
 ```bash
-# ✅ CORRECT - Uses .env with Azure credentials
 cd backend
-uv run python -m app.scripts.upload_comparables
-
-# ❌ WRONG - Uses local Docker Lakekeeper
-docker-compose exec backend python -m app.scripts.upload_comparables
+cp env.example .env   # if needed; fill POSTGRES_* + AZURE_STORAGE_*
+docker compose up --build
 ```
 
-### Deployment Checklist
+| Service  | URL                    |
+|----------|------------------------|
+| Backend  | http://localhost:8000  |
+| Frontend | http://localhost:3000  |
+| API docs | http://localhost:8000/docs |
 
-After adding new API endpoints or schemas:
+Compose loads `backend/.env`, mounts `./app` into the backend for code changes, and runs the frontend with `npm run dev` (hot reload).
 
-1. ✅ Push code to `main` branch
-2. ✅ Wait for GitHub Actions "Deploy to Azure" to complete
-3. ✅ Verify endpoint exists: `curl https://investflow-backend.*.azurecontainerapps.io/api/v1/YOUR_ENDPOINT`
-4. ✅ Run data scripts with `uv run` (not docker-compose exec)
-
----
-
-## Quick Start
-
-### 1. Install Dependencies
+Health check:
 
 ```bash
-uv venv
-source .venv/bin/activate
+curl -s http://localhost:8000/api/v1/health
+```
+
+Write smoke (against the DB in `.env`):
+
+```bash
+USE_POSTGRES_STORE=true uv run python -m app.scripts.smoke_postgres_writes
+```
+
+## Direct (no Docker)
+
+```bash
+uv venv && source .venv/bin/activate
 uv pip install -e .
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2. Configure Environment
+## Production deploy
 
-```bash
-cp env.example .env
-# Edit .env with your Azure credentials for PRODUCTION access
-```
+Push to `main` → GitHub Actions workflow `.github/workflows/deploy.yml` builds and updates:
 
-### 3. Start Local Development Stack
+- `investflow-backend`
+- `investflow-frontend`
 
-```bash
-docker-compose up -d
-```
+See `docs/migration/ICEBERG_TO_POSTGRES_CYCLE.md` for the completed Iceberg → Postgres migration notes.
 
-This starts:
-- `lakekeeper` - Local Iceberg catalog (port 8181)
-- `backend` - FastAPI server (port 8000)
-- `frontend` - Next.js app (port 3000)
-
-### 4. Start FastAPI Server (Alternative - Direct)
-
-```bash
-uv run uvicorn app.main:app --reload
-```
-
-API docs: http://localhost:8000/docs
-
-## Project Structure
+## Project structure
 
 ```
 backend/
 ├── app/
-│   ├── api/          # API endpoints (add new routers here)
-│   ├── core/         # Core configuration & Iceberg helpers
-│   ├── models/       # Data models
-│   ├── schemas/      # Pydantic schemas (validation)
-│   ├── services/     # Business logic
-│   └── scripts/      # Data upload scripts (use uv run for prod!)
-└── docker-compose.yml
+│   ├── api/          # API endpoints
+│   ├── core/         # config, postgres_store, iceberg helpers (Postgres-only)
+│   ├── models/
+│   ├── schemas/
+│   ├── services/
+│   └── scripts/      # export_postgres_to_adls, smoke_postgres_writes, …
+├── docker-compose.yml
+├── Dockerfile
+└── env.example
 ```
-
-## Data Flow
-
-```
-API Request → FastAPI → Iceberg (via Lakekeeper) → ADLS (production) / Local files (dev)
-```
-
-The same code connects to different backends based on environment variables in `.env`.

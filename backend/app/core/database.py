@@ -35,6 +35,7 @@ def build_database_url() -> str:
     database_url = (
         f"postgresql://{encoded_user}:{encoded_password}@"
         f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+        f"?sslmode=require"
     )
     
     return database_url
@@ -58,6 +59,7 @@ def build_async_database_url() -> str:
     database_url = (
         f"postgresql+asyncpg://{encoded_user}:{encoded_password}@"
         f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+        f"?ssl=require"
     )
     
     return database_url

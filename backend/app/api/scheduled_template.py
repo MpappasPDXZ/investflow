@@ -4,7 +4,7 @@ API endpoints for scheduled financials template management
 from fastapi import APIRouter, Depends, HTTPException, Body
 from app.core.dependencies import get_current_user
 from app.services.scheduled_financials_template_service import scheduled_financials_template
-from app.core.iceberg import read_table, table_exists, get_catalog
+from app.core.iceberg import read_table, table_exists
 from app.core.logging import get_logger
 from typing import Dict, Any, List
 import uuid
@@ -269,51 +269,6 @@ async def apply_template(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error applying template: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-@router.post("/scheduled-financials/save-template/{property_id}")
-async def save_template(
-    property_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Save a property's scheduled financials as the template.
-    This should be called on the reference property (316 S 50th Ave).
-    """
-    try:
-        user_id = current_user["sub"]
-
-        # Get property data
-        properties_df = read_table(NAMESPACE, "properties")
-        property_match = properties_df[
-            (properties_df['id'] == property_id) &
-            (properties_df['user_id'] == user_id)
-        ]
-
-        if property_match.empty:
-            raise HTTPException(status_code=404, detail="Property not found")
-
-        property_data = property_match.iloc[0].to_dict()
-
-        # Save as template
-        from uuid import UUID
-        success = scheduled_financials_template.save_template_from_property(
-            UUID(property_id),
-            property_data
-        )
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to save template")
-
-        return {
-            "message": "Template saved successfully",
-            "property_id": property_id,
-            "property_address": property_data.get("address_line1")
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error saving template: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

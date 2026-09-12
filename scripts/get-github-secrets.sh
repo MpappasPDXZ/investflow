@@ -77,13 +77,6 @@ else
 fi
 echo ""
 
-echo "🔐 LAKEKEEPER_ENCRYPTION_KEY (use existing from local .env!):"
-if [ -f "backend/.env" ]; then
-    grep "^LAKEKEEPER__PG_ENCRYPTION_KEY=" backend/.env 2>/dev/null | cut -d'=' -f2 || echo "[Check your backend/.env file]"
-else
-    echo "[Check your backend/.env file]"
-fi
-echo "⚠️  WARNING: Must match local .env if sharing database!"
 echo ""
 
 # Azure Credentials

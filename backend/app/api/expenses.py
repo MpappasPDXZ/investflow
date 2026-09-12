@@ -31,7 +31,7 @@ async def create_expense_endpoint(
             user_id=user_id,
             expense_data=expense_data
         )
-        return ExpenseResponse(**expense_dict)
+        return ExpenseResponse.from_expense(expense_dict)
     except Exception as e:
         logger.error(f"Error creating expense: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -89,7 +89,7 @@ async def create_expense_with_receipt(
         )
         
         expense_dict = expense_service.create_expense(user_id=user_id, expense_data=expense_data)
-        return ExpenseResponse(**expense_dict)
+        return ExpenseResponse.from_expense(expense_dict)
         
     except Exception as e:
         logger.error(f"Error creating expense with receipt: {e}", exc_info=True)
@@ -118,9 +118,15 @@ async def list_expenses_endpoint(
             skip=skip,
             limit=limit
         )
-        
-        items = [ExpenseResponse(**exp) for exp in expenses]
-        
+
+        items = []
+        for exp in expenses:
+            try:
+                items.append(ExpenseResponse.from_expense(exp))
+            except Exception as parse_err:
+                logger.warning(f"Skipping expense parse failure: {parse_err}")
+        logger.info(f"Successfully parsed {len(items)}/{len(expenses)} expenses (total={total})")
+
         return ExpenseListResponse(
             items=items,
             total=total,
@@ -162,7 +168,7 @@ async def get_expense_endpoint(
         if not expense_dict:
             raise HTTPException(status_code=404, detail="Expense not found")
         
-        return ExpenseResponse(**expense_dict)
+        return ExpenseResponse.from_expense(expense_dict)
     except HTTPException:
         raise
     except Exception as e:
@@ -185,7 +191,7 @@ async def update_expense_endpoint(
             raise HTTPException(status_code=404, detail="Expense not found")
         
         logger.info(f"[UPDATE] Updated expense {expense_id}, stored date: {expense_dict.get('date')}")
-        return ExpenseResponse(**expense_dict)
+        return ExpenseResponse.from_expense(expense_dict)
     except HTTPException:
         raise
     except Exception as e:
