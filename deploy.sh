@@ -75,7 +75,7 @@ az containerapp create \
   --registry-password "$ACR_PASS" \
   --target-port 8000 \
   --ingress external \
-  --min-replicas 0 \
+  --min-replicas 1 \
   --max-replicas 3 \
   --cpu 0.5 \
   --memory 1.0Gi \
@@ -119,7 +119,7 @@ az containerapp create \
   --registry-password "$ACR_PASS" \
   --target-port 3000 \
   --ingress external \
-  --min-replicas 0 \
+  --min-replicas 1 \
   --max-replicas 3 \
   --cpu 0.25 \
   --memory 0.5Gi \
