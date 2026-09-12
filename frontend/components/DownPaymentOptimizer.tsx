@@ -231,7 +231,7 @@ export default function DownPaymentOptimizer({
         downPayment,
         downPaymentPercent,
         loanAmount,
-        monthlyPI,
+        monthlyPI: annualPI / 12,
         annualPI,
         monthlyRent,
         annualRent: grossAnnualRent,
