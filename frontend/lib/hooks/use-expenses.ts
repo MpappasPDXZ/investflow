@@ -32,7 +32,8 @@ export function useExpensesByYear(propertyId?: string, year?: number) {
       return apiClient.get<ExpenseListResponse>(`/expenses?${params.toString()}`);
     },
     enabled: !!propertyId && !!year,
-    staleTime: 30000,
+    refetchOnMount: 'always',
+    staleTime: 0,
     gcTime: 300000,
   });
 }
@@ -54,6 +55,20 @@ export function useExpense(expenseId: string) {
   });
 }
 
+async function invalidateExpenseQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  expenseId?: string
+) {
+  // Await so navigate-after-save does not remount the list on a still-fresh cache
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['expenses'] }),
+    queryClient.invalidateQueries({ queryKey: ['expense-summary'] }),
+    ...(expenseId
+      ? [queryClient.invalidateQueries({ queryKey: ['expense', expenseId] })]
+      : []),
+  ]);
+}
+
 export function useCreateExpense() {
   const queryClient = useQueryClient();
 
@@ -70,9 +85,8 @@ export function useCreateExpense() {
       unit_id?: string;
       notes?: string;
     }) => apiClient.post<Expense>('/expenses', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+    onSuccess: async () => {
+      await invalidateExpenseQueries(queryClient);
     },
   });
 }
@@ -83,9 +97,8 @@ export function useCreateExpenseWithReceipt() {
   return useMutation({
     mutationFn: (formData: FormData) =>
       apiClient.upload<Expense>('/expenses/with-receipt', formData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+    onSuccess: async () => {
+      await invalidateExpenseQueries(queryClient);
     },
   });
 }
@@ -96,10 +109,8 @@ export function useUpdateExpense() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Expense> }) =>
       apiClient.put<Expense>(`/expenses/${id}`, data),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['expense', variables.id] });
+    onSuccess: async (_, variables) => {
+      await invalidateExpenseQueries(queryClient, variables.id);
     },
   });
 }
@@ -109,9 +120,8 @@ export function useDeleteExpense() {
 
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/expenses/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+    onSuccess: async () => {
+      await invalidateExpenseQueries(queryClient);
     },
   });
 }
@@ -149,6 +159,8 @@ export function useExpenseSummary(propertyId?: string, year?: number) {
       return apiClient.get<ExpenseSummary>(`/expenses/summary${queryString ? `?${queryString}` : ''}`);
     },
     enabled: !!propertyId, // Only fetch when propertyId is provided (required by backend)
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
 }
 

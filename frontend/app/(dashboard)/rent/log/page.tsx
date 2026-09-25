@@ -422,8 +422,9 @@ export default function LogRentPage() {
     const dated = candidates.filter(inDateRange);
     if (dated.length > 0) candidates = dated;
 
-    // Prefer active over final/past; then longest remaining term (latest lease_end);
-    // then most recently updated
+    // Prefer active over final/past; then most recent lease agreement (latest lease_start);
+    // then most recently updated. Do NOT prefer longest lease_end — an older overlapping
+    // lease can outrank the current rent (e.g. $2000 ending Jul vs $2100 ending May).
     const statusRank = (s?: string) => {
       if (s === 'active') return 0;
       if (s === 'final' || s === 'pending_signature') return 1;
@@ -432,9 +433,9 @@ export default function LogRentPage() {
     candidates = [...candidates].sort((a, b) => {
       const sr = statusRank(a.status) - statusRank(b.status);
       if (sr !== 0) return sr;
-      const aEnd = a.lease_end ? new Date(a.lease_end).getTime() : 0;
-      const bEnd = b.lease_end ? new Date(b.lease_end).getTime() : 0;
-      if (bEnd !== aEnd) return bEnd - aEnd;
+      const aStart = a.lease_start ? new Date(a.lease_start).getTime() : 0;
+      const bStart = b.lease_start ? new Date(b.lease_start).getTime() : 0;
+      if (bStart !== aStart) return bStart - aStart;
       const aUp = a.updated_at ? new Date(a.updated_at).getTime() : 0;
       const bUp = b.updated_at ? new Date(b.updated_at).getTime() : 0;
       return bUp - aUp;
@@ -449,12 +450,18 @@ export default function LogRentPage() {
     || selectedProperty?.current_monthly_rent
     || 0;
 
-  // Track last auto-filled suggestion so we can update when property/unit changes
+  // Track last auto-filled suggestion so we can update when property/unit/leases change
   const lastSuggestionRef = useRef<number | null>(null);
+  const selectionKey = `${formData.property_id}:${formData.unit_id}`;
+  const selectionKeyRef = useRef(selectionKey);
 
   useEffect(() => {
     if (isEditing) return;
     if (suggestedAmount <= 0) return;
+
+    const selectionChanged = selectionKeyRef.current !== selectionKey;
+    selectionKeyRef.current = selectionKey;
+
     setFormData((prev) => {
       const prevAmount = parseFloat(prev.amount);
       const wasEmpty = prev.amount === '' || prev.amount === '0';
@@ -462,13 +469,16 @@ export default function LogRentPage() {
         lastSuggestionRef.current != null &&
         !Number.isNaN(prevAmount) &&
         prevAmount === lastSuggestionRef.current;
-      if (wasEmpty || wasPriorSuggestion) {
+      // Always adopt on property/unit change (avoids sticking on property rent e.g. $1600
+      // after unit+lease resolve to $2000). Also adopt when leases load and bump suggestion.
+      if (selectionChanged || wasEmpty || wasPriorSuggestion) {
         lastSuggestionRef.current = suggestedAmount;
+        if (prev.amount === String(suggestedAmount)) return prev;
         return { ...prev, amount: String(suggestedAmount) };
       }
       return prev;
     });
-  }, [suggestedAmount, formData.property_id, formData.unit_id, isEditing]);
+  }, [suggestedAmount, selectionKey, isEditing]);
 
   const getMonthLabel = (month: number) => MONTHS.find(m => m.value === month)?.label || '';
 

@@ -20,6 +20,21 @@ logger = logging.getLogger(__name__)
 _fp_cache = None
 
 
+def _as_date(value) -> Optional[date]:
+    """Normalize Timestamp/datetime/str/date to datetime.date (or None)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)) or pd.isna(value):
+        return None
+    if isinstance(value, pd.Timestamp):
+        return value.date()
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.split("T")[0]).date()
+    return None
+
+
 def get_fp_cache():
     """Lazy load financial performance cache"""
     global _fp_cache
@@ -161,21 +176,12 @@ class FinancialPerformanceService:
         logger.info(f"[PERF] Processing {len(rent_payments)} rent payments")
         
         for rent in rent_payments:
-            payment_date = rent['payment_date']
+            payment_date = _as_date(rent['payment_date'])
             
             # Skip if payment_date is None/NaT
-            if payment_date is None or pd.isna(payment_date):
+            if payment_date is None:
                 logger.warning(f"[PERF] Skipping rent payment with missing payment_date: amount={rent['amount']}")
                 continue
-            
-            # Handle pandas Timestamp, string, or date objects
-            if isinstance(payment_date, pd.Timestamp):
-                payment_date = payment_date.date()
-            elif isinstance(payment_date, str):
-                payment_date = datetime.fromisoformat(payment_date.split('T')[0]).date()
-            elif isinstance(payment_date, datetime):
-                payment_date = payment_date.date()
-            # If it's already a date, use it as-is
             
             logger.debug(f"[PERF] Rent payment: amount={rent['amount']}, payment_date={payment_date}, is_non_irs={rent.get('is_non_irs_revenue', False)}, ytd_start={ytd_start}, included={payment_date >= ytd_start}")
             
@@ -191,9 +197,10 @@ class FinancialPerformanceService:
         logger.info(f"[PERF] Calculated YTD: total_revenue={ytd_total_revenue}, irs_revenue={ytd_rent}")
         
         for expense in expenses:
-            expense_date = expense['date']
-            if isinstance(expense_date, str):
-                expense_date = datetime.fromisoformat(expense_date.split('T')[0]).date()
+            expense_date = _as_date(expense.get('date'))
+            if expense_date is None:
+                logger.warning(f"[PERF] Skipping expense with missing date: amount={expense.get('amount')}")
+                continue
             # Exclude rehab expenses from YTD
             exp_type = expense.get('expense_type', 'other')
             if expense_date >= ytd_start and exp_type != 'rehab':

@@ -255,6 +255,7 @@ class FinancialPerformanceCacheService:
         try:
             # Import here to avoid circular dependency
             from app.services.expense_service import ExpenseService
+            from app.services.financial_performance_service import _as_date
             from app.core.iceberg import read_table, table_exists
             
             logger.info(f"[FP-CACHE] Recalculating for property {property_id}, unit {unit_id}")
@@ -321,15 +322,9 @@ class FinancialPerformanceCacheService:
             }
             
             for rent in rent_payments:
-                payment_date = rent['payment_date']
-                # Handle pandas Timestamp, string, or date objects
-                if isinstance(payment_date, pd.Timestamp):
-                    payment_date = payment_date.date()
-                elif isinstance(payment_date, str):
-                    payment_date = datetime.fromisoformat(payment_date.split('T')[0]).date()
-                elif isinstance(payment_date, datetime):
-                    payment_date = payment_date.date()
-                # If it's already a date, use it as-is
+                payment_date = _as_date(rent['payment_date'])
+                if payment_date is None:
+                    continue
                 
                 if payment_date >= ytd_start:
                     # Add to total revenue (all rent including deposits)
@@ -341,9 +336,9 @@ class FinancialPerformanceCacheService:
                         ytd_rent += Decimal(str(rent['amount']))
             
             for expense in expenses:
-                expense_date = expense['date']
-                if isinstance(expense_date, str):
-                    expense_date = datetime.fromisoformat(expense_date.split('T')[0]).date()
+                expense_date = _as_date(expense.get('date'))
+                if expense_date is None:
+                    continue
                 exp_type = expense.get('expense_type', 'other')
                 # Exclude rehab expenses and planned expenses from YTD
                 if expense_date >= ytd_start and exp_type != 'rehab':
