@@ -401,30 +401,46 @@ export default function LogRentPage() {
     const inDateRange = (lease: (typeof leases)[0]) => {
       const start = lease.lease_start ? new Date(lease.lease_start) : null;
       const end = lease.lease_end ? new Date(lease.lease_end) : null;
-      if (start && start > today) return false;
-      if (end && end < today) return false;
+      if (start && Number.isNaN(start.getTime()) === false && start > today) return false;
+      if (end && Number.isNaN(end.getTime()) === false && end < today) return false;
       return true;
     };
 
-    const candidates = leases.filter((l) => {
-      if (l.status && !['active', 'final', 'pending_signature'].includes(l.status) && l.status !== 'draft') {
-        // Prefer active/current; still allow if date range matches
-      }
+    // Require a unit match when a unit is selected; never fall back to unrelated leases
+    let candidates = leases.filter((l) => {
+      if (l.monthly_rent == null || Number(l.monthly_rent) <= 0) return false;
       if (formData.unit_id) {
-        return l.unit_id === formData.unit_id;
+        return String(l.unit_id || '') === String(formData.unit_id);
       }
-      // Property-level: lease with no unit or matching property only
-      return !l.unit_id || l.unit_id === '';
+      // Property-level only when no unit selected
+      return !l.unit_id;
     });
 
+    if (candidates.length === 0) return null;
+
+    // Prefer leases currently in term
     const dated = candidates.filter(inDateRange);
-    const pool = dated.length > 0 ? dated : candidates;
-    const best = pool.find((l) => l.monthly_rent != null && Number(l.monthly_rent) > 0)
-      || leases.find((l) => {
-        if (formData.unit_id && l.unit_id !== formData.unit_id) return false;
-        return l.monthly_rent != null && Number(l.monthly_rent) > 0;
-      });
-    return best?.monthly_rent != null ? Number(best.monthly_rent) : null;
+    if (dated.length > 0) candidates = dated;
+
+    // Prefer active over final/past; then longest remaining term (latest lease_end);
+    // then most recently updated
+    const statusRank = (s?: string) => {
+      if (s === 'active') return 0;
+      if (s === 'final' || s === 'pending_signature') return 1;
+      return 2;
+    };
+    candidates = [...candidates].sort((a, b) => {
+      const sr = statusRank(a.status) - statusRank(b.status);
+      if (sr !== 0) return sr;
+      const aEnd = a.lease_end ? new Date(a.lease_end).getTime() : 0;
+      const bEnd = b.lease_end ? new Date(b.lease_end).getTime() : 0;
+      if (bEnd !== aEnd) return bEnd - aEnd;
+      const aUp = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const bUp = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return bUp - aUp;
+    });
+
+    return Number(candidates[0].monthly_rent);
   }, [leases, formData.property_id, formData.unit_id]);
 
   const suggestedAmount =
@@ -433,13 +449,21 @@ export default function LogRentPage() {
     || selectedProperty?.current_monthly_rent
     || 0;
 
-  // Auto-fill amount from suggestion when property/unit changes (new entries only; don't overwrite edits)
+  // Track last auto-filled suggestion so we can update when property/unit changes
+  const lastSuggestionRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (isEditing) return;
     if (suggestedAmount <= 0) return;
     setFormData((prev) => {
-      // Only auto-fill when empty or still holding a prior suggestion-like value
-      if (prev.amount === '' || prev.amount === '0') {
+      const prevAmount = parseFloat(prev.amount);
+      const wasEmpty = prev.amount === '' || prev.amount === '0';
+      const wasPriorSuggestion =
+        lastSuggestionRef.current != null &&
+        !Number.isNaN(prevAmount) &&
+        prevAmount === lastSuggestionRef.current;
+      if (wasEmpty || wasPriorSuggestion) {
+        lastSuggestionRef.current = suggestedAmount;
         return { ...prev, amount: String(suggestedAmount) };
       }
       return prev;
