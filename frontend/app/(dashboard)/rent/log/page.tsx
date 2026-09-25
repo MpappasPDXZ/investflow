@@ -12,6 +12,7 @@ import { Home, Save, Calendar, DollarSign, ArrowLeft, Camera, Upload, X, FileTex
 import { apiClient } from '@/lib/api-client';
 import { useCreateRent, useCreateRentWithReceipt, useUpdateRent, useRent } from '@/lib/hooks/use-rent';
 import { useTenants } from '@/lib/hooks/use-tenants';
+import { useLeasesList } from '@/lib/hooks/use-leases';
 import { useSearchParams } from 'next/navigation';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
 
@@ -103,6 +104,14 @@ export default function LogRentPage() {
     formData.property_id ? { property_id: formData.property_id } : { enabled: true }
   );
   const tenants = tenantsData?.tenants || [];
+
+  // Active leases for suggested rent amount
+  const { data: leasesData } = useLeasesList({
+    property_id: formData.property_id || undefined,
+    active_only: true,
+    enabled: !!formData.property_id,
+  });
+  const leases = leasesData?.leases || [];
 
   // Generate year options (current year - 2 to current year + 1)
   const yearOptions = useMemo(() => {
@@ -382,7 +391,60 @@ export default function LogRentPage() {
                       selectedProperty?.property_type === 'duplex';
 
   const selectedUnit = units.find(u => u.id === formData.unit_id);
-  const suggestedAmount = selectedUnit?.current_monthly_rent || selectedProperty?.current_monthly_rent || 0;
+
+  // Priority: active lease monthly_rent -> unit rent -> property rent
+  const leaseMonthlyRent = useMemo(() => {
+    if (!formData.property_id || !leases.length) return null;
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+
+    const inDateRange = (lease: (typeof leases)[0]) => {
+      const start = lease.lease_start ? new Date(lease.lease_start) : null;
+      const end = lease.lease_end ? new Date(lease.lease_end) : null;
+      if (start && start > today) return false;
+      if (end && end < today) return false;
+      return true;
+    };
+
+    const candidates = leases.filter((l) => {
+      if (l.status && !['active', 'final', 'pending_signature'].includes(l.status) && l.status !== 'draft') {
+        // Prefer active/current; still allow if date range matches
+      }
+      if (formData.unit_id) {
+        return l.unit_id === formData.unit_id;
+      }
+      // Property-level: lease with no unit or matching property only
+      return !l.unit_id || l.unit_id === '';
+    });
+
+    const dated = candidates.filter(inDateRange);
+    const pool = dated.length > 0 ? dated : candidates;
+    const best = pool.find((l) => l.monthly_rent != null && Number(l.monthly_rent) > 0)
+      || leases.find((l) => {
+        if (formData.unit_id && l.unit_id !== formData.unit_id) return false;
+        return l.monthly_rent != null && Number(l.monthly_rent) > 0;
+      });
+    return best?.monthly_rent != null ? Number(best.monthly_rent) : null;
+  }, [leases, formData.property_id, formData.unit_id]);
+
+  const suggestedAmount =
+    leaseMonthlyRent
+    || selectedUnit?.current_monthly_rent
+    || selectedProperty?.current_monthly_rent
+    || 0;
+
+  // Auto-fill amount from suggestion when property/unit changes (new entries only; don't overwrite edits)
+  useEffect(() => {
+    if (isEditing) return;
+    if (suggestedAmount <= 0) return;
+    setFormData((prev) => {
+      // Only auto-fill when empty or still holding a prior suggestion-like value
+      if (prev.amount === '' || prev.amount === '0') {
+        return { ...prev, amount: String(suggestedAmount) };
+      }
+      return prev;
+    });
+  }, [suggestedAmount, formData.property_id, formData.unit_id, isEditing]);
 
   const getMonthLabel = (month: number) => MONTHS.find(m => m.value === month)?.label || '';
 

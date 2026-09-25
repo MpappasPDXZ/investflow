@@ -227,12 +227,14 @@ async def update_unit_endpoint(
         if len(property_row) == 0:
             raise HTTPException(status_code=404, detail="Unit not found")
         
-        # Update fields
-        update_dict = unit_data.model_dump(exclude_unset=True)  # Changed from exclude_none
+        # Update fields — float64 columns must stay float (not Decimal) to match schema
+        update_dict = unit_data.model_dump(exclude_unset=True)
         for key, value in update_dict.items():
             if key in df.columns:
                 if key in ["bathrooms", "current_monthly_rent"]:
-                    df.loc[mask, key] = Decimal(str(value)) if value is not None else None
+                    df.loc[mask, key] = float(value) if value is not None else None
+                elif key in ["bedrooms", "square_feet"]:
+                    df.loc[mask, key] = int(value) if value is not None else None
                 else:
                     df.loc[mask, key] = value
         
@@ -240,21 +242,26 @@ async def update_unit_endpoint(
         
         # Extract only the updated row
         updated_row_df = df[mask].copy().reset_index(drop=True)
+
+        # Normalize NaN in string/object columns so PyArrow upsert does not fail
+        for col in updated_row_df.columns:
+            if updated_row_df[col].dtype == object:
+                updated_row_df[col] = updated_row_df[col].where(pd.notna(updated_row_df[col]), None)
         
         # Use Iceberg's upsert for atomic updates
         upsert_data(NAMESPACE, TABLE_NAME, updated_row_df, join_cols=["id"])
         
-        # Get updated unit
+        # Get updated unit — return floats to match UnitResponse / create path
         updated_row = updated_row_df.iloc[0]
         unit_dict = {
             "id": str(updated_row["id"]),
             "property_id": str(updated_row["property_id"]),
             "unit_number": updated_row.get("unit_number"),
             "bedrooms": int(updated_row["bedrooms"]) if pd.notna(updated_row.get("bedrooms")) else None,
-            "bathrooms": Decimal(str(updated_row["bathrooms"])) if pd.notna(updated_row.get("bathrooms")) else None,
+            "bathrooms": float(updated_row["bathrooms"]) if pd.notna(updated_row.get("bathrooms")) else None,
             "square_feet": int(updated_row["square_feet"]) if pd.notna(updated_row.get("square_feet")) else None,
-            "current_monthly_rent": Decimal(str(updated_row["current_monthly_rent"])) if pd.notna(updated_row.get("current_monthly_rent")) else None,
-            "notes": updated_row.get("notes"),
+            "current_monthly_rent": float(updated_row["current_monthly_rent"]) if pd.notna(updated_row.get("current_monthly_rent")) else None,
+            "notes": updated_row.get("notes") if pd.notna(updated_row.get("notes")) else None,
             "is_active": bool(updated_row["is_active"]) if pd.notna(updated_row.get("is_active")) else True,
             "created_at": updated_row["created_at"] if pd.notna(updated_row.get("created_at")) else pd.Timestamp.now(),
             "updated_at": updated_row["updated_at"] if pd.notna(updated_row.get("updated_at")) else pd.Timestamp.now(),

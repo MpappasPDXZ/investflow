@@ -242,6 +242,15 @@ export default function PropertyDetailPage() {
     }
   }, [property?.id, isMultiUnit]);
 
+  const buildIncomeStatementFilename = (mode: 't12' | 'calendar', year?: number) => {
+    const now = new Date();
+    const runStamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const reportName = mode === 'calendar' ? `FY_${year || now.getFullYear()}` : 'T12';
+    const raw = (property?.address_line1 || property?.display_name || 'prop').trim();
+    const slug = raw.replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 5) || 'prop';
+    return `${runStamp}_${reportName}_${slug}.pdf`;
+  };
+
   const handleDownloadIncomeStatement = async (mode: 't12' | 'calendar', year?: number) => {
     if (!id) return;
     setDownloadingPdf(true);
@@ -258,12 +267,7 @@ export default function PropertyDetailPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      if (mode === 'calendar') {
-        a.download = `income_statement_${year || new Date().getFullYear()}.pdf`;
-      } else {
-        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        a.download = `income_statement_T12_${today}.pdf`;
-      }
+      a.download = buildIncomeStatementFilename(mode, year);
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {

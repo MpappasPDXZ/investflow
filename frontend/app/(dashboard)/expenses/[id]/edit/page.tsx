@@ -184,7 +184,7 @@ export default function EditExpensePage() {
       await updateExpense.mutateAsync(payload);
       
       console.log('[PAGE] ✅ Expense updated successfully, navigating to expenses list');
-      router.push('/expenses');
+      router.push(`/expenses?property_id=${formData.property_id}`);
     } catch (err) {
       console.error('❌ [EXPENSE] Error updating expense:', err);
       setError((err as Error).message);
@@ -400,52 +400,50 @@ export default function EditExpensePage() {
               {/* Receipt Section */}
               <div className="col-span-2">
                 <Label className="text-xs">Receipt/Invoice</Label>
-                <div className="mt-1 p-3 bg-gray-50 rounded-md border">
-                  {hasReceipt ? (
+                <div className="mt-1 p-3 bg-gray-50 rounded-md border space-y-2">
+                  {hasReceipt || receiptUploaded ? (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm text-green-700">
                         <Check className="h-4 w-4" />
-                        <span>Receipt attached</span>
+                        <span>{receiptUploaded && !hasReceipt ? 'Receipt uploaded successfully!' : 'Receipt attached'}</span>
                       </div>
-                      <ReceiptViewer 
-                        expenseId={expenseId}
-                        documentId={expense?.document_storage_id}
-                        fileName={expense?.description || 'Receipt'}
-                      />
-                    </div>
-                  ) : receiptUploaded ? (
-                    <div className="flex items-center gap-2 text-sm text-green-700">
-                      <Check className="h-4 w-4" />
-                      <span>Receipt uploaded successfully!</span>
+                      {hasReceipt && (
+                        <ReceiptViewer 
+                          expenseId={expenseId}
+                          documentId={expense?.document_storage_id}
+                          fileName={expense?.description || 'Receipt'}
+                        />
+                      )}
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <FileText className="h-4 w-4" />
-                        <span>No receipt attached</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          id="file"
-                          type="file"
-                          accept="image/*,.pdf"
-                          onChange={(e) => setFile(e.target.files?.[0] || null)}
-                          className="text-xs flex-1"
-                        />
-                        {file && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={handleUploadReceipt}
-                            disabled={uploadingReceipt}
-                            className="h-8 text-xs"
-                          >
-                            <Upload className="h-3 w-3 mr-1" />
-                            {uploadingReceipt ? 'Uploading...' : 'Upload'}
-                          </Button>
-                        )}
-                      </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <FileText className="h-4 w-4" />
+                      <span>No receipt attached</span>
                     </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="file"
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      className="text-xs flex-1"
+                    />
+                    {file && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleUploadReceipt}
+                        disabled={uploadingReceipt}
+                        className="h-8 text-xs"
+                      >
+                        <Upload className="h-3 w-3 mr-1" />
+                        {uploadingReceipt ? 'Uploading...' : (hasReceipt ? 'Replace' : 'Upload')}
+                      </Button>
+                    )}
+                  </div>
+                  {hasReceipt && !file && (
+                    <p className="text-xs text-gray-500">Choose a file above to replace the current receipt.</p>
                   )}
                 </div>
               </div>

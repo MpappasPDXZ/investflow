@@ -149,7 +149,7 @@ export default function AddExpensePage() {
       
       console.log('📝 [EXPENSE] Backend to PostgreSQL/Lakekeeper: Expense created');
       
-      router.push('/expenses');
+      router.push(`/expenses?property_id=${formData.property_id}`);
     } catch (err) {
       console.error('❌ [EXPENSE] Error creating expense:', err);
       setError((err as Error).message);

@@ -66,11 +66,13 @@ export function useCreateExpense() {
       vendor?: string;
       expense_type: string;
       expense_category?: string;
+      tax_category?: string;
       unit_id?: string;
       notes?: string;
     }) => apiClient.post<Expense>('/expenses', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
     },
   });
 }
@@ -83,6 +85,7 @@ export function useCreateExpenseWithReceipt() {
       apiClient.upload<Expense>('/expenses/with-receipt', formData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
     },
   });
 }
@@ -95,6 +98,7 @@ export function useUpdateExpense() {
       apiClient.put<Expense>(`/expenses/${id}`, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
       queryClient.invalidateQueries({ queryKey: ['expense', variables.id] });
     },
   });
@@ -107,6 +111,7 @@ export function useDeleteExpense() {
     mutationFn: (id: string) => apiClient.delete(`/expenses/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
     },
   });
 }

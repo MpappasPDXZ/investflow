@@ -311,6 +311,7 @@ export function useLeasesList(filters: {
   status?: string;
   state?: string;
   active_only?: boolean;
+  enabled?: boolean;
 } = {}) {
   return useQuery<LeaseListResponse>({
     queryKey: ['leases', filters],
@@ -334,5 +335,6 @@ export function useLeasesList(filters: {
         throw error;
       }
     },
+    enabled: filters.enabled ?? true,
   });
 }

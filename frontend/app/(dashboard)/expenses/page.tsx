@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useExpensesByYear, useExpenseSummary, useDeleteExpense } from '@/lib/hooks/use-expenses';
 import type { ExpenseSummary } from '@/lib/hooks/use-expenses';
 import { useProperties as usePropertiesHook } from '@/lib/hooks/use-properties';
@@ -238,6 +239,8 @@ function YearExpenses({
 }
 
 export default function ExpensesPage() {
+  const searchParams = useSearchParams();
+  const propertyIdFromQuery = searchParams.get('property_id') || '';
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
   const [selectedExpenseType, setSelectedExpenseType] = useState<string>('');
   const [vendorFilter, setVendorFilter] = useState<string>('');
@@ -252,10 +255,26 @@ export default function ExpensesPage() {
   const { data: summary, isLoading } = useExpenseSummary(selectedPropertyId || undefined);
 
   useEffect(() => {
-    if (!selectedPropertyId && properties?.items && properties.items.length > 0) {
-      setSelectedPropertyId(properties.items[0].id);
+    if (!properties?.items?.length) return;
+
+    if (propertyIdFromQuery && properties.items.some((p) => p.id === propertyIdFromQuery)) {
+      if (selectedPropertyId !== propertyIdFromQuery) {
+        setSelectedPropertyId(propertyIdFromQuery);
+        setHasInitializedExpansion(false);
+      }
+      return;
     }
-  }, [properties, selectedPropertyId]);
+
+    if (selectedPropertyId) return;
+
+    // Default to highest current_market_value (fallback purchase_price)
+    const best = [...properties.items].sort((a, b) => {
+      const aVal = a.current_market_value ?? a.purchase_price ?? 0;
+      const bVal = b.current_market_value ?? b.purchase_price ?? 0;
+      return bVal - aVal;
+    })[0];
+    if (best) setSelectedPropertyId(best.id);
+  }, [properties, selectedPropertyId, propertyIdFromQuery]);
 
   useEffect(() => {
     const fetchAllUnits = async () => {

@@ -5,6 +5,7 @@ from uuid import UUID
 from datetime import date
 from typing import List
 import io
+import re
 
 import pandas as pd
 
@@ -17,6 +18,26 @@ router = APIRouter(prefix="/income-statement", tags=["income-statement"])
 logger = get_logger(__name__)
 
 NAMESPACE = ("investflow",)
+
+
+def _address_slug(address: str, length: int = 5) -> str:
+    """Slugify address for filenames: spaces/non-alnum -> _, first `length` chars."""
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", (address or "").strip())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return (slug[:length] if slug else "prop")
+
+
+def _income_statement_filename(
+    mode: str,
+    year: int,
+    address_line1: str = "",
+    display_name: str = "",
+) -> str:
+    """Build download name: {YYYYMM}_{FY_year|T12}_{AddrSlug}.pdf"""
+    run_stamp = date.today().strftime("%Y%m")
+    report_name = f"FY_{year}" if mode == "calendar" else "T12"
+    addr_slug = _address_slug(address_line1 or display_name)
+    return f"{run_stamp}_{report_name}_{addr_slug}.pdf"
 
 
 @router.get("/{property_id}/years")
@@ -62,11 +83,17 @@ async def generate_income_statement_pdf(
             mode=mode,
         )
 
-        if mode == "calendar":
-            filename = f"income_statement_{year}.pdf"
-        else:
-            today = date.today()
-            filename = f"income_statement_T12_{today.strftime('%Y%m%d')}.pdf"
+        address_line1 = ""
+        display_name = ""
+        if table_exists(NAMESPACE, "properties"):
+            props = read_table(NAMESPACE, "properties")
+            rows = props[props["id"] == str(property_id)]
+            if len(rows) > 0:
+                row = rows.iloc[0]
+                address_line1 = str(row.get("address_line1") or "")
+                display_name = str(row.get("display_name") or "")
+
+        filename = _income_statement_filename(mode, year, address_line1, display_name)
 
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
