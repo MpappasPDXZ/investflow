@@ -32,8 +32,10 @@ def build_database_url() -> str:
     encoded_password = quote_plus(settings.POSTGRES_PASSWORD)
     encoded_user = quote_plus(settings.POSTGRES_USER)
     
+    # Pin psycopg2. A bare postgresql:// URL now defaults to the psycopg v3
+    # driver, which is not installed in this image.
     database_url = (
-        f"postgresql://{encoded_user}:{encoded_password}@"
+        f"postgresql+psycopg2://{encoded_user}:{encoded_password}@"
         f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
         f"?sslmode=require"
     )
