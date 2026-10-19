@@ -30,6 +30,35 @@ PROPERTIES_TABLE = "properties"
 router = APIRouter(prefix="/leases", tags=["leases"])
 logger = get_logger(__name__)
 
+
+def _uuid_text(value) -> Optional[str]:
+    """Return a UUID string, or None for blank and pandas NaN values."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    if text.lower() in {"", "nan", "none", "null", "<na>"}:
+        return None
+    return text
+
+
+def _date_or_none(value):
+    """Calendar date, or None for blank and NaT values."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        return value
+    if isinstance(value, pd.Timestamp):
+        return value.date()
+    return value
+
 # Strict field order for leases table (must match Iceberg schema exactly)
 # Schema changes:
 # - Removed: user_id, utilities_provided_by_owner_city, pets, pets_allowed, max_children, max_pets
@@ -807,10 +836,11 @@ async def update_lease(
         lease_dict["updated_at"] = now
         lease_dict["lease_version"] = existing_lease["lease_version"] + 1
         
-        # Ensure UUID fields are strings for PyArrow serialization
+        # Ensure UUID fields are strings for PyArrow serialization.
+        # pandas NaN stringifies to "nan", which then fails UUID parsing on the response.
         for uuid_field in ("property_id", "unit_id", "user_id"):
-            if uuid_field in lease_dict and lease_dict[uuid_field] is not None:
-                lease_dict[uuid_field] = str(lease_dict[uuid_field])
+            if uuid_field in lease_dict:
+                lease_dict[uuid_field] = _uuid_text(lease_dict[uuid_field])
         
         # Serialize moveout_costs as JSON (like tenants)
         # Check if moveout_costs was explicitly sent (even as empty list = clear)
@@ -937,7 +967,8 @@ async def update_lease(
         response_dict["id"] = lease_id
         response_dict["user_id"] = UUID(user_id)
         response_dict["property_id"] = UUID(lease_dict["property_id"])
-        response_dict["unit_id"] = UUID(lease_dict["unit_id"]) if lease_dict.get("unit_id") else None
+        unit_id_text = _uuid_text(lease_dict.get("unit_id"))
+        response_dict["unit_id"] = UUID(unit_id_text) if unit_id_text else None
         # Handle lease_number - default to 0 if missing (for existing leases created before this field was added)
         response_dict["lease_number"] = int(lease_dict.get("lease_number", 0)) if lease_dict.get("lease_number") is not None and not pd.isna(lease_dict.get("lease_number")) else 0
         response_dict["property"] = PropertySummary(**property_summary)
@@ -966,13 +997,10 @@ async def update_lease(
             else:
                 response_dict["pets"] = []
         
-        # Convert Timestamp dates to date objects for Pydantic
-        if "lease_start" in lease_dict and lease_dict["lease_start"] is not None:
-            response_dict["lease_start"] = pd.Timestamp(lease_dict["lease_start"]).date() if isinstance(lease_dict["lease_start"], pd.Timestamp) else lease_dict["lease_start"]
-        if "lease_end" in lease_dict and lease_dict["lease_end"] is not None:
-            response_dict["lease_end"] = pd.Timestamp(lease_dict["lease_end"]).date() if isinstance(lease_dict["lease_end"], pd.Timestamp) else lease_dict["lease_end"]
-        if "lease_date" in lease_dict and lease_dict["lease_date"] is not None:
-            response_dict["lease_date"] = pd.Timestamp(lease_dict["lease_date"]).date() if isinstance(lease_dict["lease_date"], pd.Timestamp) else lease_dict["lease_date"]
+        # Convert Timestamp dates to date objects for Pydantic. NaT is not None.
+        for date_field in ("lease_start", "lease_end", "lease_date"):
+            if date_field in lease_dict:
+                response_dict[date_field] = _date_or_none(lease_dict[date_field])
         
         # Get PDF URL if exists (guard against NaN)
         pdf_doc_id = lease_dict.get("generated_pdf_document_id")
@@ -1100,10 +1128,7 @@ async def list_leases(
                     logger.warning(f"Lease {lease['id']} has invalid dates: lease_end ({lease_end_date}) < lease_start ({lease_start_date}). Setting lease_end = lease_start.")
                     lease_end_date = lease_start_date
                 
-                # Guard unit_id against NaN
-                unit_id_val = lease.get("unit_id")
-                if isinstance(unit_id_val, float) and pd.isna(unit_id_val):
-                    unit_id_val = None
+                unit_id_val = _uuid_text(lease.get("unit_id"))
 
                 # Guard status against NaN
                 status_val = lease.get("status", "draft")
@@ -1113,7 +1138,7 @@ async def list_leases(
                 lease_items.append(LeaseListItem(
                     id=UUID(lease["id"]),
                     property_id=UUID(lease["property_id"]),
-                    unit_id=UUID(str(unit_id_val)) if unit_id_val else None,
+                    unit_id=UUID(unit_id_val) if unit_id_val else None,
                     lease_number=int(lease.get("lease_number", 0) if pd.notna(lease.get("lease_number", 0)) else 0),
                     property=PropertySummary(**property_summary),
                     tenants=tenant_list,
@@ -1220,8 +1245,8 @@ async def get_lease(
         response_dict["id"] = UUID(lease["id"])
         response_dict["user_id"] = UUID(user_id)  # Get from current_user, not from lease (since user_id is removed from schema)
         response_dict["property_id"] = UUID(lease["property_id"])
-        unit_id_val = response_dict.get("unit_id")
-        response_dict["unit_id"] = UUID(str(unit_id_val)) if unit_id_val else None
+        unit_id_text = _uuid_text(response_dict.get("unit_id"))
+        response_dict["unit_id"] = UUID(unit_id_text) if unit_id_text else None
         # Handle lease_number - default to 0 if missing (for existing leases created before this field was added)
         response_dict["lease_number"] = int(lease.get("lease_number", 0)) if lease.get("lease_number") is not None and not pd.isna(lease.get("lease_number")) else 0
         response_dict["property"] = PropertySummary(**property_summary)
