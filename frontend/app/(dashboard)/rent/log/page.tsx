@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Home, Save, Calendar, DollarSign, ArrowLeft, Camera, Upload, X, FileText, Check, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { calendarDate } from '@/lib/utils';
 import { useCreateRent, useCreateRentWithReceipt, useUpdateRent, useRent } from '@/lib/hooks/use-rent';
 import { useTenants } from '@/lib/hooks/use-tenants';
 import { useLeasesList } from '@/lib/hooks/use-leases';
@@ -399,8 +400,8 @@ export default function LogRentPage() {
     today.setHours(12, 0, 0, 0);
 
     const inDateRange = (lease: (typeof leases)[0]) => {
-      const start = lease.lease_start ? new Date(lease.lease_start) : null;
-      const end = lease.lease_end ? new Date(lease.lease_end) : null;
+      const start = calendarDate(lease.lease_start);
+      const end = calendarDate(lease.lease_end);
       if (start && Number.isNaN(start.getTime()) === false && start > today) return false;
       if (end && Number.isNaN(end.getTime()) === false && end < today) return false;
       return true;
@@ -433,8 +434,8 @@ export default function LogRentPage() {
     candidates = [...candidates].sort((a, b) => {
       const sr = statusRank(a.status) - statusRank(b.status);
       if (sr !== 0) return sr;
-      const aStart = a.lease_start ? new Date(a.lease_start).getTime() : 0;
-      const bStart = b.lease_start ? new Date(b.lease_start).getTime() : 0;
+      const aStart = calendarDate(a.lease_start)?.getTime() ?? 0;
+      const bStart = calendarDate(b.lease_start)?.getTime() ?? 0;
       if (bStart !== aStart) return bStart - aStart;
       const aUp = a.updated_at ? new Date(a.updated_at).getTime() : 0;
       const bUp = b.updated_at ? new Date(b.updated_at).getTime() : 0;

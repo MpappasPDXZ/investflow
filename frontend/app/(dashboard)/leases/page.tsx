@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
+import { formatCalendarDate } from '@/lib/utils';
 
 interface GroupedByTenant {
   [tenantKey: string]: Lease[];
@@ -324,13 +325,13 @@ export default function LeasesPage() {
                               {lease.created_at ? format(new Date(lease.created_at), 'MMM d, yyyy h:mm a') : '-'}
                             </TableCell>
                             <TableCell className="text-xs py-2 px-3">
-                              {lease.lease_start 
-                                ? format(new Date(lease.lease_start as string), 'MMM d, yyyy')
+                              {lease.lease_start
+                                ? formatCalendarDate(lease.lease_start as string)
                                 : '-'}
                             </TableCell>
                             <TableCell className="text-xs py-2 px-3">
-                              {lease.lease_end 
-                                ? format(new Date(lease.lease_end as string), 'MMM d, yyyy')
+                              {lease.lease_end
+                                ? formatCalendarDate(lease.lease_end as string)
                                 : '-'}
                             </TableCell>
                             <TableCell className="text-xs py-2 px-3">

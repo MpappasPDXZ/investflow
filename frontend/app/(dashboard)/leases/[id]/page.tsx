@@ -9,6 +9,7 @@ import { FileSignature, ArrowLeft, Download, FileText, Users, Home, Loader2, Ale
 import Link from 'next/link';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
 import { apiClient } from '@/lib/api-client';
+import { formatCalendarDate } from '@/lib/utils';
 
 export default function LeaseDetailPage() {
   const params = useParams();
@@ -94,6 +95,11 @@ export default function LeaseDetailPage() {
   };
 
   const formatDate = (date: string | null | undefined) => {
+    if (!date) return 'N/A';
+    return formatCalendarDate(date);
+  };
+
+  const formatTimestamp = (date: string | null | undefined) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -181,17 +187,15 @@ export default function LeaseDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           {getStatusBadge(lease.status)}
-          {lease.status === 'draft' && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDelete}
-              className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8"
-            >
-              <Trash2 className="h-3.5 w-3.5 mr-1" />
-              Delete Lease
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDelete}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8"
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1" />
+            Delete Lease
+          </Button>
         </div>
       </div>
 
@@ -451,11 +455,11 @@ export default function LeaseDetailPage() {
               </div>
               <div className="text-xs">
                 <div className="text-gray-500">Created</div>
-                <div>{formatDate(lease.created_at)}</div>
+                <div>{formatTimestamp(lease.created_at)}</div>
               </div>
               <div className="text-xs">
                 <div className="text-gray-500">Last Updated</div>
-                <div>{formatDate(lease.updated_at)}</div>
+                <div>{formatTimestamp(lease.updated_at)}</div>
               </div>
               {lease.template_used && (
                 <div className="text-xs">

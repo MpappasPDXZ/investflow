@@ -359,11 +359,62 @@ def _prepare_lease_for_iceberg(lease_dict: dict, table_schema) -> dict:
         elif pa.types.is_boolean(field_type):
             prepared[col_name] = bool(value) if value is not None else None
             
+        # Float columns (Postgres double / pandas float64). Pydantic money fields
+        # arrive as Decimal and PyArrow refuses Decimal -> double.
+        elif pa.types.is_floating(field_type):
+            prepared[col_name] = float(value) if value is not None else None
+                
         # Everything else - pass through
         else:
             prepared[col_name] = value
     
     return prepared
+
+
+def _arrow_cell(value, field_type):
+    """Coerce one cell to the Arrow field type. Missing values become None."""
+    if value is None:
+        return None
+    if isinstance(value, (list, dict)):
+        return value
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+
+    if pa.types.is_date(field_type):
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            return datetime.fromisoformat(value.split("T")[0]).date()
+        return None
+    if pa.types.is_timestamp(field_type):
+        if isinstance(value, pd.Timestamp):
+            return value.to_pydatetime()
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            return pd.to_datetime(value).to_pydatetime()
+        return value
+    if pa.types.is_floating(field_type):
+        return float(value)
+    if pa.types.is_decimal(field_type):
+        return Decimal(str(value))
+    if pa.types.is_integer(field_type):
+        return int(value)
+    if pa.types.is_boolean(field_type):
+        return bool(value)
+    return value
+
+
+def _arrow_record(prepared: dict, table_schema) -> dict:
+    return {
+        field.name: _arrow_cell(prepared.get(field.name), field.type)
+        for field in table_schema
+    }
 
 
 def _get_property_summary(property_id: str, unit_id: Optional[str] = None, properties_df: Optional[pd.DataFrame] = None) -> dict:
@@ -600,34 +651,7 @@ async def create_lease(
         
         # Create PyArrow table DIRECTLY from prepared data with explicit schema
         # Build a single record (dictionary) with all fields in schema order
-        record = {}
-        for field in table_schema:
-            col_name = field.name
-            value = prepared_lease.get(col_name)
-            field_type = field.type
-            
-            # CRITICAL: For date fields, ensure date objects (not datetime/timestamp)
-            if pa.types.is_date(field_type):
-                if value is None:
-                    record[col_name] = None
-                elif isinstance(value, (datetime, pd.Timestamp)):
-                    record[col_name] = value.date()
-                elif isinstance(value, date):
-                    record[col_name] = value
-                else:
-                    record[col_name] = None
-            # For timestamp fields, ensure datetime objects
-            elif pa.types.is_timestamp(field_type):
-                if value is None:
-                    record[col_name] = None
-                elif isinstance(value, pd.Timestamp):
-                    record[col_name] = value.to_pydatetime()
-                elif isinstance(value, datetime):
-                    record[col_name] = value
-                else:
-                    record[col_name] = value
-            else:
-                record[col_name] = value
+        record = _arrow_record(prepared_lease, table_schema)
         
         # Create table from single record with explicit schema - this ensures exact types
         arrow_table = pa.Table.from_pylist([record], schema=table_schema)
@@ -871,56 +895,24 @@ async def update_lease(
             else:
                 tenant_responses = []
         
-        # OPTIMIZATION: Use delete + append instead of upsert (upsert is slow - 60+ seconds!)
-        # Delete is fast with predicate pushdown, append is fast
-        # Ensure the new record has is_active = True
+        # Build the replacement row BEFORE delete. A type error used to delete
+        # the live row and then fail the append, leaving the lease gone.
         lease_dict["is_active"] = True
         
-        # Get schema columns for proper ordering
         schema_start = time.time()
         table = load_table(NAMESPACE, LEASES_TABLE)
-        schema_columns = [field.name for field in table.schema().fields]
+        table_schema = table.schema().as_arrow()
         logger.info(f"⏱️ [PERF] Getting schema columns for update took {time.time() - schema_start:.2f}s")
         
-        # Delete existing row(s) for this lease ID (fast with predicate pushdown)
-        delete_start = time.time()
+        append_start = time.time()
+        prepared_lease = _prepare_lease_for_iceberg(lease_dict, table_schema)
+        record = _arrow_record(prepared_lease, table_schema)
+        arrow_table = pa.Table.from_pylist([record], schema=table_schema)
+        
         from pyiceberg.expressions import EqualTo
+        delete_start = time.time()
         table.delete(EqualTo("id", str(lease_id)))
         logger.info(f"⏱️ [PERF] table.delete() for update took {time.time() - delete_start:.2f}s")
-        
-        # Append updated lease using the same PyArrow-safe approach as create_lease
-        append_start = time.time()
-        table_schema = table.schema().as_arrow()
-        prepared_lease = _prepare_lease_for_iceberg(lease_dict, table_schema)
-        
-        record = {}
-        for field in table_schema:
-            col_name = field.name
-            value = prepared_lease.get(col_name)
-            field_type = field.type
-            
-            if pa.types.is_date(field_type):
-                if value is None:
-                    record[col_name] = None
-                elif isinstance(value, (datetime, pd.Timestamp)):
-                    record[col_name] = value.date()
-                elif isinstance(value, date):
-                    record[col_name] = value
-                else:
-                    record[col_name] = None
-            elif pa.types.is_timestamp(field_type):
-                if value is None:
-                    record[col_name] = None
-                elif isinstance(value, pd.Timestamp):
-                    record[col_name] = value.to_pydatetime()
-                elif isinstance(value, datetime):
-                    record[col_name] = value
-                else:
-                    record[col_name] = value
-            else:
-                record[col_name] = value
-        
-        arrow_table = pa.Table.from_pylist([record], schema=table_schema)
         table.append(arrow_table)
         logger.info(f"⏱️ [PERF] append_data(leases) for update took {time.time() - append_start:.2f}s")
         logger.info(f"Updated lease {lease_id} (version {lease_dict['lease_version']}) via delete+append")
@@ -1576,7 +1568,7 @@ async def delete_lease(
     lease_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """Hard delete a lease (only if draft)"""
+    """Hard delete a lease"""
     try:
         user_id = current_user["sub"]
         
@@ -1600,14 +1592,6 @@ async def delete_lease(
         
         # Verify ownership via property
         _verify_property_ownership(lease["property_id"], user_id)
-        
-        # Can only delete drafts
-        if lease["status"] != "draft":
-            logger.warning(f"Delete attempt: Lease {lease_id} status is {lease['status']}, not draft")
-            raise HTTPException(
-                status_code=400,
-                detail="Can only delete leases in draft status"
-            )
         
         # HARD DELETE: Remove all rows for this lease ID
         from pyiceberg.expressions import EqualTo

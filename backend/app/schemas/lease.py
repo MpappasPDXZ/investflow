@@ -94,6 +94,10 @@ class LeaseBase(BaseModel):
     
     # Security Deposit
     security_deposit: Decimal = Field(..., ge=0)
+    security_deposit_previously_held: Optional[bool] = Field(
+        False,
+        description="True when this amount was already collected under a prior lease and no additional deposit is due",
+    )
     deposit_return_days: Optional[int] = Field(None, ge=1)
     
     # Holding Fee Addendum
@@ -270,6 +274,7 @@ class LeaseUpdate(BaseModel):
     
     # Security Deposit
     security_deposit: Optional[Decimal] = Field(None, ge=0)
+    security_deposit_previously_held: Optional[bool] = None
     deposit_return_days: Optional[int] = Field(None, ge=1)
     
     # Holding Fee Addendum

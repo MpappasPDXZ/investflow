@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ArrowLeft, Loader2, AlertCircle, Save, ChevronDown, ChevronRight, CheckCircle2, Plus, X, Edit2 } from 'lucide-react';
 import Link from 'next/link';
+import { toDateInputValue } from '@/lib/utils';
 
 export default function LeaseEditPage() {
   const params = useParams();
@@ -267,10 +268,11 @@ export default function LeaseEditPage() {
       // Initialize form with lease data
       setFormData({
         status: lease.status || 'draft',
-        lease_start: lease.lease_start ? new Date(lease.lease_start as string).toISOString().split('T')[0] : '',
-        lease_end: lease.lease_end ? new Date(lease.lease_end as string).toISOString().split('T')[0] : '',
+        lease_start: lease.lease_start ? toDateInputValue(lease.lease_start as string) : '',
+        lease_end: lease.lease_end ? toDateInputValue(lease.lease_end as string) : '',
         monthly_rent: lease.monthly_rent?.toString() || '',
         security_deposit: lease.security_deposit?.toString() || '',
+        security_deposit_previously_held: (lease as any).security_deposit_previously_held || false,
         rent_due_day: lease.rent_due_day?.toString() || '',
         rent_due_by_day: lease.rent_due_by_day?.toString() || '',
         rent_due_by_time: lease.rent_due_by_time || '',
@@ -434,6 +436,7 @@ export default function LeaseEditPage() {
       updatePayload.lease_end = formData.lease_end;
       updatePayload.monthly_rent = parseFloat(formData.monthly_rent);
       updatePayload.security_deposit = parseFloat(formData.security_deposit);
+      updatePayload.security_deposit_previously_held = !!formData.security_deposit_previously_held;
       
       // Financial - in LEASES_FIELD_ORDER: rent_due_by_time, payment_method, prorated_first_month_rent
       if (formData.rent_due_by_time) updatePayload.rent_due_by_time = formData.rent_due_by_time;
@@ -1059,6 +1062,15 @@ export default function LeaseEditPage() {
                     required
                     className="text-sm h-8 mt-1"
                   />
+                  <label className="flex items-center space-x-2 text-xs mt-2">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.security_deposit_previously_held}
+                      onChange={(e) => setFormData({ ...formData, security_deposit_previously_held: e.target.checked })}
+                      className="rounded h-3 w-3"
+                    />
+                    <span>Already held from the prior lease (no additional deposit due)</span>
+                  </label>
                 </div>
                 <div>
                   <label className="flex items-center space-x-2 text-xs mt-2">
