@@ -9,7 +9,7 @@ import { FileSignature, ArrowLeft, Download, FileText, Users, Home, Loader2, Ale
 import Link from 'next/link';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
 import { apiClient } from '@/lib/api-client';
-import { formatCalendarDate } from '@/lib/utils';
+import { formatCalendarDate, formatLocalTimestamp } from '@/lib/utils';
 
 export default function LeaseDetailPage() {
   const params = useParams();
@@ -101,11 +101,7 @@ export default function LeaseDetailPage() {
 
   const formatTimestamp = (date: string | null | undefined) => {
     if (!date) return 'N/A';
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    return formatLocalTimestamp(date) || 'N/A';
   };
 
   const formatCurrency = (amount: number | string | null | undefined) => {

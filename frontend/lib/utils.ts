@@ -56,6 +56,40 @@ export function calendarDate(value: string | Date | null | undefined): Date | nu
   return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0);
 }
 
+/**
+ * API timestamps are UTC and often arrive without a timezone suffix.
+ * Treat a missing offset as UTC so the clock shows local time.
+ */
+export function parseUtcTimestamp(value: string | Date | null | undefined): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+  const raw = value.trim();
+  if (!raw) return null;
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2}(?:\.\d+)?)/);
+  if (!match) {
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(`${match[1]}T${match[2]}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Format a UTC timestamp in the viewer's local timezone. */
+export function formatLocalTimestamp(
+  value: string | Date | null | undefined,
+  pattern = 'MMM d, yyyy h:mm a'
+): string {
+  const date = parseUtcTimestamp(value);
+  if (!date) return '';
+  return format(date, pattern);
+}
+
 /** Format a calendar date without shifting the day across timezones. */
 export function formatCalendarDate(
   value: string | Date | null | undefined,
