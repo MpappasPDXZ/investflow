@@ -231,10 +231,11 @@ class LeaseGeneratorService:
 
         # Build document
         latex = r'''\documentclass[11pt,letterpaper]{article}
-\usepackage[margin=1in]{geometry}
+\usepackage[margin=1in,headheight=36pt,headsep=14pt,footskip=36pt]{geometry}
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{fancyhdr}
+\usepackage{needspace}
 \usepackage{tabularx}
 \usepackage{lastpage}
 \usepackage{xcolor}
@@ -778,10 +779,24 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
 
         return latex
 
+    def _signature_block(self, rows: str) -> str:
+        """Signature lines kept on one page, with blank space above the rule to sign."""
+        return r'''\needspace{8\baselineskip}
+\noindent\begin{minipage}{\textwidth}
+\vspace*{2.8em}
+\begin{tabularx}{\textwidth}{@{}X X@{}}
+\rule{7cm}{0.4pt} & \rule{7cm}{0.4pt} \\
+''' + rows + r'''
+\end{tabularx}
+\end{minipage}
+
+\vspace{1.4em}
+'''
+
     def _generate_signatures(self, tenants: List[Dict[str, Any]], manager_name: str = "Sarah Pappas") -> str:
         """Generate signature section"""
         latex = r'''
-\vspace{3em}
+\vspace{2em}
 
 \noindent\textbf{SIGNATURES}
 
@@ -789,23 +804,23 @@ Tenant agrees that the actual cost of cleaning and repairs is difficult to ascer
 
 \noindent THE TENANT UNDERSTANDS THAT THE EXECUTION OF THIS LEASE ENTAILS AN IMPORTANT DECISION THAT HAS LEGAL IMPLICATIONS. TENANT IS ADVISED TO SEEK HIS OR HER OWN COUNSEL, LEGAL OR OTHERWISE, REGARDING THE EXECUTION OF THIS LEASE. TENANT HEREBY ACKNOWLEDGES THAT HE OR SHE HAS READ THIS LEASE, UNDERSTANDS IT, AGREES TO IT, AND HAS BEEN GIVEN A COPY. ELECTRONIC SIGNATURES MAY BE USED TO EXECUTE THIS LEASE. IF USED, THE PARTIES ACKNOWLEDGE THAT ONCE THE ELECTRONIC SIGNATURE PROCESS IS COMPLETED, THE ELECTRONIC SIGNATURES ON THIS LEASE WILL BE AS BINDING AS IF THE SIGNATURES WERE PHYSICALLY SIGNED BY HAND.
 
-\vspace{3em}
+\vspace{1em}
 
-\noindent\begin{tabularx}{\textwidth}{@{}X X@{}}
-\rule{7cm}{0.4pt} & \rule{7cm}{0.4pt} \\
-\textbf{Landlord:} S\&M Axios Heartland Holdings, LLC & \textbf{Date} \\
-\textit{By: ''' + self._escape_latex(manager_name) + r''', Member} & \\[4em]
 '''
+        latex += self._signature_block(
+            r'''\textbf{Landlord:} S\&M Axios Heartland Holdings, LLC & \textbf{Date} \\
+\textit{By: '''
+            + self._escape_latex(manager_name)
+            + r''', Member} & \\'''
+        )
 
-        # Add signature lines for each tenant
         for tenant in tenants:
-            tenant_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}"
-            latex += r'''\rule{7cm}{0.4pt} & \rule{7cm}{0.4pt} \\
-\textbf{Tenant:} ''' + tenant_name + r''' & \textbf{Date} \\[4em]
-'''
-
-        latex += r'''\end{tabularx}
-'''
+            tenant_name = self._escape_latex(
+                f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
+            )
+            latex += self._signature_block(
+                r'''\textbf{Tenant:} ''' + tenant_name + r''' & \textbf{Date} \\'''
+            )
 
         return latex
 
