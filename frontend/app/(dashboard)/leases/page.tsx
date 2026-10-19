@@ -23,9 +23,8 @@ import {
   DollarSign,
   Download
 } from 'lucide-react';
-import { format } from 'date-fns';
 import Link from 'next/link';
-import { formatCalendarDate } from '@/lib/utils';
+import { formatCalendarDate, formatLocalTimestamp } from '@/lib/utils';
 
 interface GroupedByTenant {
   [tenantKey: string]: Lease[];
@@ -322,7 +321,7 @@ export default function LeasesPage() {
                               {getUnitNumber(lease) || '-'}
                             </TableCell>
                             <TableCell className="text-xs py-2 px-3">
-                              {lease.created_at ? format(new Date(lease.created_at), 'MMM d, yyyy h:mm a') : '-'}
+                              {lease.created_at ? formatLocalTimestamp(lease.created_at) : '-'}
                             </TableCell>
                             <TableCell className="text-xs py-2 px-3">
                               {lease.lease_start
